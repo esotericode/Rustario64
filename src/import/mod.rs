@@ -1,5 +1,6 @@
 pub mod bob;
 pub mod collision;
+pub mod engine;
 pub mod geo;
 pub mod gfx;
 pub mod level;

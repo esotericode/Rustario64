@@ -7,6 +7,11 @@
 typedef s16 Vec3s[3];
 typedef f32 Vec3f[3];
 typedef f32 Mat4[4][4];
+typedef f32 Vec4f[4];
+typedef s16 Vec4s[4];
+typedef struct {
+    s32 m[4][4];
+} Mtx;
 typedef s16 TerrainData;
 typedef s8 RoomData;
 typedef TerrainData Vec3Terrain[3];

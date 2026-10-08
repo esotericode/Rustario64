@@ -12,8 +12,9 @@ What works now:
   textures**, decoded from the original geo layouts and Fast3D display lists.
 - An optional wgpu viewer that renders the imported level offscreen to PNG or in a
   window with a free inspection camera, with collision and placement overlays.
-- The original static collision loader and floor/ceiling/wall/water queries,
-  ported to Rust and verified bit for bit against the pinned decompilation's C.
+- The original static collision loader and floor/ceiling/wall/water queries, and
+  the trig/approach math utilities (tables loaded from your ROM), ported to Rust
+  and verified bit for bit against the pinned decompilation's C.
 - Exact per-tick trace comparison tooling and a fixed 30 Hz scheduler.
 
 There is no Mario, camera logic, object, or mission yet. The
@@ -71,10 +72,12 @@ cargo run --locked -- inspect-rom /path/to/sm64.z64
 cargo run --locked -- import-bob /path/to/sm64.z64 --out private/imports
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --test import local_us_rom_import -- --ignored --exact
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test collision bob_collision -- --ignored --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked -p rustario64-oracle --test math rom_trig -- --ignored --nocapture
 ```
 
-The second test compares BOB's real collision between the Rust port and the
-decomp C on a dense grid of queries (about four million comparisons).
+The oracle tests compare BOB's real collision (about four million queries) and
+the ROM's trig tables (about four million lookups) between the Rust port and the
+decomp C.
 
 ### View Bob-omb Battlefield
 
@@ -137,7 +140,7 @@ holds the owner-ROM evidence.
 ## Next increment
 
 Choose and audit a per-tick Mario oracle (an unmodified reference build with a
-trace exporter, or pinned libsm64 after auditing its changes), import the
-original trig tables from the ROM, and port Mario's state, spawn, and first
-stationary/walking actions against exact per-tick traces. In parallel, finish M1
-presentation gaps: skybox and object models for placements.
+trace exporter, or pinned libsm64 after auditing its changes), then port Mario's
+state, spawn, and first stationary/walking actions against exact per-tick traces.
+In parallel, finish M1 presentation gaps: skybox and object models for
+placements.

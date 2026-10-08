@@ -6,6 +6,7 @@ fn main() {
         "c/oracle.c",
         "c/decomp/src/engine/surface_load.c",
         "c/decomp/src/engine/surface_collision.c",
+        "c/decomp/src/engine/math_util.c",
     ];
     let mut build = cc::Build::new();
     build
@@ -14,6 +15,8 @@ fn main() {
         .include("c/shim")
         .include("c/decomp/src/engine")
         .include("c/decomp/include")
+        // Standard-compliant table access (gCosineTable = gSineTable + 0x400).
+        .define("AVOID_UB", None)
         // MIPS integer arithmetic wraps; make that defined for the host compiler too.
         .flag_if_supported("-fwrapv")
         .flag_if_supported("-ffp-contract=off")

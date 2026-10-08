@@ -90,6 +90,13 @@ the 78-unit floor buffer, or the wall push sign each fails the CI test. Rounding
 instead of truncating the wall-query position was not detected, because the
 original's 50-unit cell overlap makes it unobservable for these fixtures.
 
+Math utilities: `sins`/`coss` for 196,608 integer inputs (three wraps), `atan2s`
+and `atan2f` on 1.6 million points (signed zeros, infinities, equal magnitudes,
+tiny and huge ratios), and `approach_s32`/`approach_f32` on 200,000 random cases
+each match the natively compiled decomp bit for bit, both with authored tables
+(CI) and with the owner ROM's tables (3,993,600 comparisons). NaN inputs to
+atan2s are outside coverage.
+
 Limits: dynamic (object) surfaces, rooms, and float-to-int casts of values
 beyond the s32 range are not covered. Native IEEE single precision is assumed to
 match the N64 for these operations until original-execution traces confirm it.

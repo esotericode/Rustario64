@@ -1,5 +1,6 @@
 //! Fixed cadence, input edges, and original collision. No approximate Mario equations.
 pub mod collision;
+pub mod math;
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;

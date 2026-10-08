@@ -8,6 +8,7 @@
 #include "sm64.h"
 #include "surface_collision.h"
 #include "surface_load.h"
+#include "math_util.h"
 
 s16 gCheckingSurfaceCollisionsForCamera;
 s16 gFindFloorIncludeSurfaceIntangible;
@@ -362,4 +363,43 @@ f32 oracle_find_water_level(f32 x, f32 z) {
 
 f32 oracle_find_poison_gas_level(f32 x, f32 z) {
     return find_poison_gas_level(x, z);
+}
+
+/* ---- math_util.c oracle ---- */
+Vec3f gVec3fZero = { 0.0f, 0.0f, 0.0f };
+
+void guMtxF2L(Mat4 mf, Mtx *m) {
+    (void) mf;
+    (void) m;
+}
+
+extern s16 gArctanTable[0x401];
+
+void oracle_set_trig(const f32 *sine, const s16 *arctan) {
+    memcpy(gSineTable, sine, sizeof(f32) * 0x1400);
+    memcpy(gArctanTable, arctan, sizeof(s16) * 0x401);
+}
+
+f32 oracle_sins(s32 x) {
+    return sins(x);
+}
+
+f32 oracle_coss(s32 x) {
+    return coss(x);
+}
+
+s16 oracle_atan2s(f32 y, f32 x) {
+    return atan2s(y, x);
+}
+
+f32 oracle_atan2f(f32 y, f32 x) {
+    return atan2f(y, x);
+}
+
+s32 oracle_approach_s32(s32 current, s32 target, s32 inc, s32 dec) {
+    return approach_s32(current, target, inc, dec);
+}
+
+f32 oracle_approach_f32(f32 current, f32 target, f32 inc, f32 dec) {
+    return approach_f32(current, target, inc, dec);
 }

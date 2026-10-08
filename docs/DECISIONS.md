@@ -187,3 +187,16 @@ wall/water/gas query results including pushed positions and wall lists. It is a
 development tool, never a runtime dependency (see oracle/README.md). Native x86
 IEEE single precision is assumed to match the N64 for these operations; that is
 an assumption until original-execution traces confirm it.
+
+## Original math tables — 2026-10-08
+
+gSineTable/gCosineTable and gArctanTable are game data in the engine segment,
+so they load from the identified ROM at fixed US offsets and are checked against
+pinned SHA-1 digests before use; the values are not committed. The offsets were
+found by compiling the pinned decomp's table source with gcc and matching it
+uniquely in the verified ROM; they agree with sm64tools' engine-segment mapping
+(VRAM 0x80386000 and 0x8038B000). One contiguous 0x1400-entry table reproduces
+the original's sine reads running into the cosine table. `sins`/`coss` take
+integer expressions and cast them to u16 like the macros. atan2f keeps the
+original double-precision expression. Geo-layout presentation transforms still
+use float trigonometry; gameplay code must use these tables.

@@ -55,6 +55,13 @@ unsafe extern "C" {
     ) -> i32;
     fn oracle_find_water_level(x: f32, z: f32) -> f32;
     fn oracle_find_poison_gas_level(x: f32, z: f32) -> f32;
+    fn oracle_set_trig(sine: *const f32, arctan: *const i16);
+    fn oracle_sins(x: i32) -> f32;
+    fn oracle_coss(x: i32) -> f32;
+    fn oracle_atan2s(y: f32, x: f32) -> i16;
+    fn oracle_atan2f(y: f32, x: f32) -> f32;
+    fn oracle_approach_s32(current: i32, target: i32, inc: i32, dec: i32) -> i32;
+    fn oracle_approach_f32(current: f32, target: f32, inc: f32, dec: f32) -> f32;
 }
 
 static LOCK: Mutex<()> = Mutex::new(());
@@ -224,5 +231,53 @@ impl Oracle {
     pub fn find_poison_gas_level(&self, x: f32, z: f32) -> f32 {
         // SAFETY: pure query of C state under the lock.
         unsafe { oracle_find_poison_gas_level(x, z) }
+    }
+}
+
+/// Exclusive access to the C math_util functions with injected trig tables.
+pub struct MathOracle {
+    _guard: MutexGuard<'static, ()>,
+}
+
+impl MathOracle {
+    /// `sine` holds 0x1400 entries (sine then cosine), `arctan` 0x401.
+    pub fn new(sine: &[f32], arctan: &[u16]) -> Self {
+        assert_eq!(sine.len(), 0x1400);
+        assert_eq!(arctan.len(), 0x401);
+        let guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let arctan: Vec<i16> = arctan.iter().map(|&v| v as i16).collect();
+        // SAFETY: both slices have exactly the lengths the C side copies.
+        unsafe { oracle_set_trig(sine.as_ptr(), arctan.as_ptr()) };
+        Self { _guard: guard }
+    }
+
+    pub fn sins(&self, x: i32) -> f32 {
+        // SAFETY: pure table lookup under the lock.
+        unsafe { oracle_sins(x) }
+    }
+
+    pub fn coss(&self, x: i32) -> f32 {
+        // SAFETY: pure table lookup under the lock.
+        unsafe { oracle_coss(x) }
+    }
+
+    pub fn atan2s(&self, y: f32, x: f32) -> i16 {
+        // SAFETY: pure function of its arguments and the injected tables.
+        unsafe { oracle_atan2s(y, x) }
+    }
+
+    pub fn atan2f(&self, y: f32, x: f32) -> f32 {
+        // SAFETY: pure function of its arguments and the injected tables.
+        unsafe { oracle_atan2f(y, x) }
+    }
+
+    pub fn approach_s32(&self, current: i32, target: i32, inc: i32, dec: i32) -> i32 {
+        // SAFETY: pure arithmetic.
+        unsafe { oracle_approach_s32(current, target, inc, dec) }
+    }
+
+    pub fn approach_f32(&self, current: f32, target: f32, inc: f32, dec: f32) -> f32 {
+        // SAFETY: pure arithmetic.
+        unsafe { oracle_approach_f32(current, target, inc, dec) }
     }
 }
