@@ -1,79 +1,109 @@
 # Rustario64
 
-A new Rust engine foundation for importing Super Mario 64 content from a
-user-supplied ROM. Bob-omb Battlefield is the first playable **target**, not yet a
-playable result. Read [PROJECT_PLAN.md](PROJECT_PLAN.md) for scope and status.
+A new Rust engine that imports Super Mario 64 content from a user-supplied ROM.
+Bob-omb Battlefield is the first playable **target**; today it is an imported,
+viewable level, not yet a playable one. Read [PROJECT_PLAN.md](PROJECT_PLAN.md)
+for scope, milestones, and the live status.
 
-The executable is headless: ROM validation, a BOB static import path, independent
-parser fixtures, and exact per-tick trace comparison. There is no window, visible
-terrain renderer, Mario movement, or mission implementation. The real-ROM import
-path passes the local owner-ROM check for the supported US revision. Collision
-and macro records were checked exactly against the pinned decompilation source;
-see [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md) for evidence and limits.
+What works now:
 
-## Build and run
+- ROM identification (US v1.0 only) and a bounded import of Bob-omb Battlefield:
+  collision, script and macro placements, warps, and the **visible terrain and
+  textures**, decoded from the original geo layouts and Fast3D display lists.
+- An optional wgpu viewer that renders the imported level offscreen to PNG or in a
+  window with a free inspection camera.
+- Exact per-tick trace comparison tooling and a fixed 30 Hz scheduler.
 
-Rust 1.90.0, Cargo, rustfmt, Clippy, and a system linker are required.
-`rust-toolchain.toml` selects the toolchain with rustup. Linux x86_64 is the
-checked platform. Direct crates and transitive dependencies are pinned.
+There is no Mario, collision query, camera logic, object, or mission yet. The
+imported level is independently validated against the pinned decompilation; see
+[docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md).
+
+## Layout
+
+| Crate | Path | Purpose |
+| --- | --- | --- |
+| `rustario64` | `.` | GPU-free core: import, content, simulation scaffolding, traces, headless CLI |
+| `rustario64-render` | `render/` | Optional wgpu renderer and the `rustario64-viewer` development binary |
+
+The core never depends on the renderer, so simulation and replay comparisons run
+without a GPU or window.
+
+## Build and test
+
+Rust 1.90.0 with rustfmt and Clippy is selected by `rust-toolchain.toml`. Linux
+x86_64 is the checked platform. Direct dependencies use exact versions and
+Cargo.lock pins the rest.
 
 ```sh
 rustup toolchain install 1.90.0 --profile minimal --component rustfmt --component clippy
+cargo fmt --all --check
+cargo test --locked --workspace --all-targets
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo build --locked --workspace --release
 cargo run --locked -- demo
-cargo fmt --check
-cargo test --locked --all-targets
-cargo clippy --locked --all-targets -- -D warnings
-cargo build --locked --release
 ```
 
-`demo` decodes an independently authored MIO0/BOB-shaped fixture and runs the
-same ten-second synthetic counter/input replay at 30, 60, 120, and 144 Hz
-presentation schedules. Each produces 300 identical tick records. Interpolation
-and graphics flags are toggled. This tests scaffolding, not Mario movement
-fidelity or original level import.
+Render tests draw small authored models offscreen. Without a GPU adapter they
+skip; set `RUSTARIO64_REQUIRE_GPU=1` to make a missing adapter fail (CI does this
+with Mesa's software Vulkan, `mesa-vulkan-drivers`). The viewer needs a Vulkan,
+Metal, DX12, or GL driver; on Linux the windowed mode also needs X11 or Wayland
+libraries (for example `libxkbcommon-x11-0` on X11).
+
+`demo` decodes an independently authored MIO0/BOB-shaped fixture and runs a
+ten-second synthetic counter/input replay at 30, 60, 120, and 144 Hz presentation
+schedules with identical tick records. This tests scaffolding, not Mario.
 
 ## Use your ROM locally
 
-Only the original 8 MiB US v1.0 revision is accepted, with normalized SHA-1
-`9bef1128717f958171a4afac3ed78ee2bb4e86ce`. Z64, V64, and N64 byte orders are
-normalized before fingerprinting. Regions, hacks, padding, truncation, and edited
-headers are rejected. Identity comes from the pinned decompilation's full hash,
-not the filename or N64 header CRCs.
+Only the original 8 MiB US v1.0 revision is accepted, identified by normalized
+SHA-1 `9bef1128717f958171a4afac3ed78ee2bb4e86ce`. Z64, V64, and N64 byte orders
+are normalized first. Other regions, hacks, padding, truncation, and edited
+headers are rejected. Keep ROMs and everything derived from them private; the
+`private/` directory is git-ignored.
 
 ```sh
-cargo run --locked -- inspect-rom /path/to/your/sm64.z64
-cargo run --locked -- import-bob /path/to/your/sm64.z64 --out private/imports
-RUSTARIO64_ROM=/path/to/your/sm64.z64 cargo test --locked --test import local_us_rom_import -- --ignored --exact
+cargo run --locked -- inspect-rom /path/to/sm64.z64
+cargo run --locked -- import-bob /path/to/sm64.z64 --out private/imports
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --test import local_us_rom_import -- --ignored --exact
 ```
 
-Output goes to `private/imports/<normalized-sha1>-schema2/bob/`:
+### View Bob-omb Battlefield
+
+```sh
+# Offscreen PNG (works headless): views start, overview, summit, top
+cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
+  screenshot /path/to/sm64.z64 --out private/bob.png --view start --size 1280x960
+# Window: WASD move, Q/E down/up, Shift faster, hold right mouse or arrows to look,
+# 1-4 presets, Esc quits
+cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
+  view /path/to/sm64.z64
+```
+
+Graphics-only flags: `--msaa 4`, `--no-fog`, `--no-cull`, `--size WxH`. The
+viewer launches straight into BOB area 1 as a development entry point. The camera
+is a presentation-only inspection camera, not the original game camera. The sky
+is a placeholder color until the skybox is imported; trees, coins, enemies, and
+other objects are not drawn yet (their painted ground shadows are terrain).
+
+### Import export
+
+`import-bob` writes `private/imports/<normalized-sha1>-schema3/bob/`:
 
 | File | Contents |
 | --- | --- |
-| `manifest.json` | Identity, partial-import status, counts, and explicit unsupported-content diagnostics |
-| `level.json` | Course/area IDs, act masks, script and macro placements, warps, Mario start, segment loads, and model references |
-| `collision.json`, `collision.obj` | Original integer collision vertices, ordered surfaces/force words, specials, and environment regions |
-| `terrain-N-32x32.rgba`, `terrain-N.ppm` | Five known segment-7 RGBA5551 textures, with RGBA bytes and alpha-free previews |
+| `manifest.json` | Identity, dependent segments, visible-geometry counts, partial-import status, and every unsupported-content diagnostic |
+| `level.json` | Course/area IDs, act masks, script and macro placements, warps, Mario start, segment loads, model references |
+| `collision.json`, `collision.obj` | Original integer collision vertices, ordered surfaces/force words, specials, environment regions |
+| `visual.json` | Area visual model: batches with decoded materials and vertices, background and camera nodes |
+| `models.json` | Geo models from `LOAD_MODEL_FROM_GEO` that resolve in loaded segments |
+| `visual-NN-<address>-WxH.rgba` | Decoded RGBA8 texture data for the visual model |
+| `terrain-N-32x32.rgba`, `terrain-N.ppm` | The five segment-7 RGBA16 textures, with alpha-free previews |
 
-The OBJ inspects **collision**, not visible terrain. Textures are not yet attached
-to Fast3D materials. The verified import contains 570 vertices, 1,060 collision
-triangles, 17 special placements, 30 script placements, 88 macro placements,
-seven warps, and five textures. Macro records preserve packed yaw, source order,
-and raw parameters; preset defaults and respawn behavior are still missing.
-Global scripts, dependent segments, geometry, callbacks, and behaviors remain
-reported gaps. No ROM code is executed.
-
-The ignored integration test checks exact counts/addresses and source-derived
-digests for every collision and macro field. Ordinary CI uses authored fixtures
-without a ROM. Schema 2 adds macro records and replaces the old untested-status
-manifest field with an explicit partial-import status; schema-1 exports are not
-reused or upgraded automatically.
-
-Exports reserve a new destination and never overwrite files. Remove an old
-private export deliberately or choose another output root to reimport. Hash and
-schema keys are ready for caching; cache loading/reuse is not implemented. Saves
-will be separate. Exports include an ignore rule even under a custom output root.
-Keep ROMs and all ROM-derived output private and out of Git.
+The OBJ shows **collision**, not visible terrain. Exports never overwrite files;
+remove an old export or choose another output root to reimport. Schema 3 adds the
+visual files and new manifest fields; older exports are not reused. Hash/schema
+keys are ready for caching, but cache reuse is not implemented. No ROM code is
+executed: native callbacks referenced by scripts and geo layouts are reported.
 
 ## Trace comparison
 
@@ -82,20 +112,19 @@ cargo run --locked -- demo --trace private/foundation.trace.json
 cargo run --locked -- compare-traces private/foundation.trace.json private/foundation.trace.json
 ```
 
-Existing trace files are not overwritten. Use an oracle and Rust replay once
-those gameplay producers exist. A mismatch fails with the first tick/field.
-Authoritative floats use `f32::to_bits()` integer values, including signed zero,
-with no tolerance. ROM, reference configuration, initial state/world, inputs,
-and gameplay options must match. Empty traces and missing fields fail.
+A mismatch fails with the first tick and field. Authoritative floats compare as
+`f32::to_bits()` integers with no tolerance. See [docs/FIDELITY.md](docs/FIDELITY.md).
 
-See [docs/FIDELITY.md](docs/FIDELITY.md) for the comparison contract and blockers,
-[docs/DECISIONS.md](docs/DECISIONS.md) for module/timing choices, and
-[PROVENANCE.md](PROVENANCE.md) for exact sources and reuse notices.
+## Further reading
+
+[docs/DECISIONS.md](docs/DECISIONS.md) records module, timing, import, and
+rendering decisions; [PROVENANCE.md](PROVENANCE.md) lists exact upstream sources,
+reuse, and dependency terms; [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md)
+holds the owner-ROM evidence.
 
 ## Next increment
 
-Decode BOB geometry layouts and Fast3D materials, including required dependent
-segments, for a Rust renderer. Establish
-the first genuine per-tick oracle trace before porting and claiming faithful
-movement. Imported level, exploration, and mission completion remain distinct
-milestones in the live plan.
+Finish M1 inspection (collision and placement overlays, skybox, object models),
+then start M2 by porting original collision loading and floor/wall/ceiling queries
+with an exact differential harness against the pinned decompilation, and capture
+a stationary original-game per-tick oracle trace before porting Mario's actions.

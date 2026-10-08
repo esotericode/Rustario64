@@ -56,8 +56,12 @@ cargo test --locked --test timing_and_traces
 Tests cover 300 synthetic counter/input ticks at 30/60/120/144 Hz and toggle
 interpolation/graphics flags. They test wrapped angles, discontinuities,
 retained backlog, clock drift, one-bit float changes, signed zero, metadata
-differences, ordered objects, and invalid traces. There is no GPU implementation
-of enhanced lighting/shadows and no real gameplay render-cap coverage.
+differences, ordered objects, and invalid traces. The optional wgpu viewer now
+renders imported BOB terrain and feeds the same fixed 30 Hz clock, but no
+gameplay runs in it, so there is still no real gameplay render-cap coverage.
+Enhanced lighting/shadows are not implemented; the renderer's options (MSAA,
+fog/culling toggles, free camera) live in the render crate and have no path into
+simulation state.
 
 The ignored owner-ROM test is documented in README. It checks original collision
 and macro records against source-derived digests, plus script counts and entry

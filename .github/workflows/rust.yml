@@ -11,13 +11,17 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install pinned Rust
         run: rustup toolchain install 1.90.0 --profile minimal --component rustfmt --component clippy
+      - name: Install software Vulkan for offscreen render tests
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
       - name: Format
-        run: cargo fmt --check
-      - name: Tests (authored fixtures only)
-        run: cargo test --locked --all-targets
+        run: cargo fmt --all --check
+      - name: Tests (authored fixtures only; no ROM)
+        env:
+          RUSTARIO64_REQUIRE_GPU: "1"
+        run: cargo test --locked --workspace --all-targets
       - name: Lint
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Release build
-        run: cargo build --locked --release
+        run: cargo build --locked --workspace --release
       - name: Runnable foundation
         run: cargo run --locked -- demo

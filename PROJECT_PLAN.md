@@ -1,7 +1,7 @@
 # Mario 64 Rust Engine Project Plan
 
 Last updated: 2026-10-08  
-Status: M0 headless foundation passes fixture and owner-ROM checks; early M1 collision/placement/texture import works. Rendering and gameplay comparisons remain missing.
+Status: M0 complete. M1 level rendering works: BOB's original terrain and textures import from the ROM and render through an optional wgpu viewer. Skybox, objects, collision overlay, Mario, and gameplay comparisons remain missing.
 Initial content target: Bob-omb Battlefield from a supported Super Mario 64 ROM.  
 Long-term intent: Support the complete original game through the same engine.
 
@@ -151,7 +151,7 @@ References were checked on 2026-10-08. Links below identify upstream projects; p
 | [queueRAM/sm64tools](https://github.com/queueRAM/sm64tools) | ROM splitting, MIO0, Fast3D and geometry decoding, texture tools, and version configurations. | MIT declaration. Strong candidate for adapting importer algorithms; this project's `libsm64.c` is different from the libsm64 engine-integration project below. |
 | [libsm64/libsm64](https://github.com/libsm64/libsm64) | A library interface for original Mario movement and rendering data, with ROM-based texture and animation extraction. | CC0 declaration. Useful temporary integration or oracle; it does not implement the entire game for us. |
 | [nickmass/libsm64-rust](https://github.com/nickmass/libsm64-rust) | Rust bindings and an example supplying collision and input and retrieving Mario's animated geometry. | MIT declaration. Calls the C library; bindings are not a full Rust translation. |
-| [sm64-port/sm64-port](https://github.com/sm64-port/sm64-port) and [sm64pc/sm64ex](https://github.com/sm64pc/sm64ex) | Native platform integration; sm64ex adds remapping, camera options, external assets, and save handling. | Inspect file and inherited terms before copying; use as references and comparison builds as appropriate. |
+| [sm64-port/sm64-port](https://github.com/sm64-port/sm64-port) and [sm64pc/sm64ex](https://github.com/sm64pc/sm64ex) | Native platform integration; sm64ex adds remapping, camera options, external assets, and save handling. | Inspect file and inherited terms before copying; use as references and comparison builds as appropriate. The `src/pc/gfx` renderer license forbids binary redistribution, so this project does not copy, translate, or derive from it. |
 | [MorsGames/sm64plus](https://github.com/MorsGames/sm64plus) | Camera, interpolation, control changes, and progression options. | Inspect terms before copying. Its gameplay changes make it unsuitable as an unquestioned fidelity oracle. |
 | [coop-deluxe/sm64coopdx](https://github.com/coop-deluxe/sm64coopdx) | Mature gameplay integration, customization, behavior APIs, and multiplayer implementation. | Inspect terms before copying; networking is outside the first milestones. |
 | [Fast-64/fast64](https://github.com/Fast-64/fast64) | Blender tooling and knowledge of N64 geometry and materials. | GPL-3.0 declaration. Useful tooling reference; treat direct code incorporation as a license decision. |
@@ -206,36 +206,37 @@ Every handoff should report the working result, commands actually run, missing f
 
 | Item | Status |
 | --- | --- |
-| Implementation | Runnable headless Rust app: ROM inspection, static BOB import/export path, synthetic diagnostics, exact trace comparison |
-| Initial platform and Rust stack | Linux x86_64; Rust 1.90.0; one package with import/content/simulation/presentation/application boundaries; exact sha1/serde/serde_json dependencies and Cargo.lock |
+| Implementation | Headless core (ROM inspection, BOB static + visual import/export, synthetic diagnostics, exact trace comparison) plus an optional wgpu renderer crate with offscreen PNG screenshots and a windowed inspection viewer |
+| Initial platform and Rust stack | Linux x86_64; Rust 1.90.0; Cargo workspace: `rustario64` (GPU-free core: import/content/simulation/presentation/trace) and `rustario64-render` (wgpu 30.0.1, winit 0.30.13, pollster 1.0.1, png 0.18.1). Exact direct versions and Cargo.lock |
 | Supported ROM revision | US v1.0, exactly 8 MiB, normalized SHA-1 `9bef1128717f958171a4afac3ed78ee2bb4e86ce`; Z64/V64/N64 normalization; supplied Z64 positive path passes |
-| Comparison implementation | Pinned unmodified US n64decomp/original ROM execution target at `9921382a68bb0c865e5e45eb594d9c64db59b1af`; exporter/reference build unavailable |
-| Bob-omb Battlefield | Real ROM exports 570 collision vertices, 1,060 triangles, 17 specials, 30 script placements, 88 macros, seven warps, and five RGBA16 textures; collision/macro records match pinned source exactly; no visible terrain renderer or playable exploration |
+| Comparison implementation | Pinned unmodified US n64decomp/original ROM execution target at `9921382a68bb0c865e5e45eb594d9c64db59b1af`; no oracle build or per-tick exporter yet |
+| Bob-omb Battlefield | Imported level: 1,101 visible area triangles (24 batches, 18 textures) from eight script-named dependent segments, plus the gate/seesaw/grate geo models; collision (570 vertices, 1,060 triangles), 17 specials, 30 script placements, 88 macros, seven warps. Every visible triangle and texture matches independent decomp-derived references. Renders in the viewer. No skybox, objects, collision overlay, Mario, or exploration |
 | Fidelity coverage | Exact trace comparator tested; 300 synthetic counter/input ticks identical at 30/60/120/144 Hz; no original Mario movement/collision/camera coverage |
-| Optional enhancements | Snapshot interpolation with angle wrapping/discontinuity handling; lighting/shadow settings are scaffolding, without rendered effects |
-| Immediate next task | BOB geometry/Fast3D/material decoding, dependent segments, and a Rust viewer; establish genuine per-tick reference traces before movement fidelity claims |
+| Optional enhancements | Graphics-only options: higher resolution, 4x MSAA, culling and fog toggles, free inspection camera. Snapshot interpolation scaffolding. No enhanced lighting/shadows |
+| Immediate next task | M1 completion: collision and placement overlays in the viewer, skybox import, and object models for placements. M2 groundwork: port original collision loading/queries with an exact native-decomp differential harness; capture a stationary original-game oracle trace |
 
-### Implementation session — 2026-10-08
+### Implementation session 1 — 2026-10-08 (M0 and early M1)
 
-- **Inspection:** Repository initially had this brief, AGENTS.md, and a title-only README. The headless foundation was published in draft PR #1, then the owner supplied a supported ROM. AGENTS.md is unchanged.
-- **Actual increment:** M0 runnable headless foundation plus early M1 static-import work. Bounded readers, full-ROM identity, three byte orders, MIO0, segmented references, collision/special/environment records, five RGBA16 textures, local script calls, act masks, script/macro placements and warps. Unknown/malformed commands fail; unsupported dependencies/geometry/behaviors/callbacks are reported. No ROM executable code runs.
-- **Architecture:** Typed course/level/area/act IDs, empty implementation-only behavior registry, static/dynamic collision boundaries, explicit transitions, immutable presentation snapshots, rational 30 Hz scheduler with retained catch-up backlog, and input edges consumed per tick. No approximate Mario equations or C game runtime introduced.
-- **Decisions and reuse:** [docs/DECISIONS.md](docs/DECISIONS.md), [PROVENANCE.md](PROVENANCE.md), and retained MIT/CC0 notices. US offsets are centralized. wgpu/winit are selected for the future renderer boundary; exact versions will be pinned when M1 introduces them. Newly authored code uses MIT.
-- **Run instructions:** [README.md](README.md) documents `demo`, `inspect-rom`, `import-bob`, `compare-traces`, build/lint/test commands, private output, and the ignored owner-ROM check. Exports have ROM/schema keys; cache reuse and saves remain unimplemented.
-- **Checks:** `cargo fmt --check`, `cargo check --locked --all-targets`, 44 tests via `cargo test --locked --all-targets`, pinned Clippy-driver checks with warnings denied, `cargo build --locked --release`, and `demo` passed. The strengthened ignored owner-ROM test also passes when explicitly selected, as do `inspect-rom` and `import-bob` against the supplied ROM. Ordinary CI runs authored fixtures only and never requests/uploads a ROM.
-- **Environment:** Standard cargo-clippy launcher cannot resolve its executable without `/proc/self/exe` in this sandbox. The same pinned Clippy driver is invoked through `RUSTC_WORKSPACE_WRAPPER` with deny-warnings arguments. Local linking uses `RUSTFLAGS='-C linker-features=-lld'` to avoid that environment's lld-wrapper restriction; these are local environment adjustments, not engine dependencies or gameplay flags.
-- **Fidelity:** [docs/FIDELITY.md](docs/FIDELITY.md) defines exact per-tick state/input metadata and first-divergence reporting. Tests include float-bit drift and signed zero. The synthetic counter is not an original-game oracle. No movement, original collision queries, camera, animations, RNG behavior, objects/interactions, or mission has passed a gameplay comparison.
-- **ROM validation:** All original collision and macro records match independently expanded pinned source macros and independently decoded ROM streams. The ignored integration test now requires exact counts/addresses and schema-2 record digests rather than broad smoke thresholds. [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md) records the evidence and scope. Exports remain ignored and private.
-- **Macro decision:** Preserve source order, packed words, quantized signed angles and raw params. The preset table has 366 entries; defaults, behaviors and respawn rules remain diagnosed gaps. Reject legacy hardcoded lists explicitly. Schema 2 records macro placements and partial-import status without a stale developer-verification flag.
-- **Blocked integration:** Matching reference build, per-tick trace exporter/emulator setup, and GPU presentation check remain unavailable. The ROM blocker is resolved; asset checks do not establish gameplay fidelity.
-- **Next task:** Decode geometry layouts and Fast3D/material state (including required dependent segments), and add a Rust viewer. Capture a stationary original-game oracle trace before porting action families.
+- Built the headless foundation: bounded readers, full-ROM identity, three byte orders, MIO0, segmented references, collision/special/environment records, five RGBA16 textures, local script calls, act masks, script/macro placements and warps, typed IDs, behavior registry, static/dynamic collision boundaries, rational 30 Hz scheduler, input edges, snapshot interpolation, and exact per-tick trace comparison.
+- Owner-ROM checks: collision and macro records match independently expanded pinned source exactly ([docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md)). No ROM executable code runs.
+
+### Implementation session 2 — 2026-10-08 (M1 imported level)
+
+- **Inspection:** Continued from `codex/rom-import-foundation` (fast-forwarded onto `claude/gracious-bell-jhqg4y`). All prior checks passed before changes, including the owner-ROM test.
+- **Actual increment:** Dependent segments load from the ROM ranges named by BOB's own level script (bounded MIO0/raw). New bounded geo-layout decoder reproduces original parenting, stack, branch and flag semantics. New Fast3D (F3D_OLD) interpreter converts display lists into engine-owned `VisualModel` batches: vertices, triangles, G_DL calls/branches, tiles, LOADBLOCK/LOADTILE/TLUT, combiner, geometry/othermode, lights, fog, layer render modes. Texture decoding covers RGBA16/32, IA4/8/16, I4/8, CI4/8. Native geo callbacks are reported, never executed; unsupported Fast3D commands are reported with addresses (none occur in BOB area 1).
+- **Renderer:** New `rustario64-render` crate keeps the core GPU-free. It draws batches by original layer order with a generic RDP color-combiner shader, one-light Fast3D shading, `gsSPFogPosition` fog, cutout/translucent blending, decal depth bias, and imported wrap/filter modes. `rustario64-viewer screenshot` renders offscreen PNGs; `rustario64-viewer view` opens a window with a presentation-only free camera and drives the fixed 30 Hz clock (no gameplay systems yet).
+- **Validation:** Every one of the 1,101 area triangles matches an independent expansion of the pinned decomp display-list source in geo order (positions, color/normal bytes, order, layer, texture address). All 18 textures match PNGs produced by the decomp's own `mio0`/`n64graphics` tools. Dependent ROM ranges match sm64tools' pinned US configuration. Model triangle counts match source. Digests are pinned in the ignored owner-ROM test.
+- **Checks run:** `cargo fmt --all --check`; `cargo test --locked --workspace --all-targets` (53 core tests + 3 render tests; GPU tests ran on Mesa lavapipe with `RUSTARIO64_REQUIRE_GPU=1`); `cargo clippy --locked --workspace --all-targets -- -D warnings`; `cargo build --locked --workspace --release`; `demo`; owner-ROM `local_us_rom_import`; `import-bob`; `rustario64-viewer screenshot` for four views; `rustario64-viewer view --frames 90` under Xvfb.
+- **Environment notes:** No GPU here; Mesa's lavapipe (`mesa-vulkan-drivers`) provided Vulkan, Xvfb provided X11, and `libxkbcommon-x11-0` was installed for winit. These are local test-environment installs, not engine dependencies.
+- **Not done / gaps:** Skybox (native `geo_skybox_main` callback), objects and their models from global segments (trees, coins, enemies), `geo_envfx_main` and cannon-circle callbacks, billboards/animated parts at runtime, TEXEL1 sampling, texture-gen accuracy, N64 3-point filtering, and lighting-space verification against original output. The free camera is not the original camera. No gameplay, collision queries, Mario, or missions.
+- **Fidelity:** Unchanged: zero validated gameplay coverage. Rendering correctness is visual, not a simulation claim.
 
 ### Bob-omb Battlefield acceptance tracker
 
 | Capability / act | Actual state |
 | --- | --- |
-| M0 bounded ROM foundation | Authored fixtures and positive owner-ROM integration pass |
-| M1 imported original visible level | Original collision/script/macro/texture import passes; geometry/Fast3D/rendering pending |
+| M0 bounded ROM foundation | Complete: authored fixtures and positive owner-ROM integration pass |
+| M1 imported original visible level | Terrain and textures import and render from the ROM, independently validated; collision inspectable as OBJ export. Viewer collision/placement overlays and skybox pending |
 | M2 playable exploration | Not implemented; no Mario movement/camera/animations or collision queries |
 | Act 1 — King Bob-omb | Not implemented |
 | Act 2 — Koopa the Quick | Not implemented |
@@ -260,5 +261,6 @@ Every handoff should report the working result, commands actually run, missing f
 - 2026-10-08: New Rust engine with selectively adapted gameplay code and a ROM content adapter.
 - 2026-10-08: Bob-omb Battlefield first; shared course/area/act/behavior/warp concepts support eventual full-game expansion.
 - 2026-10-08: Original simulation cadence and measured movement fidelity take priority over visual enhancements.
-- 2026-10-08: Rust 1.90.0 headless foundation, exact serde/serde_json/sha1 dependencies, pinned MIT/CC0 references and US ROM metadata, MIT authored code, and an unmodified US comparison target selected. Owner-ROM static checks pass; oracle checks and future wgpu/winit version selection remain pending.
-- 2026-10-08: Added bounded modern macro placement decoding, schema-2 exports, and independent source-derived collision/macro digests for the owner-ROM integration test. Import data does not apply unimplemented gameplay defaults or respawn rules.
+- 2026-10-08: Rust 1.90.0 headless foundation, exact serde/serde_json/sha1 dependencies, pinned MIT/CC0 references and US ROM metadata, MIT authored code, and an unmodified US comparison target selected.
+- 2026-10-08: Bounded modern macro placement decoding and independent source-derived collision/macro digests. Import data does not apply unimplemented gameplay defaults or respawn rules.
+- 2026-10-08: Workspace split: GPU-free core crate plus optional `rustario64-render` (wgpu 30.0.1 + winit 0.30.13). Fast3D is interpreted at import into engine-owned meshes rather than emulated at draw time. Importer schema 3. sm64-port's gfx code is excluded for license reasons. See [docs/DECISIONS.md](docs/DECISIONS.md).

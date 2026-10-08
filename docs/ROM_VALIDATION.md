@@ -2,13 +2,15 @@
 
 The supplied 8 MiB Z64 ROM matches the supported US v1.0 normalized SHA-1
 `9bef1128717f958171a4afac3ed78ee2bb4e86ce`. ROM inspection, the real BOB import,
-private schema-2 export, and the strengthened local integration test passed on
-Linux x86_64 with Rust 1.90.0. The ROM and exported assets are excluded from git.
+private schema-3 export, the strengthened local integration test, and the viewer
+screenshots passed on Linux x86_64 with Rust 1.90.0. The ROM and exported assets
+are excluded from git.
 
 ```sh
 cargo run --locked -- inspect-rom /path/to/your/sm64.z64
 cargo run --locked -- import-bob /path/to/your/sm64.z64 --out private/imports
 RUSTARIO64_ROM=/path/to/your/sm64.z64 cargo test --locked --test import local_us_rom_import -- --ignored --exact
+cargo run --locked -p rustario64-render --bin rustario64-viewer -- screenshot /path/to/your/sm64.z64 --out private/bob.png
 ```
 
 | Imported component | Observed result | Validation |
@@ -17,7 +19,11 @@ RUSTARIO64_ROM=/path/to/your/sm64.z64 cargo test --locked --test import local_us
 | Collision at 0x0700E958 | 570 vertices; 1,060 ordered triangles; 17 specials; no environment regions | Every decoded field/order and all 9,972 source bytes match the pinned collision macros |
 | Macros at 0x0701104C | 88 records; 882 bytes including terminator | Every packed word, preset, signed coordinate, angle, raw parameter, address, and record order matches the pinned macro list |
 | Level entry at 0x0E000264 | One area, 30 script placements, seven warps; start yaw 135 at (-6558, 0, 6464) | Unique reference segment-load pattern, source placement/warp counts and start fields; no runtime execution |
-| Textures | Five segment-7 RGBA16 textures, 32×32 | Real decode/export succeeds; color/alpha arithmetic checked by authored fixtures; Fast3D material use and rendered appearance untested |
+| Segment-7 textures | Five RGBA16 textures, 32×32 | Pixel-identical to the decomp toolchain's extraction (below) |
+| Dependent segments | 0x09, 0x0A, 0x05, 0x0C, 0x06, 0x0D, 0x08, 0x0F from the script's own LOAD commands | ROM ranges equal sm64tools' pinned US block boundaries |
+| Area geo layout 0x0E000488 | Ocean skybox background, camera node, six display lists (layers 1, 1, 6, 4, 1, 1) | Same nodes and order as the pinned `areas/1/geo.inc.c` |
+| Visible area geometry | 1,101 triangles, 24 material batches, 18 textures (17 RGBA16, 1 IA16); no unsupported Fast3D commands | Every triangle matches the independently expanded display-list source; every texture matches decomp-tool PNGs |
+| Geo models | Chain-chomp gate 2, seesaw 12, grate 3 triangles; bubbly tree reported (segment 0x16 not loaded) | Triangle counts match `levels/bob/*/model.inc.c` |
 
 ## Independent ground truth
 
@@ -48,6 +54,40 @@ absent force words. Deliberate serialization changes require a schema update and
 fresh independent expectations. The ordinary fixture tests exercise malformed
 records, bounds, all 128 packed yaw values, legacy dispatch, and terminators.
 
+## Visible geometry ground truth
+
+A second one-off script (`python3 -I`, outside the repository) parsed the pinned
+`levels/bob/areas/1/*/model.inc.c` vertex arrays and display lists, followed the
+`GEO_DISPLAY_LIST` order from `areas/1/geo.inc.c`, and expanded `gsSPVertex`,
+`gsSP1Triangle`, `gsSP2Triangles`, `gsSPDisplayList`, `gsSPBranchList` and
+`gsSPEndDisplayList` into a 16-slot vertex buffer and a drawn-triangle stream. It
+compared every triangle vertex (integer position and the four color/normal bytes),
+the draw order, the drawing layer, and the address of the last
+`gsDPSetTextureImage` with Rust's exported `visual.json`. All 1,101 match.
+
+Textures were checked against a different implementation: the decomp's own
+`tools/sm64tools/mio0` and `n64graphics`, built from the pinned tree, extracted
+each of the 18 bound textures from the owner ROM using the offsets and formats in
+the pinned `assets.json`, as `extract_assets.py` does. Every RGBA8 pixel matches
+Rust's decode. Asset names that alias identical ROM bytes were accepted when their
+format and dimensions agree.
+
+| Reference data | SHA-1 |
+| --- | --- |
+| Drawn triangle stream `[[x,y,z,r,g,b,a] x3]...`, compact JSON | `f6ac0b00e30b5bb0583fb4f3dfc1670f411b3f74` |
+| RGBA8 of the 18 bound textures, concatenated by source address | `cc0c962ef7fa0a8ae9f2d6ec1f7fb0ec8ee1cf14` |
+
+The ignored owner-ROM test pins both digests, the dependent-segment ranges, the
+batch/triangle/model counts, and the background. Fixture command words in
+`tests/visual.rs` come from compiling the pinned `gbi.h` macros (F3D_OLD) with gcc,
+for example `gsSPVertex(v, 15, 0)` = `04E000F0`, `gsSPFogPosition(980, 1000)` =
+`BC000008 1900E800`, and `G_RM_AA_ZB_XLU_SURF | G_RM_AA_ZB_XLU_SURF2` = `005049D8`.
+
+What this does not establish: UV normalization, combiner results, lighting
+space, fog curve, and blending are checked only by authored fixtures, GPU pixel
+tests on authored models, and visual review of screenshots. No comparison with
+original rendered frames has been made.
+
 ## Remaining checks
 
 Static script parsing reports global calls and missing dependent segments.
@@ -55,9 +95,10 @@ Original spawn ordering, preset defaults, respawn mutation, executable behaviors
 native callbacks, and object interactions remain unimplemented. No behavior
 address has been promoted to an implemented runtime behavior.
 
-Geometry layouts, Fast3D/material decoding, animation import, GPU presentation,
+Skybox import, object models from globally loaded segments, animation import,
 collision queries, Mario actions, camera, audio, and missions are missing. No
 movement or collision fidelity claim follows from matching the asset streams.
 There is still no matching oracle build/emulator exporter or genuine gameplay
-trace. The next content task is geometry/Fast3D decoding and a viewer; the next
-fidelity task is a reproducible per-tick original-game spawn trace.
+trace. The next content tasks are viewer overlays for collision and placements,
+the skybox, and object models; the next fidelity tasks are an exact differential
+harness for collision loading/queries and a per-tick original-game spawn trace.
