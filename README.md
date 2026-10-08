@@ -12,14 +12,17 @@ What works now:
   textures**, decoded from the original geo layouts and Fast3D display lists.
 - An optional wgpu viewer that renders the imported level offscreen to PNG or in a
   window with a free inspection camera, with collision and placement overlays.
-- The original static collision loader and floor/ceiling/wall/water queries, and
-  the trig/approach math utilities (tables loaded from your ROM), ported to Rust
-  and verified bit for bit against the pinned decompilation's C.
+- The original static collision loader and floor/ceiling/wall/water queries, the
+  trig/approach math utilities (tables loaded from your ROM), and Mario's physics
+  steps from `mario_step.c` (ground, air, and stationary steps, ledge grabs,
+  gravity, wind), ported to Rust and verified bit for bit against the pinned
+  decompilation's C.
 - Exact per-tick trace comparison tooling and a fixed 30 Hz scheduler.
 
-There is no Mario, camera logic, object, or mission yet. The
-imported level is independently validated against the pinned decompilation; see
-[docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md).
+Mario is not playable yet: the physics steps exist and are tested on their own,
+but there are no actions, input handling, spawn, camera logic, animation,
+objects, or missions. The imported level is independently validated against the
+pinned decompilation; see [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md).
 
 ## Layout
 
@@ -27,7 +30,7 @@ imported level is independently validated against the pinned decompilation; see
 | --- | --- | --- |
 | `rustario64` | `.` | GPU-free core: import, content, simulation scaffolding, traces, headless CLI |
 | `rustario64-render` | `render/` | Optional wgpu renderer and the `rustario64-viewer` development binary |
-| `rustario64-oracle` | `oracle/` | Development-only: pinned CC0 decomp collision C compiled natively for bitwise differential tests (needs a C compiler); never a runtime dependency |
+| `rustario64-oracle` | `oracle/` | Development-only: pinned CC0 decomp collision, math, and Mario step C compiled natively for bitwise differential tests (needs a C compiler); never a runtime dependency |
 
 The core never depends on the renderer, so simulation and replay comparisons run
 without a GPU or window.
@@ -48,7 +51,8 @@ cargo run --locked -- demo
 ```
 
 Oracle tests compile vendored decomp C with the system C compiler and compare it
-with the Rust collision port on authored streams; see [oracle/README.md](oracle/README.md).
+with the Rust collision, math, and Mario step ports on authored data; see
+[oracle/README.md](oracle/README.md).
 Render tests draw small authored models offscreen. Without a GPU adapter they
 skip; set `RUSTARIO64_REQUIRE_GPU=1` to make a missing adapter fail (CI does this
 with Mesa's software Vulkan, `mesa-vulkan-drivers`). The viewer needs a Vulkan,
@@ -73,11 +77,12 @@ cargo run --locked -- import-bob /path/to/sm64.z64 --out private/imports
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --test import local_us_rom_import -- --ignored --exact
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test collision bob_collision -- --ignored --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked -p rustario64-oracle --test math rom_trig -- --ignored --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test mario_step bob_steps -- --ignored --nocapture
 ```
 
-The oracle tests compare BOB's real collision (about four million queries) and
-the ROM's trig tables (about four million lookups) between the Rust port and the
-decomp C.
+The oracle tests compare BOB's real collision (about four million queries), the
+ROM's trig tables (about four million lookups), and Mario's physics steps on BOB
+(1.18 million step calls) between the Rust port and the decomp C.
 
 ### View Bob-omb Battlefield
 
@@ -139,9 +144,10 @@ holds the owner-ROM evidence.
 
 ## Next increment
 
-Extend the native-decomp oracle to Mario (unmodified pinned Mario sources on the
-verified decomp collision, emitting per-tick traces), then port Mario's state,
-spawn, and first stationary/walking actions against exact per-tick traces.
-libsm64 was audited and is not used as a fidelity oracle (see DECISIONS.md).
-In parallel, finish M1 presentation gaps: skybox and object models for
-placements.
+Extend the native-decomp oracle from the physics steps to the per-tick Mario
+update (mario.c's input, floor, and action dispatch plus the stationary and
+moving actions, emitting schema-1 traces), then port Mario's spawn, input
+processing, and first stationary/walking actions against exact per-tick traces
+on BOB. libsm64 was audited and is not used as a fidelity oracle (see
+DECISIONS.md). In parallel, finish M1 presentation gaps: skybox and object
+models for placements.

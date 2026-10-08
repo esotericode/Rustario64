@@ -17,6 +17,13 @@ typedef s8 RoomData;
 typedef TerrainData Vec3Terrain[3];
 typedef uintptr_t BehaviorScript;
 
+/* As in the pinned include/types.h for non-IDO builds. */
+#ifdef AVOID_UB
+#define BAD_RETURN(cmd) void
+#else
+#define BAD_RETURN(cmd) cmd
+#endif
+
 struct Surface {
     TerrainData type;
     TerrainData force;
@@ -45,7 +52,10 @@ struct GraphNodeObject {
     struct GraphNode node;
     s8 areaIndex;
     s8 activeAreaIndex;
+    Vec3s angle;
+    Vec3f pos;
     Mat4 *throwMatrix;
+    Vec3f cameraToObject;
 };
 
 struct ObjectNode {
@@ -66,7 +76,39 @@ struct Object {
     f32 oPosZ;
 };
 
+struct MarioBodyState {
+    s8 wingFlutter;
+};
+
+struct Area {
+    u16 terrainType;
+};
+
+/* Only the fields read or written by the vendored step code and helpers. */
 struct MarioState {
+    u16 input;
     u32 flags;
+    u32 action;
+    u32 terrainSoundAddend;
+    Vec3s faceAngle;
+    Vec3s angleVel;
+    Vec3f pos;
+    Vec3f vel;
+    f32 forwardVel;
+    f32 slideVelX;
+    f32 slideVelZ;
+    struct Surface *wall;
+    struct Surface *ceil;
+    struct Surface *floor;
+    f32 ceilHeight;
+    f32 floorHeight;
+    s16 floorAngle;
+    s16 waterLevel;
+    struct Object *marioObj;
+    struct Area *area;
+    struct MarioBodyState *marioBodyState;
+    f32 peakHeight;
+    f32 quicksandDepth;
+    f32 gettingBlownGravity;
 };
 #endif

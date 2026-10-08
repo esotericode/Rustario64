@@ -62,6 +62,77 @@ unsafe extern "C" {
     fn oracle_atan2f(y: f32, x: f32) -> f32;
     fn oracle_approach_s32(current: i32, target: i32, inc: i32, dec: i32) -> i32;
     fn oracle_approach_f32(current: f32, target: f32, inc: f32, dec: f32) -> f32;
+    fn oracle_mario_call(state: *mut OracleMario, which: i32, arg: u32) -> i32;
+    fn oracle_constant_count() -> i32;
+    fn oracle_constant(i: i32, value: *mut i64) -> *const std::ffi::c_char;
+}
+
+/// Flat MarioState plus the world inputs the step code reads (layout matches
+/// `OracleMario` in c/oracle.c). Surfaces: index, -1 NULL, -2 water pseudo-floor.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct OracleMario {
+    pub input: u16,
+    pub flags: u32,
+    pub action: u32,
+    pub terrain_sound_addend: u32,
+    pub face_angle: [i16; 3],
+    pub angle_vel: [i16; 3],
+    pub pos: [f32; 3],
+    pub vel: [f32; 3],
+    pub forward_vel: f32,
+    pub slide_vel_x: f32,
+    pub slide_vel_z: f32,
+    pub wall: i32,
+    pub ceil: i32,
+    pub floor: i32,
+    pub ceil_height: f32,
+    pub floor_height: f32,
+    pub floor_angle: i16,
+    pub water_level: i16,
+    pub peak_height: f32,
+    pub quicksand_depth: f32,
+    pub getting_blown_gravity: f32,
+    pub wing_flutter: i8,
+    pub gfx_pos: [f32; 3],
+    pub gfx_angle: [i16; 3],
+    pub global_timer: u32,
+    pub area_terrain_type: u16,
+    pub level_num: i16,
+    pub water_pseudo_origin_offset: f32,
+    pub include_intangible: i16,
+}
+
+/// Functions callable through `Oracle::mario_call`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MarioCall {
+    GroundStep,
+    AirStep(u32),
+    StationaryGroundStep,
+    StopAndSetHeightToFloor,
+    BonkReflection(bool),
+    ApplyGravity,
+    ApplyVerticalWind,
+    VelFromPitchAndYaw,
+    VelFromYaw,
+    SetForwardVel(f32),
+    UpdateMovingSand,
+    UpdateWindyGround,
+}
+
+/// (name, value) for every constant the C side evaluated from the real headers.
+pub fn decomp_constants() -> Vec<(String, i64)> {
+    let _guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    // SAFETY: the table is static; names are NUL-terminated string literals.
+    unsafe {
+        (0..oracle_constant_count())
+            .map(|i| {
+                let mut value = 0;
+                let name = std::ffi::CStr::from_ptr(oracle_constant(i, &mut value));
+                (name.to_string_lossy().into_owned(), value)
+            })
+            .collect()
+    }
 }
 
 static LOCK: Mutex<()> = Mutex::new(());
@@ -221,6 +292,38 @@ impl Oracle {
             num_walls,
             walls: walls.map(index),
         }
+    }
+
+    /// Inject trig tables (0x1400 sine/cosine entries, 0x401 arctan entries).
+    pub fn set_trig(&self, sine: &[f32], arctan: &[u16]) {
+        assert_eq!(sine.len(), 0x1400);
+        assert_eq!(arctan.len(), 0x401);
+        let arctan: Vec<i16> = arctan.iter().map(|&v| v as i16).collect();
+        // SAFETY: both slices have exactly the lengths the C side copies.
+        unsafe { oracle_set_trig(sine.as_ptr(), arctan.as_ptr()) };
+    }
+
+    /// Run one mario_step.c function on the flat state, in place.
+    pub fn mario_call(&self, state: &mut OracleMario, call: MarioCall) -> i32 {
+        let (which, arg) = match call {
+            MarioCall::GroundStep => (0, 0),
+            MarioCall::AirStep(arg) => (1, arg),
+            MarioCall::StationaryGroundStep => (2, 0),
+            MarioCall::StopAndSetHeightToFloor => (3, 0),
+            MarioCall::BonkReflection(negate) => (4, u32::from(negate)),
+            MarioCall::ApplyGravity => (5, 0),
+            MarioCall::ApplyVerticalWind => (6, 0),
+            MarioCall::VelFromPitchAndYaw => (7, 0),
+            MarioCall::VelFromYaw => (8, 0),
+            MarioCall::SetForwardVel(v) => (9, v.to_bits()),
+            MarioCall::UpdateMovingSand => (10, 0),
+            MarioCall::UpdateWindyGround => (11, 0),
+        };
+        for s in [state.wall, state.ceil, state.floor] {
+            assert!(s == -1 || s == -2 || (0..self.surfaces as i32).contains(&s));
+        }
+        // SAFETY: `state` is a valid OracleMario; surface indices were checked.
+        unsafe { oracle_mario_call(state, which, arg) }
     }
 
     pub fn find_water_level(&self, x: f32, z: f32) -> f32 {

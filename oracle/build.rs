@@ -7,6 +7,7 @@ fn main() {
         "c/decomp/src/engine/surface_load.c",
         "c/decomp/src/engine/surface_collision.c",
         "c/decomp/src/engine/math_util.c",
+        "c/decomp/src/game/mario_step.c",
     ];
     let mut build = cc::Build::new();
     build
@@ -14,7 +15,12 @@ fn main() {
         .opt_level(2)
         .include("c/shim")
         .include("c/decomp/src/engine")
+        .include("c/decomp/src")
         .include("c/decomp/include")
+        .include("c/decomp")
+        // The decomp's macros.h requires these for non-IDO compilers.
+        .define("NON_MATCHING", None)
+        .define("VERSION_US", "1")
         // Standard-compliant table access (gCosineTable = gSineTable + 0x400).
         .define("AVOID_UB", None)
         // MIPS integer arithmetic wraps; make that defined for the host compiler too.

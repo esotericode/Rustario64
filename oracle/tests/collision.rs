@@ -15,7 +15,7 @@ impl Lcg {
             .0
             .wrapping_mul(6364136223846793005)
             .wrapping_add(1442695040888963407);
-        (self.0 >> 33) as u32
+        (self.0 >> 32) as u32
     }
     fn range(&mut self, lo: i32, hi: i32) -> i32 {
         lo + (self.next() % (hi - lo + 1) as u32) as i32
@@ -366,6 +366,23 @@ fn query_points(world: &CollisionWorld, seed: u64, random: usize) -> Vec<([f32; 
                 points.push(([x + dx, y + 20.0, z + dz], 50.0));
                 points.push(([x + dx, y - 100.0, z + dz], 120.0));
             }
+        }
+    }
+    // Either side of the 78-unit floor and ceiling buffers, above and below each
+    // surface's plane at its centroid.
+    for s in world.surfaces().iter().take(400) {
+        if s.normal[1] == 0.0 {
+            continue;
+        }
+        let centroid = |axis: usize| {
+            (i32::from(s.vertex1[axis]) + i32::from(s.vertex2[axis]) + i32::from(s.vertex3[axis]))
+                as f32
+                / 3.0
+        };
+        let (x, z) = (centroid(0), centroid(2));
+        let h = -(s.normal[0] * x + s.normal[2] * z + s.origin_offset) / s.normal[1];
+        for dy in [-78.5, -77.5, 77.5, 78.5] {
+            points.push(([x, h + dy, z], 50.0));
         }
     }
     for border in (-8192..=8192).step_by(1024) {

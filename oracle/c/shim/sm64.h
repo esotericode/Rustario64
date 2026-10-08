@@ -1,16 +1,13 @@
-/* Authored shim (MIT, Rustario64): the constants and declarations the vendored
- * collision files need. Values are copied from the pinned decomp headers named. */
+/* Authored shim (MIT, Rustario64). Layers host declarations over the pinned
+ * decomp's real include/sm64.h, so original constants come from the original
+ * headers. object_fields.h is stubbed: these shim structs use plain fields. */
 #ifndef ORACLE_SM64_H
 #define ORACLE_SM64_H
 #include <math.h>
 #include "types.h"
-#include "surface_terrains.h"
+#include_next "sm64.h"
+#include "level_table.h"
 
-#define UNUSED
-#define CN_DEBUG_PRINTF(args)
-#define MARIO_VANISH_CAP 0x00000002              /* include/sm64.h */
-#define ACTIVE_FLAG_IN_DIFFERENT_ROOM (1 << 3)   /* include/object_constants.h */
-#define ACTIVE_FLAG_MOVE_THROUGH_GRATE (1 << 6)  /* include/object_constants.h */
 #define GRAPH_RENDER_ACTIVE (1 << 0)             /* src/engine/graph_node.h */
 #define TIME_STOP_ACTIVE (1 << 6)                /* src/game/object_list_processor.h */
 #define MEMORY_POOL_LEFT 0                       /* src/game/memory.h */
@@ -40,6 +37,8 @@ extern s32 gNumStaticSurfaceNodes;
 extern s32 gNumStaticSurfaces;
 extern struct NumTimesCalled gNumCalls;
 extern const BehaviorScript bhvDDDWarp[];
+extern u32 gGlobalTimer;
+extern s16 gCurrLevelNum;
 
 void *main_pool_alloc(u32 size, u32 side);
 void *segmented_to_virtual(const void *addr);

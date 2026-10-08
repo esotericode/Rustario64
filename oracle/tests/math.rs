@@ -13,7 +13,7 @@ impl Lcg {
             .0
             .wrapping_mul(6364136223846793005)
             .wrapping_add(1442695040888963407);
-        (self.0 >> 33) as u32
+        (self.0 >> 32) as u32
     }
     fn f(&mut self, scale: f32) -> f32 {
         (self.next() as f32 / u32::MAX as f32 - 0.5) * 2.0 * scale

@@ -1,10 +1,11 @@
 # Comparison contract and coverage
 
 Original movement, actions, camera, RNG, objects, and interactions have **zero
-validated gameplay coverage**. Static collision loading and collision queries now
-have exact coverage against the pinned decomp compiled natively (below); that is
-component coverage, not per-tick gameplay coverage. The diagnostic marker
-visualizes a tick counter; it is not a Mario approximation.
+validated gameplay coverage**. Static collision loading and queries, the math
+utilities, and Mario's physics steps (mario_step.c) have exact coverage against
+the pinned decomp compiled natively (below); that is component coverage, not
+per-tick gameplay coverage, because no Mario action runs yet. The diagnostic
+marker visualizes a tick counter; it is not a Mario approximation.
 
 Target US v1.0 at n64decomp/sm64 revision
 9921382a68bb0c865e5e45eb594d9c64db59b1af, ROM SHA-1
@@ -81,14 +82,21 @@ Rust port bit for bit:
 | All 16x16 cells x floor/ceiling/wall x static/dynamic lists, in order | Identical | Identical |
 | find_floor (camera and intangible-flag variants, including the flag's clearing) | Identical | Identical |
 | find_ceil, find_wall_collisions (3 offsets, radius 0–260, vanish-wall and camera variants), water and gas levels | Identical | Identical |
-| Comparisons / non-trivial hits | 795,000; 48,806 floors, 14,040 ceilings, 25,548 wall pushes, 1,783 intangible-affected floors, water and gas hits | 4,064,920; 377,720 floors, 17,648 ceilings, 60,924 wall pushes |
+| Comparisons / non-trivial hits | 857,400; 58,638 floors, 14,560 ceilings, 27,576 wall pushes, 1,321 intangible-affected floors, 5,862 water and 9,681 gas hits | 4,064,920; 401,248 floors, 18,122 ceilings, 61,292 wall pushes |
 
-Query points include random positions, every vertex with small offsets, all
-cell borders with offsets around the 50-unit overlap, and large coordinates that
-wrap through (s16) casts. Mutation checks: changing the cell insertion tie order,
-the 78-unit floor buffer, or the wall push sign each fails the CI test. Rounding
-instead of truncating the wall-query position was not detected, because the
-original's 50-unit cell overlap makes it unobservable for these fixtures.
+Query points include random positions, every vertex with small offsets, points
+0.5 units either side of the 78-unit floor and ceiling buffers at each surface's
+centroid, all cell borders with offsets around the 50-unit overlap, and large
+coordinates that wrap through (s16) casts. Mutation checks: changing the cell
+insertion tie order, the floor or ceiling 78-unit buffer, or the wall push sign
+each fails the CI test. Rounding instead of truncating the wall-query position
+was not detected, because the original's 50-unit cell overlap makes it
+unobservable for these fixtures.
+
+The test generator's random numbers were corrected on 2026-10-08: it had
+returned 31 bits, so float ranges were sampled only in their lower half. The
+counts above are from the corrected generator; the same tests also passed
+before the fix.
 
 Math utilities: `sins`/`coss` for 196,608 integer inputs (three wraps), `atan2s`
 and `atan2f` on 1.6 million points (signed zeros, infinities, equal magnitudes,
@@ -97,16 +105,50 @@ each match the natively compiled decomp bit for bit, both with authored tables
 (CI) and with the owner ROM's tables (3,993,600 comparisons). NaN inputs to
 atan2s are outside coverage.
 
+## Mario step component coverage
+
+The oracle also compiles the pinned, unmodified mario_step.c with mario.c's
+`mario_set_forward_vel`, `resolve_and_return_wall_collisions`, `vec3f_find_ceil`,
+`mario_get_terrain_sound_addend`, and `sTerrainSounds` copied verbatim. Each
+check copies one Rust `MarioState` into the C struct, runs the same function on
+both sides, and compares every field afterwards (f32 as bits, floor/wall/ceiling
+references by index) and the return value. The first difference fails with the
+call and field name.
+
+| Check | Authored terrain (CI) | BOB, owner ROM (ignored test) |
+| --- | --- | --- |
+| Terrain and tables | 3 seeded streams: typed floor grids, force floors (moving sand, wind), walls including burning walls, ledges, low and hangable ceilings, a flat tunnel with 159/160/240-unit gaps, water boxes; computed trig tables | BOB collision; ROM trig tables |
+| Calls | 14 single calls per state (ground step, air step with each ledge/hang flag set, stationary step, stop-and-set-height, bonk reflection, gravity, vertical wind, both velocity-from-angle helpers, set-forward-vel, moving sand, windy ground) plus a 45-tick air-then-ground sequence | Same |
+| States | 2,100: random actions, flags, caps, angles, speeds; ledge approaches, wall-facing ground states at the wall-angle thresholds, tunnel states | 20,000 |
+| Comparisons, all identical | 123,900 | 1,180,000 |
+| Ground step results (left ground / none / hit wall) | 1,173 / 27,537 / 44,513 | 11,518 / 538,080 / 166,256 |
+| Air step results (none / landed / wall / ledge / ceiling / lava wall) | 17,304 / 4,556 / 8,403 / 5 / 24 / 1,485 | 238,574 / 28,724 / 13,164 / 3,684 / 0 / 0 |
+| Moving sand, windy ground, water pseudo-floor | 38 / 19 / 3,186 | none on BOB |
+
+The CI test asserts that every reachable step result, moving sand, wind, and the
+pseudo-floor occur. Mutation checks: the ledge probe distance 60 to 59,
+dropping the floor normal's Y factor from the ground quarter-step displacement,
+the wall-angle bound 0x2AAA to 0x2AAB, and the 160-unit ceiling gap `>` to `>=`
+each fail the CI test.
+
+Not covered: mario_update_quicksand and mario_push_off_steep_floor (not ported),
+the paths where the original dereferences NULL or reads past a table (the port
+panics), object (dynamic) surfaces, and anything that depends on action code,
+input processing, or the camera. Single calls from generated states show the
+step functions match; they do not show that Mario reaches those states the same
+way, which needs action ports and per-tick traces.
+
 Limits: dynamic (object) surfaces, rooms, and float-to-int casts of values
 beyond the s32 range are not covered. Native IEEE single precision is assumed to
 match the N64 for these operations until original-execution traces confirm it.
 
 ## Next reference work
 
-1. Extend the native-decomp oracle to Mario: compile the pinned, unmodified
-   Mario/action/step sources against the vendored decomp collision with authored
-   shims, and emit schema-1 per-tick traces. libsm64 was audited and rejected as
-   a fidelity oracle because it changes collision ordering (DECISIONS.md).
+1. Extend the native-decomp oracle from mario_step.c to the per-tick Mario
+   update: mario.c's input, floor, and action dispatch plus the stationary and
+   moving action files, with authored shims for objects, camera, sound, and
+   animation, emitting schema-1 per-tick traces. libsm64 was audited and rejected
+   as a fidelity oracle because it changes collision ordering (DECISIONS.md).
    Separately, obtain an unmodified matching US build and emulator trace
    exporter so native results can be checked against original execution.
 2. Add a reference exporter around each completed simulation tick, reproducible
