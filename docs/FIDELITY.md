@@ -103,9 +103,12 @@ match the N64 for these operations until original-execution traces confirm it.
 
 ## Next reference work
 
-1. Obtain an unmodified matching US reference build using the supplied ROM, or
-   evaluate pinned libsm64 (CC0) as a Mario-movement oracle after auditing its
-   changes to the decomp's movement and surface code.
+1. Extend the native-decomp oracle to Mario: compile the pinned, unmodified
+   Mario/action/step sources against the vendored decomp collision with authored
+   shims, and emit schema-1 per-tick traces. libsm64 was audited and rejected as
+   a fidelity oracle because it changes collision ordering (DECISIONS.md).
+   Separately, obtain an unmodified matching US build and emulator trace
+   exporter so native results can be checked against original execution.
 2. Add a reference exporter around each completed simulation tick, reproducible
    initial world/state and tick input, and recorded build/emulator/platform
    configuration. Instrumentation must not change arithmetic or update order.

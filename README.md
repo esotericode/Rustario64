@@ -139,8 +139,9 @@ holds the owner-ROM evidence.
 
 ## Next increment
 
-Choose and audit a per-tick Mario oracle (an unmodified reference build with a
-trace exporter, or pinned libsm64 after auditing its changes), then port Mario's
-state, spawn, and first stationary/walking actions against exact per-tick traces.
+Extend the native-decomp oracle to Mario (unmodified pinned Mario sources on the
+verified decomp collision, emitting per-tick traces), then port Mario's state,
+spawn, and first stationary/walking actions against exact per-tick traces.
+libsm64 was audited and is not used as a fidelity oracle (see DECISIONS.md).
 In parallel, finish M1 presentation gaps: skybox and object models for
 placements.

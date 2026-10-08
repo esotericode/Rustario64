@@ -200,3 +200,23 @@ the original's sine reads running into the cosine table. `sins`/`coss` take
 integer expressions and cast them to u16 like the macros. atan2f keeps the
 original double-precision expression. Geo-layout presentation transforms still
 use float trigonometry; gameplay code must use these tables.
+
+## Mario oracle selection — 2026-10-08
+
+Audited [libsm64 at fd11813208272b4271d92bd92feb8f3fdbe61be5](https://github.com/libsm64/libsm64/tree/fd11813208272b4271d92bd92feb8f3fdbe61be5)
+(CC0) against the pinned decomp. Its collision replaces the 16x16 partition with
+a scan of every loaded surface and keeps the highest floor / lowest ceiling rather
+than the first match in the original's sorted cell lists, takes the water level
+from a Mario field instead of water boxes, and compares normals in f32. Its Mario
+sources follow an older decomp revision with adaptations (terrain type, animation
+loading, removed object and sound hooks). Those changes alter defined original
+quirks, so libsm64 is **not** used as a fidelity oracle.
+
+The per-tick Mario oracle will instead extend the native-decomp approach already
+verified for collision and math: compile the pinned, unmodified mario.c,
+mario_step.c, and action files against the vendored decomp collision, with
+authored shims for objects, camera inputs, sound, and animation data (libsm64's
+shims are a useful map of what needs stubbing). It records per-tick state in the
+trace schema. A native build is still not original-hardware evidence; traces
+from original execution remain the eventual authority, and differences between
+the two must be explained before claiming fidelity.
