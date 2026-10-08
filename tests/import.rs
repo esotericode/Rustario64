@@ -1,6 +1,6 @@
 //! All bytes here are independently authored, never extracted from a ROM.
 use rustario64::{
-    content::{Act, ActMask, AreaId, CourseId, LevelId},
+    content::{Act, ActMask, AreaId, CourseId, LevelId, visual::Background},
     diagnostics,
     import::{
         bob, collision, level, macros, mio0,
@@ -498,5 +498,77 @@ fn local_us_rom_import() {
             Sha1::digest(serde_json::to_vec(&area.macro_spawns).unwrap())
         ),
         "b3bb06ce2e341e7b47fae1653f586464a76686b9"
+    );
+    // Dependent segments come from ROM ranges named by the level script itself;
+    // these match the pinned sm64tools US configuration's block boundaries.
+    let ranges: Vec<_> = imported
+        .loaded_segments
+        .iter()
+        .map(|s| (s.segment, s.rom_start, s.rom_end, s.mio0))
+        .collect();
+    assert_eq!(
+        ranges,
+        [
+            (0x09, 0x32D070, 0x334B30, true),
+            (0x0A, 0x2AC6B0, 0x2B8F10, true),
+            (0x05, 0x134D20, 0x13B5D0, true),
+            (0x0C, 0x13B5D0, 0x13B910, false),
+            (0x06, 0x1C4230, 0x1D7C90, true),
+            (0x0D, 0x1D7C90, 0x1D8310, false),
+            (0x08, 0x1F2200, 0x2008D0, true),
+            (0x0F, 0x2008D0, 0x201410, false),
+        ]
+    );
+    let visual = imported.visual.as_ref().unwrap();
+    assert_eq!(visual.model.triangle_count(), 1101);
+    assert_eq!(visual.model.batches.len(), 24);
+    assert_eq!(visual.background, Some(Background::Skybox(0)));
+    // Every drawn triangle as [x, y, z, r, g, b, a] per vertex, in draw order.
+    // Digest from an independent expansion of the pinned decompilation's BOB
+    // display-list source in geo order; see docs/ROM_VALIDATION.md.
+    let stream: Vec<Vec<Vec<i64>>> = visual
+        .model
+        .batches
+        .iter()
+        .flat_map(|b| b.vertices.chunks_exact(3))
+        .map(|tri| {
+            tri.iter()
+                .map(|v| {
+                    let mut row: Vec<i64> = v.position.iter().map(|&p| p as i64).collect();
+                    row.extend(v.color.iter().map(|&c| i64::from(c)));
+                    row
+                })
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        format!("{:x}", Sha1::digest(serde_json::to_vec(&stream).unwrap())),
+        "f6ac0b00e30b5bb0583fb4f3dfc1670f411b3f74"
+    );
+    // RGBA8 of all 18 bound textures in source-address order; matches PNGs made by
+    // the pinned decompilation's own mio0/n64graphics extraction tools.
+    let mut textures: Vec<_> = visual.model.textures.iter().collect();
+    textures.sort_by_key(|t| t.source);
+    let mut digest = Sha1::new();
+    for texture in &textures {
+        digest.update(&texture.rgba);
+    }
+    assert_eq!(textures.len(), 18);
+    assert_eq!(
+        format!("{:x}", digest.finalize()),
+        "cc0c962ef7fa0a8ae9f2d6ec1f7fb0ec8ee1cf14"
+    );
+    let models: Vec<_> = imported
+        .models
+        .iter()
+        .map(|m| (m.model, m.geometry_layout, m.visual.triangle_count()))
+        .collect();
+    assert_eq!(
+        models,
+        [
+            (54, 0x0E000440, 2),
+            (55, 0x0E000458, 12),
+            (56, 0x0E000470, 3)
+        ]
     );
 }

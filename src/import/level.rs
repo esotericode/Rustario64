@@ -186,14 +186,6 @@ pub fn extract(
                     mio0: opcode != 0x17,
                     texture: opcode == 0x1A,
                 });
-                if segment != version::TERRAIN_SEGMENT {
-                    result.issues.push(ImportIssue {
-                        address,
-                        feature: format!(
-                            "segment 0x{segment:02X} load recorded; dependency not imported"
-                        ),
-                    });
-                }
             }
             0x1F => {
                 if area_index.is_some() {
@@ -221,10 +213,6 @@ pub fn extract(
                     warps: vec![],
                 });
                 area_index = Some(result.areas.len() - 1);
-                result.issues.push(ImportIssue {
-                    address,
-                    feature: format!("geometry layout 0x{:08X}; not decoded", r.u32(4)?),
-                });
             }
             0x20 => {
                 if area_index.take().is_none() {
@@ -242,10 +230,6 @@ pub fn extract(
                     pointer: r.u32(4)?,
                     geometry_layout: opcode == 0x22,
                     layer: (opcode == 0x21).then_some((field >> 12) as u8),
-                });
-                result.issues.push(ImportIssue {
-                    address,
-                    feature: format!("model {} geometry/display list not decoded", field & 0xFFF),
                 });
             }
             0x24 => {

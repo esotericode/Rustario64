@@ -93,6 +93,10 @@ fn demo(trace_path: Option<&Path>) -> AppResult<()> {
 fn import_bob(rom_path: &Path, output_root: &Path) -> AppResult<()> {
     let rom = Rom::open(rom_path)?;
     let imported = bob::import(&rom)?;
+    let visual = imported
+        .visual
+        .as_ref()
+        .ok_or("ROM import did not produce visible geometry")?;
     let output = output_root
         .join(format!(
             "{}-schema{}",
@@ -116,7 +120,15 @@ fn import_bob(rom_path: &Path, output_root: &Path) -> AppResult<()> {
         "collision_vertices": imported.collision.vertices.len(), "collision_triangles": imported.collision.triangles.len(),
         "special_placements": imported.collision.specials.len(), "textures": imported.textures.len(),
         "macro_placements": imported.level.areas.iter().map(|a| a.macro_spawns.len()).sum::<usize>(),
-        "import_status": "partial", "visible_terrain_decoded": false, "playable": false,
+        "dependent_segments": &imported.loaded_segments,
+        "visible_area_triangles": visual.model.triangle_count(),
+        "visible_area_batches": visual.model.batches.len(),
+        "visible_area_textures": visual.model.textures.len(),
+        "visible_models": imported.models.iter().map(|m| serde_json::json!({
+            "model": m.model, "geometry_layout": m.geometry_layout,
+            "triangles": m.visual.triangle_count(), "textures": m.visual.textures.len(),
+        })).collect::<Vec<_>>(),
+        "import_status": "partial", "visible_terrain_decoded": true, "playable": false,
         "unsupported": &imported.level.issues,
     });
     json_new(&output.join("manifest.json"), &manifest)?;
@@ -126,6 +138,15 @@ fn import_bob(rom_path: &Path, output_root: &Path) -> AppResult<()> {
         &output.join("collision.obj"),
         collision::to_obj(&imported.collision).as_bytes(),
     )?;
+    json_new(&output.join("visual.json"), visual)?;
+    json_new(&output.join("models.json"), &imported.models)?;
+    for (i, texture) in visual.model.textures.iter().enumerate() {
+        let name = format!(
+            "visual-{i:02}-{:08X}-{}x{}",
+            texture.source, texture.width, texture.height
+        );
+        write_new(&output.join(format!("{name}.rgba")), &texture.rgba)?;
+    }
     for (i, texture) in imported.textures.iter().enumerate() {
         write_new(
             &output.join(format!("terrain-{i}-32x32.rgba")),
@@ -134,11 +155,18 @@ fn import_bob(rom_path: &Path, output_root: &Path) -> AppResult<()> {
         write_new(&output.join(format!("terrain-{i}.ppm")), &texture.to_ppm())?;
     }
     println!(
-        "Imported BOB collision, script/macro placements, warps, and five segment-7 textures into {}",
+        "Imported BOB collision, script/macro placements, warps, textures, and visible geometry into {}",
         output.display()
     );
     println!(
-        "{} coverage issues recorded in manifest.json. Visible terrain, Mario, and missions remain unimplemented.",
+        "Visible area: {} triangles in {} batches with {} textures; {} dependent segments loaded from script ranges",
+        visual.model.triangle_count(),
+        visual.model.batches.len(),
+        visual.model.textures.len(),
+        imported.loaded_segments.len()
+    );
+    println!(
+        "{} coverage issues recorded in manifest.json. Skybox, objects, Mario, and missions remain unimplemented.",
         imported.level.issues.len()
     );
     Ok(())
