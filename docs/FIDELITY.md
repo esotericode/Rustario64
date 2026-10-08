@@ -9,8 +9,10 @@ Target US v1.0 at n64decomp/sm64 revision
 9bef1128717f958171a4afac3ed78ee2bb4e86ce, 30 ticks/second, reference camera/input
 profile. Prefer unmodified matching N64/original execution; native-port float
 differences need separate evidence. Physics-modified ports are not unquestioned
-oracles. No ROM, matching build, emulator trace setup, or exporter is available,
-so original asset and reference-vs-Rust gameplay checks were not run.
+oracles. A supported owner ROM is available and static asset checks pass (see
+[ROM_VALIDATION.md](ROM_VALIDATION.md)). A matching build, emulator trace setup,
+and per-tick exporter are still unavailable, so reference-vs-Rust gameplay
+checks have not run.
 
 ## Schema 1
 
@@ -57,12 +59,13 @@ retained backlog, clock drift, one-bit float changes, signed zero, metadata
 differences, ordered objects, and invalid traces. There is no GPU implementation
 of enhanced lighting/shadows and no real gameplay render-cap coverage.
 
-The ignored owner-ROM test is documented in README. Passing it establishes a
-basic import smoke result, not complete content or gameplay validation.
+The ignored owner-ROM test is documented in README. It checks original collision
+and macro records against source-derived digests, plus script counts and entry
+metadata. It does not validate geometry rendering, all assets, or gameplay.
 
 ## Next reference work
 
-1. Run the owner-ROM import and obtain an unmodified matching US reference build.
+1. Obtain an unmodified matching US reference build using the supplied ROM.
 2. Add a reference exporter around each completed simulation tick, reproducible
    initial world/state and tick input, and recorded build/emulator/platform
    configuration. Instrumentation must not change arithmetic or update order.

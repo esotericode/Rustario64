@@ -7,7 +7,9 @@ playable result. Read [PROJECT_PLAN.md](PROJECT_PLAN.md) for scope and status.
 The executable is headless: ROM validation, a BOB static import path, independent
 parser fixtures, and exact per-tick trace comparison. There is no window, visible
 terrain renderer, Mario movement, or mission implementation. The real-ROM import
-path has not been run against an owner's ROM yet.
+path passes the local owner-ROM check for the supported US revision. Collision
+and macro records were checked exactly against the pinned decompilation source;
+see [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md) for evidence and limits.
 
 ## Build and run
 
@@ -44,18 +46,28 @@ cargo run --locked -- import-bob /path/to/your/sm64.z64 --out private/imports
 RUSTARIO64_ROM=/path/to/your/sm64.z64 cargo test --locked --test import local_us_rom_import -- --ignored --exact
 ```
 
-Output goes to `private/imports/<normalized-sha1>-schema1/bob/`:
+Output goes to `private/imports/<normalized-sha1>-schema2/bob/`:
 
 | File | Contents |
 | --- | --- |
-| `manifest.json` | Identity, counts, and explicit unsupported-content diagnostics |
-| `level.json` | Course/area IDs, act masks, placements, warps, Mario start, segment loads, and model references |
+| `manifest.json` | Identity, partial-import status, counts, and explicit unsupported-content diagnostics |
+| `level.json` | Course/area IDs, act masks, script and macro placements, warps, Mario start, segment loads, and model references |
 | `collision.json`, `collision.obj` | Original integer collision vertices, ordered surfaces/force words, specials, and environment regions |
 | `terrain-N-32x32.rgba`, `terrain-N.ppm` | Five known segment-7 RGBA5551 textures, with RGBA bytes and alpha-free previews |
 
 The OBJ inspects **collision**, not visible terrain. Textures are not yet attached
-to Fast3D materials. Global scripts, dependent segments, geometry, macro objects,
-callbacks, and behaviors remain reported gaps. No ROM code is executed.
+to Fast3D materials. The verified import contains 570 vertices, 1,060 collision
+triangles, 17 special placements, 30 script placements, 88 macro placements,
+seven warps, and five textures. Macro records preserve packed yaw, source order,
+and raw parameters; preset defaults and respawn behavior are still missing.
+Global scripts, dependent segments, geometry, callbacks, and behaviors remain
+reported gaps. No ROM code is executed.
+
+The ignored integration test checks exact counts/addresses and source-derived
+digests for every collision and macro field. Ordinary CI uses authored fixtures
+without a ROM. Schema 2 adds macro records and replaces the old untested-status
+manifest field with an explicit partial-import status; schema-1 exports are not
+reused or upgraded automatically.
 
 Exports reserve a new destination and never overwrite files. Remove an old
 private export deliberately or choose another output root to reimport. Hash and
@@ -82,8 +94,8 @@ See [docs/FIDELITY.md](docs/FIDELITY.md) for the comparison contract and blocker
 
 ## Next increment
 
-Run the owner-ROM integration check and reconcile script/content counts, then
-decode BOB geometry layouts and Fast3D materials for a Rust renderer. Establish
+Decode BOB geometry layouts and Fast3D materials, including required dependent
+segments, for a Rust renderer. Establish
 the first genuine per-tick oracle trace before porting and claiming faithful
 movement. Imported level, exploration, and mission completion remain distinct
 milestones in the live plan.

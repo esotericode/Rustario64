@@ -3,13 +3,14 @@ use rustario64::{
     content::{Act, ActMask, AreaId, CourseId, LevelId},
     diagnostics,
     import::{
-        bob, collision, level, mio0,
+        bob, collision, level, macros, mio0,
         reader::Reader,
         rom::{self, ByteOrder, Rom},
         segments::Segments,
         texture, version,
     },
 };
+use sha1::{Digest, Sha1};
 
 fn words(values: &[i16]) -> Vec<u8> {
     values.iter().flat_map(|v| v.to_be_bytes()).collect()
@@ -139,6 +140,98 @@ fn segmented_reads_reject_bad_ids_duplicates_offsets_and_ranges() {
     assert!(segments.read(0x08000000, 1).is_err());
     assert!(segments.read(0x07000002, 2).is_err());
     assert!(segments.tail(0x07FFFFFF).is_err());
+}
+
+#[test]
+fn macro_records_preserve_packed_yaw_signed_positions_params_and_order() {
+    let input = words(&[
+        0x8026u16 as i16,
+        -123,
+        321,
+        -456,
+        0xA5B6u16 as i16,
+        396,
+        111,
+        222,
+        333,
+        0,
+        30,
+    ]);
+    let (placements, consumed) = macros::decode(&input, 0x07001234).unwrap();
+    assert_eq!(consumed, 22);
+    assert_eq!(placements.len(), 2);
+    assert_eq!(placements[0].source_address, 0x07001234);
+    assert_eq!(placements[1].source_address, 0x0700123E);
+    assert_eq!(placements[0].packed_preset_and_yaw, 0x8026);
+    assert_eq!(placements[0].preset_id, 7);
+    assert_eq!(placements[1].preset_id, 365);
+    assert_eq!(placements[0].position, [-123, 321, -456]);
+    assert_eq!(placements[0].yaw, i16::MIN);
+    assert_eq!(placements[0].raw_params, 0xA5B6);
+}
+
+#[test]
+fn macro_rotation_retains_every_quantized_angle_without_rounding() {
+    for yaw in 0..128u16 {
+        let packed = (yaw << 9) | 31;
+        let input = words(&[packed as i16, 0, 0, 0, 0, 30]);
+        let (placements, _) = macros::decode(&input, 0x07000000).unwrap();
+        assert_eq!(placements[0].yaw, (yaw << 9) as i16);
+    }
+}
+
+#[test]
+fn macro_terminators_and_legacy_dispatch_follow_the_reference() {
+    for terminator in [30, -1, 0x401E] {
+        let input = words(&[terminator, 99, 99]);
+        let (placements, consumed) = macros::decode(&input, 0x07000000).unwrap();
+        assert!(placements.is_empty());
+        assert_eq!(consumed, 2);
+    }
+    for first in 0..30 {
+        let error = macros::decode(&words(&[first]), 0x07000000).unwrap_err();
+        assert!(error.detail.contains("legacy"));
+    }
+    // A small preset word after a modern record ends that list, without dispatch.
+    let (_, consumed) = macros::decode(&words(&[31, 1, 2, 3, 4, 0]), 0x07000000).unwrap();
+    assert_eq!(consumed, 12);
+}
+
+#[test]
+fn macro_decoder_rejects_truncation_invalid_presets_and_segment_wrap() {
+    let input = words(&[31, 1, 2, 3, 4, 30]);
+    for cut in 0..input.len() {
+        assert!(
+            macros::decode(&input[..cut], 0x07000000).is_err(),
+            "cut {cut}"
+        );
+    }
+    assert!(macros::decode(&words(&[397, 0, 0, 0, 0, 30]), 0x07000000).is_err());
+    for address in [0, 0x20000000, 0x07000001, 0x07FFFFF8] {
+        assert!(macros::decode(&input, address).is_err());
+    }
+    assert_eq!(macros::decode(&words(&[30]), 0x07FFFFFE).unwrap().1, 2);
+}
+
+#[test]
+fn macro_decoder_bounds_record_count_but_accepts_termination_at_the_limit() {
+    let record = words(&[31, 1, 2, 3, 4]);
+    let mut input = record.repeat(macros::MAX_MACRO_OBJECTS);
+    assert!(macros::decode(&input, 0x07000000).is_err());
+    input.extend_from_slice(&words(&[30]));
+    assert_eq!(
+        macros::decode(&input, 0x07000000).unwrap().0.len(),
+        macros::MAX_MACRO_OBJECTS
+    );
+    input.truncate(input.len() - 2);
+    input.extend_from_slice(&record);
+    input.extend_from_slice(&words(&[30]));
+    assert!(
+        macros::decode(&input, 0x07000000)
+            .unwrap_err()
+            .detail
+            .contains("limit")
+    );
 }
 
 #[test]
@@ -294,6 +387,22 @@ fn bob_static_import_fixture_traverses_local_calls_and_retains_content() {
     assert_eq!(result.level.areas[0].warps[0].destination_node, 10);
     assert_eq!(result.textures[0].rgba[..4], [0, 255, 0, 255]);
     assert_eq!(result.collision.triangles.len(), 1);
+    assert_eq!(result.level.areas[0].macro_spawns.len(), 2);
+    assert_eq!(result.level.areas[0].macro_spawns[0].preset_id, 7);
+    assert!(
+        result
+            .level
+            .issues
+            .iter()
+            .any(|i| i.feature.contains("respawn runtime"))
+    );
+    assert!(
+        !result
+            .level
+            .issues
+            .iter()
+            .any(|i| i.feature.contains("macro objects") && i.feature.contains("not decoded"))
+    );
     assert!(
         result
             .level
@@ -311,7 +420,7 @@ fn bob_static_import_fixture_traverses_local_calls_and_retains_content() {
 }
 
 #[test]
-fn bob_mapping_mismatch_and_truncated_collision_are_rejected() {
+fn bob_mapping_mismatch_and_truncated_terrain_are_rejected() {
     let (terrain, mut script) = diagnostics::bob_segments_fixture();
     let i = script
         .windows(4)
@@ -320,8 +429,32 @@ fn bob_mapping_mismatch_and_truncated_collision_are_rejected() {
     script[i..i + 4].copy_from_slice(&0x07001000u32.to_be_bytes());
     assert!(bob::decode_segments(terrain, script).is_err());
     let (mut terrain, script) = diagnostics::bob_segments_fixture();
+    terrain.truncate(
+        (version::BOB_COLLISION & 0xFFFFFF) as usize + diagnostics::collision_fixture().len() - 1,
+    );
+    assert!(bob::decode_segments(terrain, script).is_err());
+}
+
+#[test]
+fn bob_macro_import_fails_on_truncation_and_reports_unmapped_lists() {
+    let (mut terrain, script) = diagnostics::bob_segments_fixture();
     terrain.pop();
     assert!(bob::decode_segments(terrain, script).is_err());
+    let (terrain, mut script) = diagnostics::bob_segments_fixture();
+    let at = script
+        .windows(4)
+        .position(|b| b == [0x39, 8, 0, 0])
+        .unwrap();
+    script[at + 4..at + 8].copy_from_slice(&0x0B000000u32.to_be_bytes());
+    let decoded = bob::decode_segments(terrain, script).unwrap();
+    assert!(decoded.level.areas[0].macro_spawns.is_empty());
+    assert!(
+        decoded
+            .level
+            .issues
+            .iter()
+            .any(|i| i.feature == "macro objects 0x0B000000; segment not imported")
+    );
 }
 
 #[test]
@@ -330,15 +463,40 @@ fn local_us_rom_import() {
     let path = std::env::var_os("RUSTARIO64_ROM").expect("set RUSTARIO64_ROM");
     let rom = Rom::open(std::path::Path::new(&path)).unwrap();
     let imported = bob::import(&rom).unwrap();
-    assert!(imported.collision.vertices.len() > 100);
-    assert!(imported.collision.triangles.len() > 100);
+    assert_eq!(imported.terrain_bytes, 71618);
+    assert_eq!(imported.collision.vertices.len(), 570);
+    assert_eq!(imported.collision.triangles.len(), 1060);
+    assert_eq!(imported.collision.specials.len(), 17);
+    assert!(imported.collision.environment.is_empty());
     assert_eq!(imported.textures.len(), 5);
     assert_eq!(imported.level.areas.len(), 1);
-    assert!(imported.level.areas[0].spawns.len() > 10);
-    assert!(imported.level.areas[0].warps.len() >= 7);
+    let area = &imported.level.areas[0];
+    assert_eq!(area.id, AreaId(1));
+    assert_eq!(area.geometry_layout, 0x0E000488);
+    assert_eq!(area.terrain, Some(version::BOB_COLLISION));
+    assert_eq!(area.macro_objects, Some(0x0701104C));
+    assert_eq!(area.spawns.len(), 30);
+    assert_eq!(area.macro_spawns.len(), 88);
+    assert_eq!(area.warps.len(), 7);
     assert_eq!(
         imported.level.mario_start,
         Some((AreaId(1), 135, [-6558, 0, 6464]))
     );
-    // Smoke coverage only: counts and content still need independent ROM-owner validation.
+    // Schema-2 compact JSON digests independently computed from expanded macros in
+    // the pinned decompilation. Cover every field and source order, not just counts.
+    // See docs/ROM_VALIDATION.md; these are asset checks, not gameplay comparisons.
+    assert_eq!(
+        format!(
+            "{:x}",
+            Sha1::digest(serde_json::to_vec(&imported.collision).unwrap())
+        ),
+        "0b5c611a87b3e0afb76baeedfcba7352e96134e8"
+    );
+    assert_eq!(
+        format!(
+            "{:x}",
+            Sha1::digest(serde_json::to_vec(&area.macro_spawns).unwrap())
+        ),
+        "b3bb06ce2e341e7b47fae1653f586464a76686b9"
+    );
 }

@@ -115,7 +115,8 @@ fn import_bob(rom_path: &Path, output_root: &Path) -> AppResult<()> {
         "course": 1, "level": 9, "terrain_segment_bytes": imported.terrain_bytes,
         "collision_vertices": imported.collision.vertices.len(), "collision_triangles": imported.collision.triangles.len(),
         "special_placements": imported.collision.specials.len(), "textures": imported.textures.len(),
-        "visible_terrain_decoded": false, "playable": false, "rom_integration_verified": false,
+        "macro_placements": imported.level.areas.iter().map(|a| a.macro_spawns.len()).sum::<usize>(),
+        "import_status": "partial", "visible_terrain_decoded": false, "playable": false,
         "unsupported": &imported.level.issues,
     });
     json_new(&output.join("manifest.json"), &manifest)?;
@@ -133,7 +134,7 @@ fn import_bob(rom_path: &Path, output_root: &Path) -> AppResult<()> {
         write_new(&output.join(format!("terrain-{i}.ppm")), &texture.to_ppm())?;
     }
     println!(
-        "Imported BOB collision, static placements/warps, and five segment-7 textures into {}",
+        "Imported BOB collision, script/macro placements, warps, and five segment-7 textures into {}",
         output.display()
     );
     println!(

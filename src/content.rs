@@ -81,6 +81,20 @@ pub struct ImportedSpawn {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MacroPlacement {
+    pub source_address: u32,
+    /// Preserve the packed word as well as its decoded fields.
+    pub packed_preset_and_yaw: u16,
+    /// Import-only index into the revision's macro preset table, not a BehaviorId.
+    pub preset_id: u16,
+    pub position: [i16; 3],
+    /// Original signed angle units, after the packed rotation conversion.
+    pub yaw: i16,
+    /// Unmodified placement word: preset defaults and respawn rules are not applied.
+    pub raw_params: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WarpNode {
     pub id: u8,
     pub destination_level: LevelId,
@@ -101,6 +115,7 @@ pub struct ImportedArea {
     pub geometry_layout: u32,
     pub terrain: Option<u32>,
     pub macro_objects: Option<u32>,
+    pub macro_spawns: Vec<MacroPlacement>,
     pub spawns: Vec<ImportedSpawn>,
     pub warps: Vec<WarpNode>,
 }

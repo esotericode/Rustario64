@@ -1,6 +1,7 @@
 pub mod bob;
 pub mod collision;
 pub mod level;
+pub mod macros;
 pub mod mio0;
 pub mod reader;
 pub mod rom;

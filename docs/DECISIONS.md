@@ -25,13 +25,22 @@ US v1.0 is exactly 0x800000 bytes. Supporting three byte orders now is cheap;
 other regions, hacks, or padding require explicit adapters. US offsets stay in
 import/version.rs. BOB entry discovery matches the unique aligned upstream
 INIT_LEVEL plus exact segment-7 load pair instead of guessing a symbol offset.
-The owner-ROM check must validate that structural match on real bytes.
+The owner-ROM check validates that structural match on real bytes; BOB's entry
+is at 0x0E000264 for this revision.
 
 MIO0 adapts the MIT tooling algorithm with stream bounds, an allocation cap,
 strict malformed-token rejection, and byte-wise overlapping copies. Collision
 record widths follow the CC0 loader and preset tables, including the force word
 for SURFACE_0004 omitted by one older tooling decoder. Integer values and surface
 order remain intact. Original collision queries/partition ordering are missing.
+
+Modern macro-object records use the pinned loader's five-short layout, preset
+bias of 31, seven packed yaw bits, and termination rules. Keep the original word,
+signed positions, exact angle units, raw parameter word, and source order.
+Do not apply preset default parameters or respawn decisions until that runtime
+exists; diagnostics identify each missing preset behavior. A first short in
+0..29 selects the older hardcoded format and fails explicitly. Bounds, segment
+crossing, preset-table size, and placement limits are checked.
 
 Static extraction follows local JUMP_LINK/RETURN calls and preserves placement
 encounter order. Original runtime loading prepends spawn/warp nodes; future
@@ -62,6 +71,11 @@ Completed-snapshot interpolation has about one tick of presentation delay
 latency is measured yet. Scheduler comparisons are synthetic coverage only.
 
 Exports use normalized hash/schema keys and reject existing destinations.
+Importer schema 2 adds macro placements and explicit partial-import status. An
+export's manifest describes decoded content rather than asserting a developer's
+integration-test result. Full collision and macro records now match independently
+expanded source macros; the ignored owner-ROM check pins schema-2 compact JSON
+digests of those records. See ROM_VALIDATION.md for the validation boundary.
 Cache reuse and save/settings persistence remain future work. The initial
 oracle target is the pinned unmodified US decompilation/original ROM execution.
 There is no oracle build/exporter yet. No C runtime integration was introduced.

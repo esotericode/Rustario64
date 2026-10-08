@@ -1,7 +1,7 @@
 //! A bounded static-content extractor, not a level-script gameplay VM.
 //! Local JUMP_LINK/RETURN traversals preserve placement encounter order.
 //! Commands follow pinned CC0 sm64 include/level_commands.h and level_script.c.
-use super::{ImportError, Result, reader::Reader, segments::Segments, version};
+use super::{ImportError, Result, macros, reader::Reader, segments::Segments, version};
 use crate::content::*;
 use std::collections::BTreeMap;
 
@@ -216,6 +216,7 @@ pub fn extract(
                     geometry_layout: r.u32(4)?,
                     terrain: None,
                     macro_objects: None,
+                    macro_spawns: vec![],
                     spawns: vec![],
                     warps: vec![],
                 });
@@ -316,10 +317,24 @@ pub fn extract(
                     result.areas[i].terrain = Some(pointer);
                 } else {
                     result.areas[i].macro_objects = Some(pointer);
-                    result.issues.push(ImportIssue {
-                        address,
-                        feature: format!("macro objects 0x{pointer:08X}; not decoded"),
-                    });
+                    if segments.is_mapped((pointer >> 24) as u8) {
+                        let (placements, _) = macros::decode(segments.tail(pointer)?, pointer)?;
+                        for placement in &placements {
+                            result.issues.push(ImportIssue {
+                                address: placement.source_address,
+                                feature: format!(
+                                    "macro preset {} parsed; preset defaults, behavior and respawn runtime not implemented",
+                                    placement.preset_id
+                                ),
+                            });
+                        }
+                        result.areas[i].macro_spawns = placements;
+                    } else {
+                        result.issues.push(ImportIssue {
+                            address,
+                            feature: format!("macro objects 0x{pointer:08X}; segment not imported"),
+                        });
+                    }
                 }
             }
             // Import scaffolding and presentation metadata: no gameplay execution.

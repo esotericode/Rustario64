@@ -38,6 +38,23 @@ pub fn bob_segments_fixture() -> (Vec<u8>, Vec<u8>) {
         p.copy_from_slice(&0x07C1u16.to_be_bytes());
     }
     terrain.extend_from_slice(&collision_fixture());
+    let macro_address = (u32::from(version::TERRAIN_SEGMENT) << 24) | terrain.len() as u32;
+    // Two synthetic modern macro records, followed by the normal terminator.
+    for value in [
+        0x8026u16,
+        (-123i16) as u16,
+        321,
+        (-456i16) as u16,
+        0xA5B6,
+        396,
+        111,
+        222,
+        333,
+        0,
+        30,
+    ] {
+        terrain.extend_from_slice(&value.to_be_bytes());
+    }
     let mut script = vec![0x1B, 4, 0, 0, 0x18, 12, 0, 7];
     script.extend_from_slice(&(version::BOB_TERRAIN.start as u32).to_be_bytes());
     script.extend_from_slice(&(version::BOB_TERRAIN.end as u32).to_be_bytes());
@@ -47,6 +64,8 @@ pub fn bob_segments_fixture() -> (Vec<u8>, Vec<u8>) {
     script.extend_from_slice(&[0x26, 8, 10, 9, 1, 10, 0, 0]);
     script.extend_from_slice(&[0x2E, 8, 0, 0]);
     script.extend_from_slice(&version::BOB_COLLISION.to_be_bytes());
+    script.extend_from_slice(&[0x39, 8, 0, 0]);
+    script.extend_from_slice(&macro_address.to_be_bytes());
     script.extend_from_slice(&[0x20, 4, 0, 0, 0x2B, 12, 1, 0]);
     for value in [90i16, 11, 22, 33] {
         script.extend_from_slice(&value.to_be_bytes());
