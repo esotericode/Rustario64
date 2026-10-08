@@ -37,12 +37,14 @@ without a GPU or window.
 
 ## Build and test
 
-Rust 1.90.0 with rustfmt and Clippy is selected by `rust-toolchain.toml`. Linux
-x86_64 is the checked platform. Direct dependencies use exact versions and
-Cargo.lock pins the rest.
+Rust 1.99.0 (current stable as of 2026-10-08) with rustfmt and Clippy is selected
+by `rust-toolchain.toml`. Linux x86_64 is the checked platform. Dependencies use
+compatible SemVer requirements; committed Cargo.lock and `--locked` make builds
+reproducible. Upgrade the toolchain and lockfile together and rerun the component
+oracles; compiler age is not a requirement for original gameplay behavior.
 
 ```sh
-rustup toolchain install 1.90.0 --profile minimal --component rustfmt --component clippy
+rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
 cargo fmt --all --check
 cargo test --locked --workspace --all-targets
 cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -107,21 +109,25 @@ other objects are not drawn yet (their painted ground shadows are terrain).
 
 ### Import export
 
-`import-bob` writes `private/imports/<normalized-sha1>-schema3/bob/`:
+`import-bob` writes `private/imports/<normalized-sha1>-schema4/bob/`:
 
 | File | Contents |
 | --- | --- |
 | `manifest.json` | Identity, dependent segments, visible-geometry counts, partial-import status, and every unsupported-content diagnostic |
-| `level.json` | Course/area IDs, act masks, script and macro placements, warps, Mario start, segment loads, model references |
+| `level.json` | Course/area IDs, terrain type, dialog slots, music words, act masks, script and macro placements, warps, Mario start, segment loads, model references |
 | `collision.json`, `collision.obj` | Original integer collision vertices, ordered surfaces/force words, specials, environment regions |
 | `visual.json` | Area visual model: batches with decoded materials and vertices, background and camera nodes |
 | `models.json` | Geo models from `LOAD_MODEL_FROM_GEO` that resolve in loaded segments |
 | `visual-NN-<address>-WxH.rgba` | Decoded RGBA8 texture data for the visual model |
 | `terrain-N-32x32.rgba`, `terrain-N.ppm` | The five segment-7 RGBA16 textures, with alpha-free previews |
 
-The OBJ shows **collision**, not visible terrain. Exports never overwrite files;
-remove an old export or choose another output root to reimport. Schema 3 adds the
-visual files and new manifest fields; older exports are not reused. Hash/schema
+The OBJ shows **collision**, not visible terrain. Exports are staged and published
+after every file has been written; a write failure cleans up staging so a retry
+can succeed. Concurrent exporters share an OS file lock, and existing exports
+are rejected. Remove an old export or choose another output root to reimport.
+An interrupted process may leave a private `.rustario64-import-*` staging
+directory; it is safe to remove once no import is running. Schema 4 retains area
+terrain/dialog/music metadata; older exports are not reused. Hash/schema
 keys are ready for caching, but cache reuse is not implemented. No ROM code is
 executed: native callbacks referenced by scripts and geo layouts are reported.
 

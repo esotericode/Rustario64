@@ -2,8 +2,9 @@
 
 The supplied 8 MiB Z64 ROM matches the supported US v1.0 normalized SHA-1
 `9bef1128717f958171a4afac3ed78ee2bb4e86ce`. ROM inspection, the real BOB import,
-private schema-3 export, the strengthened local integration test, and the viewer
-screenshots passed on Linux x86_64 with Rust 1.90.0. The ROM and exported assets
+private export, the strengthened local integration test, and viewer screenshots
+have passed on Linux x86_64. Build instructions now select Rust 1.99.0 and
+schema 4; current-toolchain rechecks are recorded below. The ROM and exported assets
 are excluded from git.
 
 ```sh
@@ -18,7 +19,7 @@ cargo run --locked -p rustario64-render --bin rustario64-viewer -- screenshot /p
 | Segment 7 | 71,618 decompressed bytes | Real MIO0 block and independently decoded source-stream comparisons |
 | Collision at 0x0700E958 | 570 vertices; 1,060 ordered triangles; 17 specials; no environment regions | Every decoded field/order and all 9,972 source bytes match the pinned collision macros |
 | Macros at 0x0701104C | 88 records; 882 bytes including terminator | Every packed word, preset, signed coordinate, angle, raw parameter, address, and record order matches the pinned macro list |
-| Level entry at 0x0E000264 | One area, 30 script placements, seven warps; start yaw 135 at (-6558, 0, 6464) | Unique reference segment-load pattern, source placement/warp counts and start fields; no runtime execution |
+| Level entry at 0x0E000264 | One area, 30 script placements, seven warps; start yaw 135 at (-6558, 0, 6464); grass terrain 0, dialog slots [0, 255], music words [0, 3] | Unique reference segment-load pattern derived from the adapter; source placement/warp/start and area metadata fields; no runtime execution |
 | Segment-7 textures | Five RGBA16 textures, 32×32 | Pixel-identical to the decomp toolchain's extraction (below) |
 | Dependent segments | 0x09, 0x0A, 0x05, 0x0C, 0x06, 0x0D, 0x08, 0x0F from the script's own LOAD commands | ROM ranges equal sm64tools' pinned US block boundaries |
 | Area geo layout 0x0E000488 | Ocean skybox background, camera node, six display lists (layers 1, 1, 6, 4, 1, 1) | Same nodes and order as the pinned `areas/1/geo.inc.c` |
@@ -34,24 +35,39 @@ Used [n64decomp/sm64 at 9921382a68bb0c865e5e45eb594d9c64db59b1af](https://github
 `include/dialog_ids.h`. These source placements were inspected outside the
 tracked repository; none are included in authored fixtures.
 
-A separate one-off Python source-macro expander resolved the upstream constants,
-expanded each stream into big-endian shorts, and compared it with independently
-decompressed ROM bytes. It also constructed expected typed records from those
-source invocations and compared every field with exported Rust JSON. The
-reference expectations did not come from the Rust parser's output.
+`tools/check_bob_reference.py` resolves the upstream constants, expands each
+stream into big-endian shorts, and compares it with independently decompressed
+ROM bytes. It also constructs expected typed records from source invocations
+and compares every field with exported Rust JSON. Reference expectations do not
+come from the Rust parser's output. It checks the ROM/export identity and requires
+the exact clean upstream revision. Reproduce with Python 3's standard library:
+
+```sh
+git clone https://github.com/n64decomp/sm64.git /path/to/sm64-reference
+git -C /path/to/sm64-reference checkout 9921382a68bb0c865e5e45eb594d9c64db59b1af
+python3 -I tools/check_bob_reference.py --rom /path/to/sm64.z64 \
+  --reference /path/to/sm64-reference \
+  --export private/imports/9bef1128717f958171a4afac3ed78ee2bb4e86ce-schema4/bob
+```
+
+The checker accepts all three supported byte orders, reads reference data locally,
+and writes no assets. It covers collision/macros; visual references below remain
+separate.
 
 | Reference data | SHA-1 |
 | --- | --- |
 | Expanded collision stream, 9,972 bytes | `fec575bc5aab234abf17da8ff02b49ff90c7c78e` |
 | Expanded macro stream, 882 bytes | `d8ba1fc16dd1a82b72a8008a8bfc8cec17ce48d2` |
-| Collision records, schema-2 compact JSON | `0b5c611a87b3e0afb76baeedfcba7352e96134e8` |
-| Macro placements, schema-2 compact JSON | `b3bb06ce2e341e7b47fae1653f586464a76686b9` |
+| Collision records, canonical compact JSON | `dfe37da1b39dada6ebf6c31cab9af3ca16c6e269` |
+| Macro placements, canonical compact JSON | `ea3910a778a11c1f1bdd5c6d6e23af177b93a7c8` |
 
 The ignored test compares the decoded collision and macro records with the last
-two digests. JSON uses the declared struct-field order, no whitespace, signed
+two digests. JSON sorts object keys, preserves all array/source order, uses no
+whitespace, signed
 integer coordinates/angles, unsigned packed words/parameters, and `null` for
-absent force words. Deliberate serialization changes require a schema update and
-fresh independent expectations. The ordinary fixture tests exercise malformed
+absent force words. Field declaration/key order is irrelevant; content changes
+require fresh independent expectations. Import-format changes still require a
+schema update. The ordinary fixture tests exercise malformed
 records, bounds, all 128 packed yaw values, legacy dispatch, and terminators.
 
 ## Visible geometry ground truth
@@ -94,10 +110,30 @@ original rendered frames has been made.
 bob_collision -- --ignored` decodes BOB's collision stream from the owner ROM,
 checks the Rust decoder agrees with `bob::import`, loads it into both the Rust
 port and the natively compiled decomp loader, and compares all 1,060 surfaces,
-every partition list, and 4,064,920 query results bit for bit (dense 97-unit grid
+every partition list, and 4,084,680 query results bit for bit (dense 97-unit grid
 at six heights plus randomized and edge points). All are identical. This is a
 component check against compiled decomp source, not a trace from original
 execution.
+
+## Rust 1.99 recheck — 2026-10-08
+
+The reuploaded owner ROM passes the current asset integration test, inspection,
+fresh schema-4 export, and the reproducible source checker. All 1,101 visible
+triangles and 18 texture digests still match. Optimized native-C comparisons pass:
+4,084,680 collision queries, 3,993,600 math checks, and 1,180,000 Mario step checks,
+all bitwise-identical. The previously recorded collision count omitted points
+already in the test; its generator was not changed in this update.
+
+Four offscreen BOB views and a screenshot with 4× MSAA, fog/culling disabled,
+collision and placement overlays render successfully on software Vulkan. Start
+and options screenshots were visually reviewed. The 73 authored workspace tests
+pass with the offscreen GPU tests required, as do optimized authored oracle tests,
+formatting, Clippy, release builds, and the synthetic presentation-rate demo.
+Windowed Xvfb smoke is blocked in this environment by unavailable
+`/usr/bin/xkbcomp` during keyboard initialization. Hardware GPU, Windows/macOS,
+original-frame rendering, and original-execution per-tick gameplay remain
+unchecked. Normal run/check commands are in README; sandbox-specific compiler
+wrapper details are in PROJECT_PLAN's session 4.
 
 ## Remaining checks
 
@@ -108,8 +144,7 @@ address has been promoted to an implemented runtime behavior.
 
 Skybox import, object models from globally loaded segments, animation import,
 dynamic object collision, Mario actions, camera, audio, and missions are missing. No
-movement or collision fidelity claim follows from matching the asset streams.
-There is still no matching oracle build/emulator exporter or genuine gameplay
-trace. The next content tasks are viewer overlays for collision and placements,
-the skybox, and object models; the next fidelity tasks are an exact differential
-harness for collision loading/queries and a per-tick original-game spawn trace.
+movement fidelity claim follows from matching the asset streams. Native
+collision, math, and Mario step component comparisons exist; no original-execution
+per-tick exporter or genuine gameplay trace exists. Next: skybox/object models
+for content, and the per-tick Mario oracle plus spawn/input/actions for fidelity.

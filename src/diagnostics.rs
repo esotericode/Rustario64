@@ -34,7 +34,7 @@ pub fn literal_mio0(bytes: &[u8]) -> Vec<u8> {
 pub fn bob_segments_fixture() -> (Vec<u8>, Vec<u8>) {
     use import::version;
     let mut terrain = vec![0; (version::BOB_COLLISION & 0xFFFFFF) as usize];
-    for p in terrain[..0x2800].chunks_exact_mut(2) {
+    for p in terrain[..0x2800].as_chunks_mut::<2>().0.iter_mut() {
         p.copy_from_slice(&0x07C1u16.to_be_bytes());
     }
     terrain.extend_from_slice(&collision_fixture());

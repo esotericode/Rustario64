@@ -171,7 +171,7 @@ impl Texture {
     /// PPM preview discards alpha; the RGBA export retains it.
     pub fn to_ppm(&self) -> Vec<u8> {
         let mut out = format!("P6\n{} {}\n255\n", self.width, self.height).into_bytes();
-        for pixel in self.rgba.chunks_exact(4) {
+        for pixel in self.rgba.as_chunks::<4>().0.iter() {
             out.extend_from_slice(&pixel[..3]);
         }
         out

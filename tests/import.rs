@@ -7,10 +7,9 @@ use rustario64::{
         reader::Reader,
         rom::{self, ByteOrder, Rom},
         segments::Segments,
-        texture, version,
+        sha1_hex, texture, version,
     },
 };
-use sha1::{Digest, Sha1};
 
 fn words(values: &[i16]) -> Vec<u8> {
     values.iter().flat_map(|v| v.to_be_bytes()).collect()
@@ -326,6 +325,12 @@ fn extract(script: Vec<u8>) -> rustario64::import::Result<rustario64::content::I
     level::extract(&segments, 0x0E000000, CourseId(1), LevelId(9))
 }
 
+fn records_sha1(records: &impl serde::Serialize) -> String {
+    let mut value = serde_json::to_value(records).unwrap();
+    value.sort_all_objects();
+    sha1_hex(&serde_json::to_vec(&value).unwrap())
+}
+
 #[test]
 fn level_rejects_bad_lengths_opcodes_truncation_and_unbalanced_calls() {
     for script in [
@@ -365,6 +370,47 @@ fn bob_entry_requires_unique_aligned_reference_load_pair() {
     let mut duplicated = script.clone();
     duplicated.extend_from_slice(&script);
     assert!(level::bob_entry(&duplicated).is_err());
+    let mut wrong_range = script;
+    wrong_range[8..12].copy_from_slice(&((version::BOB_TERRAIN.start + 4) as u32).to_be_bytes());
+    assert!(level::bob_entry(&wrong_range).is_err());
+}
+
+#[test]
+fn area_metadata_keeps_original_defaults_or_updates_and_signed_music_words() {
+    // Authored two-area script, deliberately exercising repeated commands.
+    let decoded = extract(vec![
+        0x1F, 8, 1, 0, 0x0E, 0, 0, 0, 0x30, 4, 1, 17, 0x30, 4, 1, 23, 0x30, 4, 2,
+        99, // Original ignores out-of-range dialog slots.
+        0x31, 4, 0, 2, 0x31, 4, 0x80, 1, 0x36, 8, 0, 7, 0, 9, 0, 0, 0x36, 8, 0xFF, 0xFE, 0x80, 0,
+        0, 0, 0x20, 4, 0, 0, 0x1F, 8, 2, 0, 0x0E, 0, 0, 0, 0x20, 4, 0, 0, 4, 4, 0, 0,
+    ])
+    .unwrap();
+    let first = &decoded.areas[0];
+    assert_eq!(first.dialog_ids, [0xFF, 23]);
+    assert_eq!(first.terrain_type, 0x8003);
+    assert_eq!(first.background_music.settings_preset, -2);
+    assert_eq!(first.background_music.sequence, i16::MIN);
+    assert!(
+        decoded.issues[0]
+            .feature
+            .contains("slot 2 ignored by the original")
+    );
+    let second = &decoded.areas[1];
+    assert_eq!(second.dialog_ids, [0xFF; 2]);
+    assert_eq!(second.terrain_type, 0);
+    assert_eq!(second.background_music, Default::default());
+    for command in [
+        vec![0x30, 4, 0, 1],
+        vec![0x31, 4, 0, 2],
+        vec![0x36, 8, 0, 1, 0, 2, 0, 0],
+    ] {
+        assert!(
+            extract(command)
+                .unwrap_err()
+                .detail
+                .contains("outside AREA")
+        );
+    }
 }
 
 #[test]
@@ -478,26 +524,26 @@ fn local_us_rom_import() {
     assert_eq!(area.spawns.len(), 30);
     assert_eq!(area.macro_spawns.len(), 88);
     assert_eq!(area.warps.len(), 7);
+    // From the pinned BOB level script and seq_ids.h, not parser-generated output.
+    assert_eq!(area.terrain_type, 0); // TERRAIN_GRASS
+    assert_eq!(area.dialog_ids, [0, 0xFF]);
+    assert_eq!(area.background_music.settings_preset, 0);
+    assert_eq!(area.background_music.sequence, 3); // SEQ_LEVEL_GRASS
     assert_eq!(
         imported.level.mario_start,
         Some((AreaId(1), 135, [-6558, 0, 6464]))
     );
-    // Schema-2 compact JSON digests independently computed from expanded macros in
-    // the pinned decompilation. Cover every field and source order, not just counts.
+    // Canonical compact JSON digests independently computed from expanded macros
+    // by tools/check_bob_reference.py. Object keys are sorted; array order stays
+    // authoritative. A struct-field reorder does not alter content expectations.
     // See docs/ROM_VALIDATION.md; these are asset checks, not gameplay comparisons.
     assert_eq!(
-        format!(
-            "{:x}",
-            Sha1::digest(serde_json::to_vec(&imported.collision).unwrap())
-        ),
-        "0b5c611a87b3e0afb76baeedfcba7352e96134e8"
+        records_sha1(&imported.collision),
+        "dfe37da1b39dada6ebf6c31cab9af3ca16c6e269"
     );
     assert_eq!(
-        format!(
-            "{:x}",
-            Sha1::digest(serde_json::to_vec(&area.macro_spawns).unwrap())
-        ),
-        "b3bb06ce2e341e7b47fae1653f586464a76686b9"
+        records_sha1(&area.macro_spawns),
+        "ea3910a778a11c1f1bdd5c6d6e23af177b93a7c8"
     );
     // Dependent segments come from ROM ranges named by the level script itself;
     // these match the pinned sm64tools US configuration's block boundaries.
@@ -530,7 +576,7 @@ fn local_us_rom_import() {
         .model
         .batches
         .iter()
-        .flat_map(|b| b.vertices.chunks_exact(3))
+        .flat_map(|b| b.vertices.as_chunks::<3>().0.iter())
         .map(|tri| {
             tri.iter()
                 .map(|v| {
@@ -542,20 +588,20 @@ fn local_us_rom_import() {
         })
         .collect();
     assert_eq!(
-        format!("{:x}", Sha1::digest(serde_json::to_vec(&stream).unwrap())),
+        sha1_hex(&serde_json::to_vec(&stream).unwrap()),
         "f6ac0b00e30b5bb0583fb4f3dfc1670f411b3f74"
     );
     // RGBA8 of all 18 bound textures in source-address order; matches PNGs made by
     // the pinned decompilation's own mio0/n64graphics extraction tools.
     let mut textures: Vec<_> = visual.model.textures.iter().collect();
     textures.sort_by_key(|t| t.source);
-    let mut digest = Sha1::new();
-    for texture in &textures {
-        digest.update(&texture.rgba);
-    }
+    let texture_bytes: Vec<u8> = textures
+        .iter()
+        .flat_map(|t| t.rgba.iter().copied())
+        .collect();
     assert_eq!(textures.len(), 18);
     assert_eq!(
-        format!("{:x}", digest.finalize()),
+        sha1_hex(&texture_bytes),
         "cc0c962ef7fa0a8ae9f2d6ec1f7fb0ec8ee1cf14"
     );
     let models: Vec<_> = imported

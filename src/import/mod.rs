@@ -16,6 +16,15 @@ pub mod version;
 
 use std::fmt;
 
+/// Revision/data matching only; SHA-1 is not an authenticity guarantee.
+pub fn sha1_hex(bytes: &[u8]) -> String {
+    use sha1::{Digest, Sha1};
+    Sha1::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportError {
     pub context: &'static str,

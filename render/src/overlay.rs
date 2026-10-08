@@ -174,7 +174,9 @@ mod tests {
         let model = collision(&mesh);
         let colors: Vec<_> = model.batches[0]
             .vertices
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|t| t[0].color)
             .collect();
         assert_eq!(

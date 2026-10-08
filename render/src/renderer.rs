@@ -659,7 +659,7 @@ impl Renderer {
             self.color_format,
             wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
         ) {
-            for p in pixels.chunks_exact_mut(4) {
+            for p in pixels.as_chunks_mut::<4>().0.iter_mut() {
                 p.swap(0, 2);
             }
         }

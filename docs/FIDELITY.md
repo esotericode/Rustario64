@@ -67,8 +67,10 @@ fog/culling toggles, free camera) live in the render crate and have no path into
 simulation state.
 
 The ignored owner-ROM test is documented in README. It checks original collision
-and macro records against source-derived digests, plus script counts and entry
-metadata. It does not validate geometry rendering, all assets, or gameplay.
+and macro records against canonical source-derived digests, script counts/area
+metadata, and independently derived visible-triangle and texture digests. The
+collision/macro checker is reproducible (ROM_VALIDATION.md). These asset checks
+do not validate final rendered images, all assets, or gameplay.
 
 ## Collision component coverage
 
@@ -82,7 +84,7 @@ Rust port bit for bit:
 | All 16x16 cells x floor/ceiling/wall x static/dynamic lists, in order | Identical | Identical |
 | find_floor (camera and intangible-flag variants, including the flag's clearing) | Identical | Identical |
 | find_ceil, find_wall_collisions (3 offsets, radius 0–260, vanish-wall and camera variants), water and gas levels | Identical | Identical |
-| Comparisons / non-trivial hits | 857,400; 58,638 floors, 14,560 ceilings, 27,576 wall pushes, 1,321 intangible-affected floors, 5,862 water and 9,681 gas hits | 4,064,920; 401,248 floors, 18,122 ceilings, 61,292 wall pushes |
+| Comparisons / non-trivial hits | 857,400; 58,638 floors, 14,560 ceilings, 27,576 wall pushes, 1,321 intangible-affected floors, 5,862 water and 9,681 gas hits | 4,084,680; 404,380 floors, 18,638 ceilings, 63,140 wall pushes |
 
 Query points include random positions, every vertex with small offsets, points
 0.5 units either side of the 78-unit floor and ceiling buffers at each surface's
@@ -137,6 +139,12 @@ panics), object (dynamic) surfaces, and anything that depends on action code,
 input processing, or the camera. Single calls from generated states show the
 step functions match; they do not show that Mario reaches those states the same
 way, which needs action ports and per-tick traces.
+
+All component suites were rechecked on Rust 1.99.0 after the dependency update,
+including optimized authored and owner-ROM tests. Zero component divergences were
+observed. The old BOB collision count omitted query points already in the suite;
+the table now reports its observed count. No gameplay algorithms or query
+generators changed in that update. See PROJECT_PLAN session 4 for check limits.
 
 Limits: dynamic (object) surfaces, rooms, and float-to-int casts of values
 beyond the s32 range are not covered. Native IEEE single precision is assumed to

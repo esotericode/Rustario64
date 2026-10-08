@@ -1,7 +1,6 @@
 //! Game data embedded in the engine segment, loaded from the identified ROM.
 use super::{ImportError, Result, rom::Rom, version};
 use crate::simulation::math::TrigTables;
-use sha1::{Digest, Sha1};
 
 fn verified(
     rom: &Rom,
@@ -10,7 +9,7 @@ fn verified(
     what: &'static str,
 ) -> Result<Vec<u8>> {
     let bytes = rom.reader().slice(range.start, range.len())?;
-    let digest = format!("{:x}", Sha1::digest(bytes));
+    let digest = super::sha1_hex(bytes);
     if digest != sha1 {
         return Err(ImportError::new(
             what,
@@ -29,7 +28,9 @@ pub fn trig_tables(rom: &Rom) -> Result<TrigTables> {
         version::SINE_COSINE_SHA1,
         "sine table",
     )?
-    .chunks_exact(4)
+    .as_chunks::<4>()
+    .0
+    .iter()
     .map(|b| f32::from_bits(u32::from_be_bytes([b[0], b[1], b[2], b[3]])))
     .collect();
     let arctan = verified(
@@ -38,7 +39,9 @@ pub fn trig_tables(rom: &Rom) -> Result<TrigTables> {
         version::ARCTAN_SHA1,
         "arctan table",
     )?
-    .chunks_exact(2)
+    .as_chunks::<2>()
+    .0
+    .iter()
     .map(|b| u16::from_be_bytes([b[0], b[1]]))
     .collect();
     TrigTables::new(sine, arctan).ok_or_else(|| {
