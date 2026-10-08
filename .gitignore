@@ -1,0 +1,15 @@
+/target/
+/private/
+/roms/
+/extracted/
+/cache/
+/traces/
+*.[zZ]64
+*.[nN]64
+*.[vV]64
+*.[rR][oO][mM]
+*.bin
+*.obj
+*.ppm
+*.rgba
+*.trace.json

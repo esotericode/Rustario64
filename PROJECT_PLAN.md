@@ -1,7 +1,7 @@
 # Mario 64 Rust Engine Project Plan
 
 Last updated: 2026-10-08  
-Status: Planning brief; implementation and fidelity have not been verified.  
+Status: M0 headless foundation implemented and fixture-tested; owner-ROM import and gameplay fidelity checks remain blocked.
 Initial content target: Bob-omb Battlefield from a supported Super Mario 64 ROM.  
 Long-term intent: Support the complete original game through the same engine.
 
@@ -206,14 +206,42 @@ Every handoff should report the working result, commands actually run, missing f
 
 | Item | Status |
 | --- | --- |
-| Implementation | Not started by this brief |
-| Initial platform and Rust stack | To be selected and recorded in M0 |
-| Supported ROM revision | US release proposed; exact fingerprint to be pinned in M0 |
-| Comparison implementation | To be selected, configured, and checked for behavior changes |
-| Bob-omb Battlefield | Not imported or playable yet |
-| Fidelity coverage | None recorded |
-| Optional enhancements | Planned; none recorded as implemented |
-| Immediate next task | M0: repository inspection, reference selection, minimal Rust app, and ROM import foundation |
+| Implementation | Runnable headless Rust app: ROM inspection, static BOB import/export path, synthetic diagnostics, exact trace comparison |
+| Initial platform and Rust stack | Linux x86_64; Rust 1.90.0; one package with import/content/simulation/presentation/application boundaries; exact sha1/serde/serde_json dependencies and Cargo.lock |
+| Supported ROM revision | US v1.0, exactly 8 MiB, normalized SHA-1 `9bef1128717f958171a4afac3ed78ee2bb4e86ce`; Z64/V64/N64 normalization; owner-ROM positive path not yet tested |
+| Comparison implementation | Pinned unmodified US n64decomp/original ROM execution target at `9921382a68bb0c865e5e45eb594d9c64db59b1af`; exporter/reference build unavailable |
+| Bob-omb Battlefield | Segment-7 MIO0/collision, local static placements/warps/start, and five RGBA16 texture decoding paths implemented; real-ROM integration pending; no visible terrain renderer or playable exploration |
+| Fidelity coverage | Exact trace comparator tested; 300 synthetic counter/input ticks identical at 30/60/120/144 Hz; no original Mario movement/collision/camera coverage |
+| Optional enhancements | Snapshot interpolation with angle wrapping/discontinuity handling; lighting/shadow settings are scaffolding, without rendered effects |
+| Immediate next task | Run owner-ROM smoke/import validation, then BOB geometry/Fast3D/material decoding and renderer; establish genuine per-tick reference traces before movement fidelity claims |
+
+### Implementation session — 2026-10-08
+
+- **Inspection:** Repository initially had this brief, AGENTS.md, and a title-only README; no engine, ROM, or comparison setup. AGENTS.md is unchanged.
+- **Actual increment:** M0 runnable headless foundation plus early M1 static-import work. Bounded readers, full-ROM identity, three byte orders, MIO0, segmented references, collision/special/environment records, five RGBA16 textures, local script calls, act masks, placements and warps. Unknown/malformed commands fail; unsupported dependencies/geometry/behaviors/callbacks are reported. No ROM executable code runs.
+- **Architecture:** Typed course/level/area/act IDs, empty implementation-only behavior registry, static/dynamic collision boundaries, explicit transitions, immutable presentation snapshots, rational 30 Hz scheduler with retained catch-up backlog, and input edges consumed per tick. No approximate Mario equations or C game runtime introduced.
+- **Decisions and reuse:** [docs/DECISIONS.md](docs/DECISIONS.md), [PROVENANCE.md](PROVENANCE.md), and retained MIT/CC0 notices. US offsets are centralized. wgpu/winit are selected for the future renderer boundary; exact versions will be pinned when M1 introduces them. Newly authored code uses MIT.
+- **Run instructions:** [README.md](README.md) documents `demo`, `inspect-rom`, `import-bob`, `compare-traces`, build/lint/test commands, private output, and the ignored owner-ROM check. Exports have ROM/schema keys; cache reuse and saves remain unimplemented.
+- **Checks:** `cargo fmt --check`, `cargo check --locked --all-targets`, 38 tests via `cargo test --locked --all-targets`, pinned Clippy-driver checks with warnings denied, `cargo build --locked --release`, and `cargo run --locked -- demo --trace private/foundation.trace.json` passed. One ROM-dependent test is ignored. CI runs authored fixtures only and never requests/uploads a ROM.
+- **Environment:** Standard cargo-clippy launcher cannot resolve its executable without `/proc/self/exe` in this sandbox. The same pinned Clippy driver is invoked through `RUSTC_WORKSPACE_WRAPPER` with deny-warnings arguments. Local linking uses `RUSTFLAGS='-C linker-features=-lld'` to avoid that environment's lld-wrapper restriction; these are local environment adjustments, not engine dependencies or gameplay flags.
+- **Fidelity:** [docs/FIDELITY.md](docs/FIDELITY.md) defines exact per-tick state/input metadata and first-divergence reporting. Tests include float-bit drift and signed zero. The synthetic counter is not an original-game oracle. No movement, original collision queries, camera, animations, RNG behavior, objects/interactions, or mission has passed a gameplay comparison.
+- **Blocked integration:** No supplied supported ROM, matching reference build, trace exporter/emulator setup, or GPU presentation check. The owner-ROM test is documented and explicitly ignored; no actual BOB import or gameplay fidelity is claimed.
+- **Next task:** Validate real BOB blobs/counts and static traversal, decode geometry layouts and Fast3D/material state (including required dependent segments), and add a Rust renderer. Capture a stationary original-game oracle trace before porting action families.
+
+### Bob-omb Battlefield acceptance tracker
+
+| Capability / act | Actual state |
+| --- | --- |
+| M0 bounded ROM foundation | Authored fixtures pass; positive owner-ROM integration pending |
+| M1 imported original visible level | Static collision/placement/texture path implemented; real ROM and geometry/Fast3D/rendering pending |
+| M2 playable exploration | Not implemented; no Mario movement/camera/animations or collision queries |
+| Act 1 — King Bob-omb | Not implemented |
+| Act 2 — Koopa the Quick | Not implemented |
+| Act 3 — Shoot to the Island | Not implemented |
+| Act 4 — Eight Red Coins | Not implemented |
+| Act 5 — Mario Wings to the Sky | Not implemented; wing-cap campaign unlock also missing |
+| Act 6 — Chain Chomp gate | Not implemented |
+| 100-coin star, death/re-entry/save, audio | Not implemented |
 
 ### Session update template
 
@@ -230,4 +258,4 @@ Every handoff should report the working result, commands actually run, missing f
 - 2026-10-08: New Rust engine with selectively adapted gameplay code and a ROM content adapter.
 - 2026-10-08: Bob-omb Battlefield first; shared course/area/act/behavior/warp concepts support eventual full-game expansion.
 - 2026-10-08: Original simulation cadence and measured movement fidelity take priority over visual enhancements.
-- 2026-10-08: Stack selection, exact source revisions, comparison setup, and final licensing remain implementation decisions to record.
+- 2026-10-08: Rust 1.90.0 headless foundation, exact serde/serde_json/sha1 dependencies, pinned MIT/CC0 references and US ROM metadata, MIT authored code, and an unmodified US comparison target selected. Actual ROM/oracle checks and future wgpu/winit version selection remain pending.

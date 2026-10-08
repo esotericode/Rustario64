@@ -1,0 +1,42 @@
+pub mod bob;
+pub mod collision;
+pub mod level;
+pub mod mio0;
+pub mod reader;
+pub mod rom;
+pub mod segments;
+mod special;
+pub mod texture;
+pub mod version;
+
+use std::fmt;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportError {
+    pub context: &'static str,
+    pub offset: usize,
+    pub detail: String,
+}
+
+impl ImportError {
+    pub fn new(context: &'static str, offset: usize, detail: impl Into<String>) -> Self {
+        Self {
+            context,
+            offset,
+            detail: detail.into(),
+        }
+    }
+}
+
+impl fmt::Display for ImportError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} at 0x{:X}: {}",
+            self.context, self.offset, self.detail
+        )
+    }
+}
+
+impl std::error::Error for ImportError {}
+pub type Result<T> = std::result::Result<T, ImportError>;
