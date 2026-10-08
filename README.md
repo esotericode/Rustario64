@@ -11,10 +11,12 @@ What works now:
   collision, script and macro placements, warps, and the **visible terrain and
   textures**, decoded from the original geo layouts and Fast3D display lists.
 - An optional wgpu viewer that renders the imported level offscreen to PNG or in a
-  window with a free inspection camera.
+  window with a free inspection camera, with collision and placement overlays.
+- The original static collision loader and floor/ceiling/wall/water queries,
+  ported to Rust and verified bit for bit against the pinned decompilation's C.
 - Exact per-tick trace comparison tooling and a fixed 30 Hz scheduler.
 
-There is no Mario, collision query, camera logic, object, or mission yet. The
+There is no Mario, camera logic, object, or mission yet. The
 imported level is independently validated against the pinned decompilation; see
 [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md).
 
@@ -24,6 +26,7 @@ imported level is independently validated against the pinned decompilation; see
 | --- | --- | --- |
 | `rustario64` | `.` | GPU-free core: import, content, simulation scaffolding, traces, headless CLI |
 | `rustario64-render` | `render/` | Optional wgpu renderer and the `rustario64-viewer` development binary |
+| `rustario64-oracle` | `oracle/` | Development-only: pinned CC0 decomp collision C compiled natively for bitwise differential tests (needs a C compiler); never a runtime dependency |
 
 The core never depends on the renderer, so simulation and replay comparisons run
 without a GPU or window.
@@ -43,6 +46,8 @@ cargo build --locked --workspace --release
 cargo run --locked -- demo
 ```
 
+Oracle tests compile vendored decomp C with the system C compiler and compare it
+with the Rust collision port on authored streams; see [oracle/README.md](oracle/README.md).
 Render tests draw small authored models offscreen. Without a GPU adapter they
 skip; set `RUSTARIO64_REQUIRE_GPU=1` to make a missing adapter fail (CI does this
 with Mesa's software Vulkan, `mesa-vulkan-drivers`). The viewer needs a Vulkan,
@@ -65,7 +70,11 @@ headers are rejected. Keep ROMs and everything derived from them private; the
 cargo run --locked -- inspect-rom /path/to/sm64.z64
 cargo run --locked -- import-bob /path/to/sm64.z64 --out private/imports
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --test import local_us_rom_import -- --ignored --exact
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test collision bob_collision -- --ignored --nocapture
 ```
+
+The second test compares BOB's real collision between the Rust port and the
+decomp C on a dense grid of queries (about four million comparisons).
 
 ### View Bob-omb Battlefield
 
@@ -79,7 +88,10 @@ cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
   view /path/to/sm64.z64
 ```
 
-Graphics-only flags: `--msaa 4`, `--no-fog`, `--no-cull`, `--size WxH`. The
+Graphics-only flags: `--msaa 4`, `--no-fog`, `--no-cull`, `--size WxH`;
+inspection overlays: `--collision` (floors blue, walls red, ceilings yellow) and
+`--placements` (Mario start, script objects, macro objects, specials). In the
+window, C, P, and F toggle collision, placements, and fog. The
 viewer launches straight into BOB area 1 as a development entry point. The camera
 is a presentation-only inspection camera, not the original game camera. The sky
 is a placeholder color until the skybox is imported; trees, coins, enemies, and
@@ -124,7 +136,8 @@ holds the owner-ROM evidence.
 
 ## Next increment
 
-Finish M1 inspection (collision and placement overlays, skybox, object models),
-then start M2 by porting original collision loading and floor/wall/ceiling queries
-with an exact differential harness against the pinned decompilation, and capture
-a stationary original-game per-tick oracle trace before porting Mario's actions.
+Choose and audit a per-tick Mario oracle (an unmodified reference build with a
+trace exporter, or pinned libsm64 after auditing its changes), import the
+original trig tables from the ROM, and port Mario's state, spawn, and first
+stationary/walking actions against exact per-tick traces. In parallel, finish M1
+presentation gaps: skybox and object models for placements.

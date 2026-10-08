@@ -1,7 +1,9 @@
 # Comparison contract and coverage
 
-Original movement, collision queries, actions, camera, RNG, objects, and
-interactions have **zero validated gameplay coverage**. The diagnostic marker
+Original movement, actions, camera, RNG, objects, and interactions have **zero
+validated gameplay coverage**. Static collision loading and collision queries now
+have exact coverage against the pinned decomp compiled natively (below); that is
+component coverage, not per-tick gameplay coverage. The diagnostic marker
 visualizes a tick counter; it is not a Mario approximation.
 
 Target US v1.0 at n64decomp/sm64 revision
@@ -67,9 +69,36 @@ The ignored owner-ROM test is documented in README. It checks original collision
 and macro records against source-derived digests, plus script counts and entry
 metadata. It does not validate geometry rendering, all assets, or gameplay.
 
+## Collision component coverage
+
+`rustario64-oracle` compiles the pinned decomp's surface_load.c and
+surface_collision.c natively (`-fwrapv`, `-ffp-contract=off`) and compares the
+Rust port bit for bit:
+
+| Check | Authored streams (CI) | BOB, owner ROM (ignored test) |
+| --- | --- | --- |
+| Loaded surfaces (every field, f32 as bits) and node count | 5 seeded streams, ~196 surfaces each | 1,060 surfaces |
+| All 16x16 cells x floor/ceiling/wall x static/dynamic lists, in order | Identical | Identical |
+| find_floor (camera and intangible-flag variants, including the flag's clearing) | Identical | Identical |
+| find_ceil, find_wall_collisions (3 offsets, radius 0–260, vanish-wall and camera variants), water and gas levels | Identical | Identical |
+| Comparisons / non-trivial hits | 795,000; 48,806 floors, 14,040 ceilings, 25,548 wall pushes, 1,783 intangible-affected floors, water and gas hits | 4,064,920; 377,720 floors, 17,648 ceilings, 60,924 wall pushes |
+
+Query points include random positions, every vertex with small offsets, all
+cell borders with offsets around the 50-unit overlap, and large coordinates that
+wrap through (s16) casts. Mutation checks: changing the cell insertion tie order,
+the 78-unit floor buffer, or the wall push sign each fails the CI test. Rounding
+instead of truncating the wall-query position was not detected, because the
+original's 50-unit cell overlap makes it unobservable for these fixtures.
+
+Limits: dynamic (object) surfaces, rooms, and float-to-int casts of values
+beyond the s32 range are not covered. Native IEEE single precision is assumed to
+match the N64 for these operations until original-execution traces confirm it.
+
 ## Next reference work
 
-1. Obtain an unmodified matching US reference build using the supplied ROM.
+1. Obtain an unmodified matching US reference build using the supplied ROM, or
+   evaluate pinned libsm64 (CC0) as a Mario-movement oracle after auditing its
+   changes to the decomp's movement and surface code.
 2. Add a reference exporter around each completed simulation tick, reproducible
    initial world/state and tick input, and recorded build/emulator/platform
    configuration. Instrumentation must not change arithmetic or update order.

@@ -159,3 +159,31 @@ in the render crate and cannot reach simulation state. The viewer's inspection
 camera moves with wall-clock time because it is presentation-only; the window
 loop still feeds the fixed 30 Hz clock, which will drive gameplay ticks. On focus
 loss the viewer drops its wall-clock anchor so no elapsed time accumulates.
+
+## Collision port and native oracle — 2026-10-08
+
+`simulation/collision.rs` translates surface_load.c's static loader and
+surface_collision.c's floor, ceiling, wall, water, and gas queries. It keeps the
+original's representation choices: surfaces in allocation order identified by
+index, 16x16 cells with separate floor/ceiling/wall lists for static and dynamic
+surfaces, insertion sorted by the first vertex's height (with the original
+s16 priority arithmetic), the 50-unit cell overlap with s16 wraparound,
+integer cross products converted to f32, the double-precision reciprocal and
+thresholds (0.0001, 0.01, 0.707), f32 query arithmetic in source order with no
+fused operations, (s16) position casts, first-match returns, the 78-unit buffers,
+the SURFACE_INTANGIBLE retry, and the four-wall reference limit. Globals become
+explicit inputs: `CollisionFlags` (camera checks; the intangible flag that
+find_floor clears) and a `pass_vanish_walls` argument for the current-object
+test. Pool limits (2300 surfaces, 7000 nodes) are errors instead of silent
+overflow. Rooms, object (dynamic) surface loading, and debug counters are not
+ported yet. Environment regions are owned and mutable because behaviors rewrite
+them. Multiple environment blocks in one stream are rejected because the
+original keeps only the last one.
+
+The oracle crate compiles byte-identical CC0 decomp collision files natively
+with authored shim headers, `-fwrapv`, and `-ffp-contract=off`, and compares the
+Rust port bit for bit: every surface field, every cell list, and floor/ceiling/
+wall/water/gas query results including pushed positions and wall lists. It is a
+development tool, never a runtime dependency (see oracle/README.md). Native x86
+IEEE single precision is assumed to match the N64 for these operations; that is
+an assumption until original-execution traces confirm it.

@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "render"]
+members = [".", "render", "oracle"]
 resolver = "3"
 
 [package]

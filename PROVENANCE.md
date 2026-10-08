@@ -20,6 +20,8 @@ by src/diagnostics.rs and tests; they are not samples from the game.
 | Same pinned sm64 | include/PR/gbi.h, include/PR/mbi.h (F3D_OLD), src/game/game_init.c (init_rsp/init_rdp), src/game/rendering_graph_node.c (render-mode tables, master lists, transforms), src/engine/math_util.c (mtxf_rotate_zxy_and_translate, mtxf_mul), include/sm64.h (layers), include/geo_commands.h (backgrounds) | import/gfx.rs, import/model.rs, content/visual.rs, render/src/shader.wgsl | Translated Fast3D command encodings, combiner/othermode/geometry-mode bit layouts, default state, layer render modes, fog-position contract and transform order. Render-mode and combiner constants were computed by compiling the gbi.h macros with gcc (not vendored). | CC0. Authored command-word fixtures from the compiled macros; 1,101-triangle BOB comparison passes. |
 | Same pinned sm64 | levels/bob/script.c, levels/bob/areas/1/geo.inc.c, levels/bob/areas/1/*/model.inc.c, levels/bob/leveldata.c, levels/bob/texture.inc.c | tests/import.rs (ignored test), docs/ROM_VALIDATION.md | Validation only: a separate script expanded the display-list source in geo order into expected triangle vertices; only counts/digests are stored. | CC0 source reference; no source geometry bundled. |
 | Same pinned sm64 | assets.json, extract_assets.py, tools/sm64tools/mio0, tools/sm64tools/n64graphics | docs/ROM_VALIDATION.md | Validation only: built the decomp's vendored tools outside the repository and extracted BOB's textures from the owner ROM to compare pixels. Nothing extracted is tracked. | Decomp tooling terms as shipped in that tree; used locally, not incorporated. |
+| Same pinned sm64 | src/engine/surface_load.c, src/engine/surface_load.h, src/engine/surface_collision.c, src/engine/surface_collision.h, include/surface_terrains.h | simulation/collision.rs | Translated static surface loading (normals, offsets, bounds, flags, force, partition cells and ordering) and floor/ceiling/wall/water/gas queries with original widths, casts, f32 order and double thresholds. Globals became explicit parameters; pool overflow became an error. Rooms, dynamic object surfaces and debug counters not yet ported. | CC0. Bitwise differential tests against the same code compiled natively: authored streams in CI, BOB on the owner ROM. |
+| Same pinned sm64 | the eight files above plus include/special_presets.h, include/special_presets.inc.c, include/model_ids.h; `spawn_special_objects` from src/game/macro_special_objects.c | oracle/c/decomp/ (byte-identical copies, SHA-1s in oracle/README.md), oracle/c/oracle.c (verbatim function) | Vendored for the development-only native oracle; authored shim headers and glue. Never linked into the runtime. | CC0; notice in oracle/c/decomp/LICENSE-CC0.txt. |
 | Same pinned sm64 | src/game/game_init.c | simulation.rs, docs | Reference cadence only: yields to VI twice / 30 FPS. New rational integer accumulator; no movement algorithm translated. | CC0. Synthetic cadence/backlog/long-clock tests. |
 | [queueRAM/sm64tools](https://github.com/queueRAM/sm64tools/tree/81de9e5a8f0fa96686a16441d5b9f25742f4d17d) — 81de9e5a8f0fa96686a16441d5b9f25742f4d17d | configs/sm64.u.yaml | import/version.rs | Referenced BOB ROM ranges, segment-7 collision offset, and five RGBA16 texture offsets/dimensions. Other version offsets are not scattered in gameplay. | MIT, Copyright (c) 2015 Q; retained LICENSES/sm64tools-MIT.txt. Owner-ROM decode/export passes. |
 | Same pinned sm64tools | libmio0.c : mio0_decode | import/mio0.rs | Rust algorithm adaptation, retaining MSB-first masks, token length/distance and overlapping copies. Adds stream bounds, output cap, checked back-references and strict malformed-token rejection. | MIT notice in source and LICENSES/. Authored literal/overlap/truncation/limit fixtures. |
@@ -37,7 +39,8 @@ remain candidates; no claim of licensing/reusing their code is made.
 
 Newly authored application, safe readers, content types, geo/Fast3D importers,
 scheduler, presentation, renderer, shader, viewer, trace comparator, exporters,
-and fixtures use this repository's MIT license.
+fixtures, and the oracle's shim headers and glue use this repository's MIT
+license. Translated collision code derives from CC0 sources.
 
 | Dependency | Exact direct version | Purpose | Declared terms |
 | --- | --- | --- | --- |
@@ -48,12 +51,18 @@ and fixtures use this repository's MIT license.
 | winit | 0.30.13 | Development viewer window/input (render crate only) | Apache-2.0 |
 | pollster | 1.0.1 | Blocking on wgpu adapter/device futures | Apache-2.0/MIT |
 | png | 0.18.1 | Screenshot encoding | MIT OR Apache-2.0 |
+| cc | 1.4.7 | Build-time C compilation for the development oracle only | MIT OR Apache-2.0 |
 
 Cargo.lock pins transitive versions and registry checksums. A metadata scan of
 the resolved workspace found only permissive declarations (MIT, Apache-2.0,
 BSD-2/3-Clause, Zlib, ISC, Unicode-3.0, BSL-1.0, Unlicense, 0BSD, and dual/tri
 licenses including those); a formal per-file notice bundle for binary releases
-is still to be produced before distributing builds. Dependencies are
+is still to be produced before distributing builds. A publish-date audit of the
+lockfile on 2026-10-08 pinned recently released transitive crates (cc, libc,
+smallvec, zerocopy, tokio, toml_*, objc2, find-msvc-tools) back to releases at
+least two weeks old. The wasm-bindgen/js-sys/web-sys family stays at its current
+interlocked versions; it is only compiled for wasm32, not for the supported
+desktop targets. Dependencies are
 downloaded by Cargo rather than copied into repository source. Preserve their
 notices when packaging their source or distributable dependencies. The Rust
 1.90.0 toolchain is pinned separately; current runtime code is entirely Rust.
@@ -61,8 +70,10 @@ notices when packaging their source or distributable dependencies. The Rust
 ## Reference comparison status
 
 Initial target: pinned unmodified US n64decomp/original ROM execution. No oracle
-binary/exporter was available, and no movement/collision implementation was
-translated yet. The 30/60/120/144 Hz comparison is a synthetic counter/input-edge
+binary/exporter for original execution is available yet. Collision loading and
+queries are compared with the pinned decomp compiled natively (oracle crate),
+which is a practical oracle, not original-hardware evidence. No movement
+implementation has been translated yet. The 30/60/120/144 Hz comparison is a synthetic counter/input-edge
 fixture only. It must not be described as Mario fidelity coverage.
 
 Original collision, macro, visible-triangle, and texture asset comparisons pass

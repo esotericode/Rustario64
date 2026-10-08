@@ -88,6 +88,15 @@ pub fn decode(bytes: &[u8]) -> Result<(CollisionMesh, usize)> {
                 }
             }
             0x44 => {
+                // gEnvironmentRegions points at the latest block only; merging
+                // several blocks would change query results, so reject them.
+                if !mesh.environment.is_empty() {
+                    return Err(ImportError::new(
+                        "collision",
+                        command_at,
+                        "multiple environment-region blocks are not supported",
+                    ));
+                }
                 let n = count(r, at)?;
                 at += 2;
                 r.slice(at, n * 12)?;

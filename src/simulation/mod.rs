@@ -1,4 +1,6 @@
-//! Fixed cadence and input-edge foundation. No approximate Mario equations.
+//! Fixed cadence, input edges, and original collision. No approximate Mario equations.
+pub mod collision;
+
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 

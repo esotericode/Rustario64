@@ -1,0 +1,21 @@
+[package]
+name = "rustario64-oracle"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+license = "MIT"
+description = "Development-only differential oracle: pinned CC0 decomp collision C compiled natively. Never linked into the game runtime."
+build = "build.rs"
+
+[dependencies]
+rustario64 = { path = ".." }
+
+[build-dependencies]
+cc = "=1.4.7"
+
+[dev-dependencies]
+sha1 = "=0.10.6"
+
+[lints.clippy]
+all = "warn"

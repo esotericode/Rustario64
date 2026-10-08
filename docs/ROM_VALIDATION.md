@@ -88,6 +88,17 @@ space, fog curve, and blending are checked only by authored fixtures, GPU pixel
 tests on authored models, and visual review of screenshots. No comparison with
 original rendered frames has been made.
 
+## Collision behavior comparison
+
+`RUSTARIO64_ROM=... cargo test --release -p rustario64-oracle --test collision
+bob_collision -- --ignored` decodes BOB's collision stream from the owner ROM,
+checks the Rust decoder agrees with `bob::import`, loads it into both the Rust
+port and the natively compiled decomp loader, and compares all 1,060 surfaces,
+every partition list, and 4,064,920 query results bit for bit (dense 97-unit grid
+at six heights plus randomized and edge points). All are identical. This is a
+component check against compiled decomp source, not a trace from original
+execution.
+
 ## Remaining checks
 
 Static script parsing reports global calls and missing dependent segments.
@@ -96,7 +107,7 @@ native callbacks, and object interactions remain unimplemented. No behavior
 address has been promoted to an implemented runtime behavior.
 
 Skybox import, object models from globally loaded segments, animation import,
-collision queries, Mario actions, camera, audio, and missions are missing. No
+dynamic object collision, Mario actions, camera, audio, and missions are missing. No
 movement or collision fidelity claim follows from matching the asset streams.
 There is still no matching oracle build/emulator exporter or genuine gameplay
 trace. The next content tasks are viewer overlays for collision and placements,
