@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "render"]
+resolver = "3"
+
 [package]
 name = "rustario64"
 version = "0.1.0"
