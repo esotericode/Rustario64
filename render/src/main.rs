@@ -2,11 +2,11 @@
 //! (no window needed); `view` opens a window with a free inspection camera.
 //! Both are development entry points straight into Bob-omb Battlefield.
 use rustario64::{
-    content::visual::AreaVisual,
+    content::visual::{AreaVisual, VisualModel},
     import::{bob, rom::Rom},
     simulation::FixedClock,
 };
-use rustario64_render::{RenderOptions, Renderer, camera, camera::FlyCamera};
+use rustario64_render::{RenderOptions, Renderer, camera, camera::FlyCamera, overlay};
 use std::{
     path::Path,
     sync::Arc,
@@ -24,10 +24,11 @@ use winit::{
 type AppResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 const HELP: &str = "Rustario64 development viewer (Bob-omb Battlefield, area 1)\n\n\
-  rustario64-viewer screenshot /path/to/sm64.z64 --out private/bob.png [--view start|overview|summit|top] [--size 1280x960] [--msaa 4] [--no-cull] [--no-fog]\n\
+  rustario64-viewer screenshot /path/to/sm64.z64 --out private/bob.png [--view start|overview|summit|top] [--size 1280x960] [--msaa 4] [--no-cull] [--no-fog] [--collision] [--placements]\n\
   rustario64-viewer view /path/to/sm64.z64 [--view start] [--msaa 4] [--no-fog] [--frames N]\n\n\
   View controls: WASD move, Q/E down/up, Shift faster, hold right mouse or arrow keys to look,\n\
-  1-4 select presets, Esc quits. The camera is a presentation-only inspection camera.\n";
+  1-4 select presets, C collision overlay, P placement markers, F fog, Esc quits.\n\
+  The camera is a presentation-only inspection camera, not the original camera.\n";
 
 struct Options {
     view: String,
@@ -35,6 +36,8 @@ struct Options {
     msaa: u32,
     cull: bool,
     fog: bool,
+    collision: bool,
+    placements: bool,
     out: Option<String>,
     frames: Option<u64>,
 }
@@ -46,6 +49,8 @@ fn parse(args: &[String]) -> AppResult<Options> {
         msaa: 1,
         cull: true,
         fog: true,
+        collision: false,
+        placements: false,
         out: None,
         frames: None,
     };
@@ -76,6 +81,16 @@ fn parse(args: &[String]) -> AppResult<Options> {
                 i += 1;
                 continue;
             }
+            "--collision" => {
+                options.collision = true;
+                i += 1;
+                continue;
+            }
+            "--placements" => {
+                options.placements = true;
+                i += 1;
+                continue;
+            }
             other => return Err(format!("unknown option {other}\n\n{HELP}").into()),
         }
         i += 2;
@@ -92,7 +107,23 @@ fn parse(args: &[String]) -> AppResult<Options> {
 
 struct Level {
     visual: AreaVisual,
+    collision: VisualModel,
+    placements: VisualModel,
     mario_start: Option<(i16, [i16; 3])>,
+}
+
+/// Model indices in the renderer: terrain, collision overlay, placement markers.
+const TERRAIN: usize = 0;
+const COLLISION: usize = 1;
+const PLACEMENTS: usize = 2;
+
+fn upload(renderer: &mut Renderer, level: &Level, collision: bool, placements: bool) {
+    renderer.load_model(&level.visual.model);
+    renderer.add_model(&level.collision);
+    renderer.add_model(&level.placements);
+    renderer.set_visible(COLLISION, collision);
+    renderer.set_visible(PLACEMENTS, placements);
+    debug_assert!(renderer.is_visible(TERRAIN));
 }
 
 fn load(rom_path: &Path) -> AppResult<Level> {
@@ -101,6 +132,8 @@ fn load(rom_path: &Path) -> AppResult<Level> {
     let visual = imported.visual.ok_or("no visible geometry imported")?;
     Ok(Level {
         visual,
+        collision: overlay::collision(&imported.collision),
+        placements: overlay::placements(&imported.level, &imported.collision),
         mario_start: imported.level.mario_start.map(|(_, yaw, pos)| (yaw, pos)),
     })
 }
@@ -133,7 +166,7 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
     let out = options.out.as_deref().ok_or("screenshot needs --out")?;
     let level = load(rom_path)?;
     let (info, mut renderer) = rustario64_render::headless(render_options(options))?;
-    renderer.load_model(&level.visual.model);
+    upload(&mut renderer, &level, options.collision, options.placements);
     let camera = preset(&options.view, &level)?;
     let (w, h) = options.size;
     let pixels = renderer.capture(w, h, &camera)?;
@@ -147,6 +180,16 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
         info.name,
         info.backend
     );
+    if options.collision {
+        println!(
+            "Collision overlay: floors blue, walls red, ceilings yellow; non-default surface types brighter."
+        );
+    }
+    if options.placements {
+        println!(
+            "Placement markers: Mario start red, script objects orange, macro objects yellow, specials cyan."
+        );
+    }
     println!("Skybox, objects, and Mario are not drawn yet; the sky is a placeholder clear color.");
     Ok(())
 }
@@ -219,7 +262,7 @@ impl App {
             config,
             renderer,
         };
-        gpu.renderer.load_model(&self.level.visual.model);
+        upload(&mut gpu.renderer, &self.level, false, false);
         resize_targets(&mut gpu);
         println!(
             "Viewer on {} ({:?}), surface {:?}",
@@ -306,6 +349,22 @@ impl App {
             KeyCode::ArrowDown => self.keys.pitch = -v,
             KeyCode::ShiftLeft | KeyCode::ShiftRight => self.keys.fast = down,
             KeyCode::Escape if down => event_loop.exit(),
+            KeyCode::KeyC | KeyCode::KeyP if down => {
+                if let Some(gpu) = self.gpu.as_mut() {
+                    let model = if code == KeyCode::KeyC {
+                        COLLISION
+                    } else {
+                        PLACEMENTS
+                    };
+                    let visible = gpu.renderer.is_visible(model);
+                    gpu.renderer.set_visible(model, !visible);
+                }
+            }
+            KeyCode::KeyF if down => {
+                if let Some(gpu) = self.gpu.as_mut() {
+                    gpu.renderer.options_mut().fog ^= true;
+                }
+            }
             KeyCode::Digit1 | KeyCode::Digit2 | KeyCode::Digit3 | KeyCode::Digit4 if down => {
                 let index = match code {
                     KeyCode::Digit1 => 0,

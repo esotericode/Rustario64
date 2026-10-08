@@ -3,6 +3,7 @@
 //! presentation camera only, so graphics settings cannot alter gameplay state.
 pub mod camera;
 pub mod math;
+pub mod overlay;
 pub mod renderer;
 
 pub use renderer::{RenderOptions, Renderer};

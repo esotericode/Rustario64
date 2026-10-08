@@ -62,7 +62,8 @@ pub struct Renderer {
     pipelines: HashMap<PipelineKey, wgpu::RenderPipeline>,
     frame_buffer: wgpu::Buffer,
     frame_group: wgpu::BindGroup,
-    batches: Vec<GpuBatch>,
+    /// Uploaded models with their visibility; drawn together by layer.
+    models: Vec<(bool, Vec<GpuBatch>)>,
 }
 
 fn rgba(c: [u8; 4]) -> [f32; 4] {
@@ -215,7 +216,7 @@ impl Renderer {
             pipelines: HashMap::new(),
             frame_buffer,
             frame_group,
-            batches: vec![],
+            models: vec![],
         }
     }
 
@@ -231,8 +232,30 @@ impl Renderer {
         self.options
     }
 
-    /// Upload a model's textures and batches, replacing any previous scene.
+    /// Per-frame options (fog, clear color) apply on the next frame. Culling and
+    /// MSAA are baked into pipelines and targets, so they apply on the next upload.
+    pub fn options_mut(&mut self) -> &mut RenderOptions {
+        &mut self.options
+    }
+
+    /// Replace every uploaded model with this one.
     pub fn load_model(&mut self, model: &VisualModel) {
+        self.models.clear();
+        self.add_model(model);
+    }
+
+    pub fn set_visible(&mut self, model: usize, visible: bool) {
+        if let Some(entry) = self.models.get_mut(model) {
+            entry.0 = visible;
+        }
+    }
+
+    pub fn is_visible(&self, model: usize) -> bool {
+        self.models.get(model).is_some_and(|m| m.0)
+    }
+
+    /// Upload a model's textures and batches; returns its index (initially visible).
+    pub fn add_model(&mut self, model: &VisualModel) -> usize {
         let views: Vec<_> = model
             .textures
             .iter()
@@ -282,7 +305,7 @@ impl Renderer {
         let white = white.create_view(&wgpu::TextureViewDescriptor::default());
         let mut samplers: HashMap<(WrapMode, WrapMode, TextureFilter), wgpu::Sampler> =
             HashMap::new();
-        self.batches.clear();
+        let mut batches = vec![];
         for batch in &model.batches {
             let m = &batch.material;
             let (wrap, filter) = m.texture.map_or(
@@ -357,7 +380,7 @@ impl Renderer {
             } else {
                 None
             };
-            self.batches.push(GpuBatch {
+            batches.push(GpuBatch {
                 layer: m.layer,
                 key: PipelineKey {
                     blend: m.blend,
@@ -371,10 +394,11 @@ impl Renderer {
                 bind_group,
             });
         }
-        let keys: Vec<_> = self.batches.iter().map(|b| b.key).collect();
-        for key in keys {
+        for key in batches.iter().map(|b| b.key).collect::<Vec<_>>() {
             self.pipeline(key);
         }
+        self.models.push((true, batches));
+        self.models.len() - 1
     }
 
     fn pipeline(&mut self, key: PipelineKey) -> &wgpu::RenderPipeline {
@@ -522,8 +546,10 @@ impl Renderer {
                 multiview_mask: None,
             });
             pass.set_bind_group(0, &self.frame_group, &[]);
+            let visible: Vec<_> = self.models.iter().filter(|m| m.0).collect();
             for layer in 0..LAYER_COUNT as u8 {
-                for batch in self.batches.iter().filter(|b| b.layer == layer) {
+                let batches = visible.iter().flat_map(|m| m.1.iter());
+                for batch in batches.filter(|b| b.layer == layer) {
                     pass.set_pipeline(&self.pipelines[&batch.key]);
                     pass.set_bind_group(1, &batch.bind_group, &[]);
                     pass.set_vertex_buffer(0, batch.vertices.slice(..));
