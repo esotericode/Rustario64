@@ -139,6 +139,8 @@ pub struct ImportedLevel {
     pub course: CourseId,
     pub level: LevelId,
     pub areas: Vec<ImportedArea>,
+    /// Raw MARIO_POS fields: area, yaw in signed degrees, and position.
+    /// Runtime angle units use `(i32::from(yaw) * 0x8000 / 180) as i16`.
     pub mario_start: Option<(AreaId, i16, [i16; 3])>,
     pub segment_loads: Vec<SegmentLoad>,
     pub models: Vec<ModelDefinition>,

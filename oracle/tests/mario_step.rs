@@ -266,6 +266,7 @@ fn to_oracle(m: &MarioState, e: &Env) -> OracleMario {
         level_num: e.level_num,
         water_pseudo_origin_offset: e.water_pseudo,
         include_intangible: i16::from(e.include_intangible),
+        ..Default::default()
     }
 }
 
@@ -515,6 +516,7 @@ fn random_state(
         wing_flutter: rng.next().is_multiple_of(2),
         gfx_pos: [0.0; 3],
         gfx_angle: [0; 3],
+        ..Default::default()
     })
 }
 

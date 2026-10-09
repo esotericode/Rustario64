@@ -1,5 +1,6 @@
 //! Fixed cadence, input edges, and original collision. No approximate Mario equations.
 pub mod collision;
+pub mod controller;
 pub mod mario;
 pub mod math;
 
@@ -53,7 +54,7 @@ impl FixedClock {
 #[serde(deny_unknown_fields)]
 pub struct TickInput {
     pub buttons: u16,
-    /// Signed N64 stick bytes; original normalization still needs to be ported.
+    /// Signed N64 stick bytes, normalized by `controller::Controller` at ticks.
     pub stick: [i8; 2],
     pub camera_yaw: i16,
 }

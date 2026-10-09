@@ -1,7 +1,8 @@
 //! Mario state and ported Mario code. Only the parts verified against the
-//! pinned decomp are here; actions, inputs, camera, interactions and animation
+//! pinned decomp are here; actions, camera, interactions and animation
 //! are not ported yet.
 pub mod constants;
+pub mod inputs;
 pub mod step;
 
 use crate::simulation::{
@@ -19,12 +20,21 @@ pub enum SurfaceRef {
 
 /// The MarioState fields read or written by the ported code, named after the
 /// original struct members. Graphics fields mirror marioObj->header.gfx.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct MarioState {
     pub input: u16,
     pub flags: u32,
     pub action: u32,
     pub terrain_sound_addend: u32,
+    pub particle_flags: u32,
+    pub collided_obj_interact_types: u32,
+    pub intended_mag: f32,
+    pub intended_yaw: i16,
+    pub frames_since_a: u8,
+    pub frames_since_b: u8,
+    pub squish_timer: u8,
+    pub wall_kick_timer: u8,
+    pub double_jump_timer: u8,
     pub face_angle: [i16; 3],
     pub angle_vel: [i16; 3],
     pub pos: [f32; 3],

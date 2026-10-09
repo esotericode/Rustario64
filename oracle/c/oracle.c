@@ -1,3 +1,4 @@
+#include "input_reference.h"
 /* Rustario64 collision oracle glue. Authored code is MIT; the marked function
  * below is copied verbatim from CC0 n64decomp/sm64 at
  * 9921382a68bb0c865e5e45eb594d9c64db59b1af (src/game/macro_special_objects.c).
@@ -408,6 +409,29 @@ f32 oracle_approach_f32(f32 current, f32 target, f32 inc, f32 dec) {
 
 /* ---- Constant table for the Rust consistency test ---- */
 static const struct { const char *name; long long value; } sConstants[] = {
+    { "INPUT_NONZERO_ANALOG", (long long) (INPUT_NONZERO_ANALOG) },
+    { "INPUT_A_PRESSED", (long long) (INPUT_A_PRESSED) },
+    { "INPUT_OFF_FLOOR", (long long) (INPUT_OFF_FLOOR) },
+    { "INPUT_ABOVE_SLIDE", (long long) (INPUT_ABOVE_SLIDE) },
+    { "INPUT_FIRST_PERSON", (long long) (INPUT_FIRST_PERSON) },
+    { "INPUT_UNKNOWN_5", (long long) (INPUT_UNKNOWN_5) },
+    { "INPUT_SQUISHED", (long long) (INPUT_SQUISHED) },
+    { "INPUT_IN_POISON_GAS", (long long) (INPUT_IN_POISON_GAS) },
+    { "INPUT_IN_WATER", (long long) (INPUT_IN_WATER) },
+    { "INPUT_STOMPED", (long long) (INPUT_STOMPED) },
+    { "INPUT_B_PRESSED", (long long) (INPUT_B_PRESSED) },
+    { "INPUT_Z_DOWN", (long long) (INPUT_Z_DOWN) },
+    { "INPUT_Z_PRESSED", (long long) (INPUT_Z_PRESSED) },
+    { "ACT_FLAG_ALLOW_FIRST_PERSON", (long long) (ACT_FLAG_ALLOW_FIRST_PERSON) },
+    { "SURFACE_CLASS_DEFAULT", (long long) (SURFACE_CLASS_DEFAULT) },
+    { "SURFACE_CLASS_VERY_SLIPPERY", (long long) (SURFACE_CLASS_VERY_SLIPPERY) },
+    { "SURFACE_CLASS_SLIPPERY", (long long) (SURFACE_CLASS_SLIPPERY) },
+    { "SURFACE_CLASS_NOT_SLIPPERY", (long long) (SURFACE_CLASS_NOT_SLIPPERY) },
+    { "CAM_MOVE_C_UP_MODE", (long long) (CAM_MOVE_C_UP_MODE) },
+    { "INT_STATUS_MARIO_STUNNED", (long long) (INT_STATUS_MARIO_STUNNED) },
+    { "INT_STATUS_MARIO_KNOCKBACK_DMG", (long long) (INT_STATUS_MARIO_KNOCKBACK_DMG) },
+    { "INT_STATUS_MARIO_SHOCKWAVE", (long long) (INT_STATUS_MARIO_SHOCKWAVE) },
+
     { "ACT_TWIRLING", (long long) (ACT_TWIRLING) },
     { "ACT_SHOT_FROM_CANNON", (long long) (ACT_SHOT_FROM_CANNON) },
     { "ACT_LONG_JUMP", (long long) (ACT_LONG_JUMP) },
@@ -658,6 +682,16 @@ typedef struct {
     u32 flags;
     u32 action;
     u32 terrainSoundAddend;
+    u32 particleFlags;
+    u32 collidedObjInteractTypes;
+    f32 intendedMag;
+    s16 intendedYaw;
+    u8 framesSinceA;
+    u8 framesSinceB;
+    u8 squishTimer;
+    u8 wallKickTimer;
+    u8 doubleJumpTimer;
+
     s16 faceAngle[3];
     s16 angleVel[3];
     f32 pos[3];
@@ -701,6 +735,15 @@ static struct MarioState *mario_in(const OracleMario *o) {
     m->flags = o->flags;
     m->action = o->action;
     m->terrainSoundAddend = o->terrainSoundAddend;
+    m->particleFlags = o->particleFlags;
+    m->collidedObjInteractTypes = o->collidedObjInteractTypes;
+    m->intendedMag = o->intendedMag;
+    m->intendedYaw = o->intendedYaw;
+    m->framesSinceA = o->framesSinceA;
+    m->framesSinceB = o->framesSinceB;
+    m->squishTimer = o->squishTimer;
+    m->wallKickTimer = o->wallKickTimer;
+    m->doubleJumpTimer = o->doubleJumpTimer;
     memcpy(m->faceAngle, o->faceAngle, sizeof(Vec3s));
     memcpy(m->angleVel, o->angleVel, sizeof(Vec3s));
     memcpy(m->pos, o->pos, sizeof(Vec3f));
@@ -742,6 +785,15 @@ static void mario_out(const struct MarioState *m, OracleMario *o) {
     o->flags = m->flags;
     o->action = m->action;
     o->terrainSoundAddend = m->terrainSoundAddend;
+    o->particleFlags = m->particleFlags;
+    o->collidedObjInteractTypes = m->collidedObjInteractTypes;
+    o->intendedMag = m->intendedMag;
+    o->intendedYaw = m->intendedYaw;
+    o->framesSinceA = m->framesSinceA;
+    o->framesSinceB = m->framesSinceB;
+    o->squishTimer = m->squishTimer;
+    o->wallKickTimer = m->wallKickTimer;
+    o->doubleJumpTimer = m->doubleJumpTimer;
     memcpy(o->faceAngle, m->faceAngle, sizeof(Vec3s));
     memcpy(o->angleVel, m->angleVel, sizeof(Vec3s));
     memcpy(o->pos, m->pos, sizeof(Vec3f));
@@ -792,4 +844,61 @@ s32 oracle_mario_call(OracleMario *o, s32 which, u32 arg) {
     }
     mario_out(m, o);
     return r;
+}
+
+/* Pre-action input oracle: authored glue, reference in input_reference.c. */
+u16 gCameraMovementFlags;
+static s32 sDeathWarpRequests;
+/* Debug disabled; record the death-warp boundary without executing level state. */
+void debug_print_speed_action_normal(struct MarioState *m) { (void) m; }
+s16 level_trigger_warp(struct MarioState *m, s32 warpOp) {
+    (void) m;
+    if (warpOp != WARP_OP_DEATH) abort();
+    sDeathWarpRequests++;
+    return 0;
+}
+typedef struct {
+    s16 rawStick[2];
+    f32 stickX, stickY, stickMag;
+    u16 buttonDown, buttonPressed, sampleButtons;
+    s16 cameraYaw;
+    u16 cameraMovementFlags;
+    u32 objectInteractStatus, objectCollidedInteractTypes;
+    s32 deathWarpRequests;
+} OracleInput;
+
+/* 0 controller; 1 buttons/joystick; 2 full input stage. No actions run. */
+void oracle_input_tick(OracleMario *o, OracleInput *i, s32 which) {
+    struct MarioState *m = mario_in(o);
+    struct Controller controller = { 0 };
+    struct Camera camera = { 0 };
+    controller.rawStickX = i->rawStick[0];
+    controller.rawStickY = i->rawStick[1];
+    /* Same assignment expression as read_controller_inputs. */
+    controller.buttonPressed = i->sampleButtons & (i->sampleButtons ^ i->buttonDown);
+    controller.buttonDown = i->sampleButtons;
+    adjust_analog_stick(&controller);
+    m->controller = &controller;
+    camera.yaw = i->cameraYaw;
+    sArea.camera = &camera;
+    gCameraMovementFlags = i->cameraMovementFlags;
+    sMario.oInteractStatus = i->objectInteractStatus;
+    sMario.collidedObjInteractTypes = i->objectCollidedInteractTypes;
+    sDeathWarpRequests = 0;
+    switch (which) {
+        case 0: break;
+        case 1: update_mario_button_inputs(m); update_mario_joystick_inputs(m); break;
+        case 2: update_mario_inputs(m); break;
+        default: abort();
+    }
+    mario_out(m, o);
+    i->stickX = controller.stickX;
+    i->stickY = controller.stickY;
+    i->stickMag = controller.stickMag;
+    i->buttonDown = controller.buttonDown;
+    i->buttonPressed = controller.buttonPressed;
+    i->cameraMovementFlags = gCameraMovementFlags;
+    i->deathWarpRequests = sDeathWarpRequests;
+    m->controller = NULL;
+    sArea.camera = NULL;
 }
