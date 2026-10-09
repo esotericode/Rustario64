@@ -159,3 +159,35 @@ fn modulate_combiner_multiplies_texture_by_shade_and_cutout_discards() {
     let pixels = renderer.capture(64, 64, &camera()).unwrap();
     assert_eq!(centre(&pixels, 64), [0, 0, 255, 255]);
 }
+
+#[test]
+fn model_transform_translates_and_turns_a_model() {
+    let Some(mut renderer) = renderer(options()) else {
+        return;
+    };
+    let mut two_sided = material(SHADE);
+    two_sided.cull_back = false;
+    let model = VisualModel {
+        textures: vec![],
+        batches: vec![DrawBatch {
+            material: two_sided,
+            vertices: triangle([0, 255, 0, 255], false),
+            source: 0,
+        }],
+    };
+    renderer.load_model(&model);
+    let pixels = renderer.capture(64, 64, &camera()).unwrap();
+    assert_eq!(centre(&pixels, 64), [0, 255, 0, 255]);
+    // Moved aside, the centre shows the clear color.
+    renderer.set_transform(0, [2000.0, 0.0, 0.0], 0.0);
+    let pixels = renderer.capture(64, 64, &camera()).unwrap();
+    assert_eq!(centre(&pixels, 64), [0, 0, 255, 255]);
+    // Turned a quarter about +Y, the triangle is edge-on to the camera.
+    renderer.set_transform(0, [0.0, 0.0, 0.0], std::f32::consts::FRAC_PI_2);
+    let pixels = renderer.capture(64, 64, &camera()).unwrap();
+    assert_eq!(centre(&pixels, 64), [0, 0, 255, 255]);
+    // A half turn faces it away; without culling it is drawn again.
+    renderer.set_transform(0, [0.0, 0.0, 0.0], std::f32::consts::PI);
+    let pixels = renderer.capture(64, 64, &camera()).unwrap();
+    assert_eq!(centre(&pixels, 64), [0, 255, 0, 255]);
+}

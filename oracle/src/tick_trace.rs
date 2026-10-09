@@ -13,10 +13,9 @@ use rustario64::{
         FixedClock, TickInput,
         collision::CollisionWorld,
         mario::{
-            AnimRef, MarioState, ObjectId, StepWorld, SurfaceRef,
-            constants::ACT_IDLE,
-            core::{SpawnPoint, init_mario, init_mario_from_save_file, set_mario_action},
-            tick::{spawn_mario_object, tick},
+            AnimRef, MarioState, ObjectId, SaveInputs, StepWorld, SurfaceRef,
+            core::SpawnPoint,
+            tick::{LevelEntry, enter_level, tick},
         },
         math::TrigTables,
     },
@@ -36,20 +35,36 @@ impl TickSetup {
         terrain_type: u16,
         camera_mode: u8,
     ) -> Self {
-        let spawn = SpawnPoint::from_level_script(1, area, yaw, pos);
+        Self::from_entry(&LevelEntry::from_level_script(
+            level_num,
+            area,
+            yaw,
+            pos,
+            terrain_type,
+            camera_mode,
+        ))
+    }
+
+    /// The native setup for a Rust level entry (see `entry`).
+    pub fn from_entry(entry: &LevelEntry) -> Self {
+        let spawn = entry.spawn;
+        assert!(
+            entry.save.cap_pos.is_none(),
+            "a saved cap position needs the cap object"
+        );
         Self {
             start_pos: spawn.start_pos.map(i32::from),
             start_angle: spawn.start_angle.map(i32::from),
             area_index: i32::from(spawn.area_index),
             active_area_index: i32::from(spawn.active_area_index),
             behavior_arg: spawn.behavior_arg,
-            level_num: i32::from(level_num),
-            terrain_type: u32::from(terrain_type),
-            camera_mode: i32::from(camera_mode),
-            camera_def_mode: i32::from(camera_mode),
-            save_flags: 0,
-            total_stars: 0,
-            root_area_index: i32::from(area),
+            level_num: i32::from(entry.level_num),
+            terrain_type: u32::from(entry.terrain_type),
+            camera_mode: i32::from(entry.camera_mode),
+            camera_def_mode: i32::from(entry.camera_def_mode),
+            save_flags: entry.save.flags,
+            total_stars: entry.save.total_star_count,
+            root_area_index: i32::from(spawn.area_index),
         }
     }
 
@@ -62,31 +77,37 @@ impl TickSetup {
             behavior_arg: self.behavior_arg,
         }
     }
+
+    /// The same entry for the Rust side. The rendered area is the spawn's
+    /// area, as load_mario_area makes it.
+    pub fn entry(&self) -> LevelEntry {
+        assert_eq!(
+            self.root_area_index, self.area_index,
+            "the level entry renders the spawn's area"
+        );
+        LevelEntry {
+            spawn: self.spawn(),
+            level_num: self.level_num as i16,
+            terrain_type: self.terrain_type as u16,
+            camera_mode: self.camera_mode as u8,
+            camera_def_mode: self.camera_def_mode as u8,
+            save: SaveInputs {
+                flags: self.save_flags,
+                cap_pos: None,
+                total_star_count: self.total_stars,
+            },
+        }
+    }
 }
 
-/// The Rust side of oracle_tick_begin: the save-file initialization, Mario's
-/// spawn, init_mario and the idle action, on a fresh world.
+/// The Rust side of oracle_tick_begin.
 pub fn rust_begin<'a>(
     collision: &'a CollisionWorld,
     trig: &'a TrigTables,
     anims: &'a MarioAnimations,
     setup: &TickSetup,
 ) -> (MarioState, StepWorld<'a>) {
-    let mut w = StepWorld::new(collision, trig, anims);
-    w.level_num = setup.level_num as i16;
-    w.area_terrain_type = setup.terrain_type as u16;
-    w.camera.mode = setup.camera_mode as u8;
-    w.camera.def_mode = setup.camera_def_mode as u8;
-    w.save.flags = setup.save_flags;
-    w.save.total_star_count = setup.total_stars;
-    w.area_index = setup.root_area_index as i8;
-    let spawn = setup.spawn();
-    let mut m = MarioState::default();
-    init_mario_from_save_file(&mut m, &w);
-    m.obj = spawn_mario_object(&spawn, w.level_num);
-    init_mario(&mut m, &mut w, spawn);
-    set_mario_action(&mut m, &mut w, ACT_IDLE, 0);
-    (m, w)
+    enter_level(collision, trig, anims, &setup.entry())
 }
 
 /// Named words, inserted once each.

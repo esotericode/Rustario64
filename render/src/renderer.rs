@@ -9,7 +9,9 @@ use wgpu::util::DeviceExt;
 
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const VERTEX_STRIDE: u64 = 24;
-const MATERIAL_BYTES: usize = 192;
+const MATERIAL_BYTES: usize = 208;
+/// Byte offset of the per-model transform inside the material uniform.
+const TRANSFORM_OFFSET: u64 = 192;
 const FRAME_BYTES: usize = 144;
 
 /// Graphics-only options. None of these can alter authoritative simulation.
@@ -49,6 +51,7 @@ struct GpuBatch {
     vertices: wgpu::Buffer,
     count: u32,
     bind_group: wgpu::BindGroup,
+    material: wgpu::Buffer,
 }
 
 pub struct Renderer {
@@ -127,6 +130,8 @@ fn material_bytes(m: &Material) -> Vec<u8> {
         (f32::from(f.multiplier), f32::from(f.offset))
     });
     push_f32s(&mut out, &[multiplier, offset, 0.0, 0.0]);
+    // Model transform: translation and yaw, identity until set_transform.
+    push_f32s(&mut out, &[0.0, 0.0, 0.0, 0.0]);
     debug_assert_eq!(out.len(), MATERIAL_BYTES);
     out
 }
@@ -254,6 +259,23 @@ impl Renderer {
         self.models.get(model).is_some_and(|m| m.0)
     }
 
+    /// Place a model: rotate its vertices about +Y by `yaw` (radians, with the
+    /// original's convention that yaw 0 faces +Z and positive yaw turns toward
+    /// +X), then translate. Presentation only, e.g. for an interpolated pose.
+    pub fn set_transform(&mut self, model: usize, translation: [f32; 3], yaw: f32) {
+        let mut bytes = Vec::with_capacity(16);
+        push_f32s(
+            &mut bytes,
+            &[translation[0], translation[1], translation[2], yaw],
+        );
+        if let Some((_, batches)) = self.models.get(model) {
+            for batch in batches {
+                self.queue
+                    .write_buffer(&batch.material, TRANSFORM_OFFSET, &bytes);
+            }
+        }
+    }
+
     /// Upload a model's textures and batches; returns its index (initially visible).
     pub fn add_model(&mut self, model: &VisualModel) -> usize {
         let views: Vec<_> = model
@@ -334,7 +356,7 @@ impl Renderer {
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("material"),
                     contents: &material_bytes(m),
-                    usage: wgpu::BufferUsages::UNIFORM,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
             let view = m.texture.map_or(&white, |t| &views[t.texture]);
             let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -392,6 +414,7 @@ impl Renderer {
                 vertices,
                 count: batch.vertices.len() as u32,
                 bind_group,
+                material: uniform,
             });
         }
         for key in batches.iter().map(|b| b.key).collect::<Vec<_>>() {

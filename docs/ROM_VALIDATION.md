@@ -191,3 +191,17 @@ identical at 30, 60 and 144 Hz presentation. The `tick_trace` example exports a
 1,800-tick native/Rust trace pair privately; the CLI comparator reports an exact
 match. These compare against native host C, not N64 execution; see
 [FIDELITY.md](FIDELITY.md) for the limits.
+
+## Viewer play and recorded replays — 2026-10-09
+
+With the same ROM: `rustario64-viewer screenshot --mario-ticks 0` and `90`
+rendered Mario's placeholder at the script start (ACT_IDLE at (-6558, 0, 6464),
+facing 0x6000) and, after 90 ticks of holding the stick up, climbing out of the
+open cannon hole (ACT_LEDGE_CLIMB_SLOW_2 at (-5583, 128, 5548)); both images
+were inspected. A windowed `view --mario --record` session under Xvfb, driven
+by xdotool key events, ran, jumped, turned the camera, re-entered the level and
+dove into a stomach slide; its two recorded runs (154 and 79 ticks) replayed
+exactly in the native decomp with `tick_trace --inputs`, and the CLI comparator
+agreed. The ignored `bob_ticks` test passes again (64,158 ticks) and now checks
+that the viewer's entry equals the script-start scenarios'. The recordings and
+traces stayed in `private/`.

@@ -12,12 +12,105 @@
 //! render pass's presentation-only writes (matrices, torso and head angles,
 //! the hand-scale counter).
 use super::{
-    AnimInfo, MarioObject, MarioState, ObjectFields, StepWorld, SurfaceRef,
+    AnimInfo, MarioObject, MarioState, ObjectFields, SaveInputs, StepWorld, SurfaceRef,
     animation::update_animation_frame,
     constants::*,
-    core::{SpawnPoint, execute_mario_action},
+    core::{
+        SpawnPoint, execute_mario_action, init_mario, init_mario_from_save_file, set_mario_action,
+    },
 };
-use crate::simulation::TickInput;
+use crate::{
+    content::{ImportedLevel, animation::MarioAnimations},
+    simulation::{TickInput, collision::CollisionWorld, math::TrigTables},
+};
+
+/// A level entry as init_level performs it without a warp destination (the
+/// branch the level select and demos take), from a fresh boot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LevelEntry {
+    /// gMarioSpawnInfo after the level script's MARIO and MARIO_POS commands.
+    pub spawn: SpawnPoint,
+    pub level_num: i16,
+    /// The area's terrain type (m->area->terrainType).
+    pub terrain_type: u16,
+    /// The area camera's mode and default mode, until the camera is ported.
+    pub camera_mode: u8,
+    pub camera_def_mode: u8,
+    pub save: SaveInputs,
+}
+
+impl LevelEntry {
+    /// Entering `level_num` from a fresh boot with an empty save file:
+    /// gMarioSpawnInfo after the level script's MARIO and MARIO_POS commands
+    /// (Mario's behavior parameter is 1; `yaw` in degrees, as in the script),
+    /// the area's terrain type, and the area camera's mode, which
+    /// create_camera copies from the area's GEO_CAMERA node into both the mode
+    /// and the default mode.
+    pub fn from_level_script(
+        level_num: i16,
+        area: u8,
+        yaw: i16,
+        pos: [i16; 3],
+        terrain_type: u16,
+        camera_mode: u8,
+    ) -> Self {
+        Self {
+            spawn: SpawnPoint::from_level_script(1, area, yaw, pos),
+            level_num,
+            terrain_type,
+            camera_mode,
+            camera_def_mode: camera_mode,
+            save: SaveInputs::default(),
+        }
+    }
+
+    /// An imported level's script start (see `from_level_script`), with the
+    /// start area's camera mode from its imported GEO_CAMERA node.
+    pub fn script_start(level: &ImportedLevel, camera_mode: i16) -> Result<Self, &'static str> {
+        let (area, yaw, pos) = level
+            .mario_start
+            .ok_or("the level script has no Mario start")?;
+        let terrain_type = level
+            .areas
+            .iter()
+            .find(|a| a.id == area)
+            .ok_or("Mario's start area was not imported")?
+            .terrain_type;
+        let camera_mode = u8::try_from(camera_mode).map_err(|_| "camera mode out of range")?;
+        Ok(Self::from_level_script(
+            i16::from(level.level.0),
+            area.0,
+            yaw,
+            pos,
+            terrain_type,
+            camera_mode,
+        ))
+    }
+}
+
+/// Enter a level: init_mario_from_save_file (file select), Mario's object
+/// spawned from the spawn info in its area, init_mario, then the idle action.
+pub fn enter_level<'a>(
+    collision: &'a CollisionWorld,
+    trig: &'a TrigTables,
+    anims: &'a MarioAnimations,
+    entry: &LevelEntry,
+) -> (MarioState, StepWorld<'a>) {
+    let mut w = StepWorld::new(collision, trig, anims);
+    w.level_num = entry.level_num;
+    w.area_terrain_type = entry.terrain_type;
+    w.camera.mode = entry.camera_mode;
+    w.camera.def_mode = entry.camera_def_mode;
+    w.save = entry.save;
+    // load_mario_area renders the spawn's area.
+    w.area_index = entry.spawn.area_index;
+    let mut m = MarioState::default();
+    init_mario_from_save_file(&mut m, &w);
+    m.obj = spawn_mario_object(&entry.spawn, w.level_num);
+    init_mario(&mut m, &mut w, entry.spawn);
+    set_mario_action(&mut m, &mut w, ACT_IDLE, 0);
+    (m, w)
+}
 
 /// Object flags whose cur_obj_update handling needs other objects or object
 /// transforms. bhvMario sets none of them.

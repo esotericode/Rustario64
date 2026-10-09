@@ -9,6 +9,7 @@ use serde_json::Value;
 use std::{collections::BTreeMap, fmt};
 
 pub const TRACE_SCHEMA: u32 = 1;
+pub const INPUT_LOG_SCHEMA: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -74,6 +75,43 @@ pub struct Trace {
     pub producer: String,
     pub metadata: Metadata,
     pub frames: Vec<Frame>,
+}
+
+/// One play session's tick inputs from a named level entry, for replaying
+/// the session against the reference. The inputs are the player's, not ROM
+/// data; the ROM identity is kept so a replay can check it uses the same
+/// content.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InputLog {
+    pub schema: u32,
+    pub producer: String,
+    pub rom_sha1: String,
+    /// The level entry the first input follows, such as `bob-script-start`.
+    pub entry: String,
+    pub tick_rate: u32,
+    pub inputs: Vec<TickInput>,
+}
+
+impl InputLog {
+    /// Parse a log and check its schema and tick rate.
+    pub fn from_json(bytes: &[u8]) -> Result<Self, String> {
+        let log: Self = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+        if log.schema != INPUT_LOG_SCHEMA {
+            return Err(format!("unsupported input log schema {}", log.schema));
+        }
+        if log.tick_rate != TICKS_PER_SECOND {
+            return Err(format!(
+                "input log tick rate {} is not {TICKS_PER_SECOND}",
+                log.tick_rate
+            ));
+        }
+        Ok(log)
+    }
+
+    pub fn to_json_pretty(&self) -> Vec<u8> {
+        serde_json::to_vec_pretty(self).expect("integer input log serialization")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

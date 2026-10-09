@@ -26,6 +26,8 @@ struct Material {
     flags: vec4<u32>,
     // x: fog multiplier, y: fog offset.
     fog: vec4<f32>,
+    // Model placement: xyz translation, w yaw in radians (0 faces +Z).
+    transform: vec4<f32>,
 };
 
 const FLAG_LIT: u32 = 1u;
@@ -57,17 +59,26 @@ fn signed_byte(v: u32) -> f32 {
     return f32(i32(v) - select(0, 256, v > 127u));
 }
 
+// Rotate about +Y so that model +Z turns toward (sin yaw, 0, cos yaw).
+fn yaw_rotate(v: vec3<f32>, yaw: f32) -> vec3<f32> {
+    let s = sin(yaw);
+    let c = cos(yaw);
+    return vec3<f32>(v.x * c + v.z * s, v.y, v.z * c - v.x * s);
+}
+
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    let view_position = frame.view * vec4<f32>(input.position, 1.0);
+    let world = yaw_rotate(input.position, material.transform.w) + material.transform.xyz;
+    let view_position = frame.view * vec4<f32>(world, 1.0);
     out.clip = frame.projection * view_position;
     out.uv = input.uv;
     let flags = material.flags.x;
     if (flags & FLAG_LIT) != 0u {
         let normal_model = vec3<f32>(
             signed_byte(input.color.x), signed_byte(input.color.y), signed_byte(input.color.z));
-        let normal = normalize((frame.view * vec4<f32>(normal_model, 0.0)).xyz);
+        let normal_world = yaw_rotate(normal_model, material.transform.w);
+        let normal = normalize((frame.view * vec4<f32>(normal_world, 0.0)).xyz);
         // SM64 keeps the view matrix in the modelview stack, so light directions
         // are effectively camera-space.
         let light = normalize(material.light_dir.xyz);

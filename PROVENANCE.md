@@ -46,8 +46,8 @@ remain candidates; no claim of licensing/reusing their code is made.
 ## Dependencies and authored code
 
 Newly authored application, safe readers, content types, geo/Fast3D importers,
-scheduler, presentation, renderer, shader, viewer, trace comparator, exporters,
-fixtures, the oracle's shim headers, glue, tick harness and tools
+scheduler, presentation, play session (held controls, follow camera, input
+logs), renderer, shader, viewer, trace comparator, exporters, fixtures, the oracle's shim headers, glue, tick harness and tools
 (`extract_excerpts.py`, `gen_constants.py`) use this repository's MIT license.
 Translated collision, math, Mario step, input, core-update, action, animation and
 tick code derives from CC0 sources.
@@ -89,7 +89,8 @@ pinned decomp compiled natively (oracle crate), which is a practical oracle, not
 original-hardware evidence. Complete Mario ticks (input stage, non-object
 actions, Mario's object update and the animation frame advance) are compared
 per tick against the natively compiled decomp on an authored playground (CI) and
-on BOB with the owner ROM's tables and animations. Objects, the camera,
+on BOB with the owner ROM's tables and animations; the viewer's played runs
+replay exactly through the same comparison. Objects, the camera,
 cutscene/submerged actions and original-N64 traces are unavailable; these
 comparisons cover Mario alone on static terrain, not full gameplay fidelity.
 

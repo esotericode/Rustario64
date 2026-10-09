@@ -395,3 +395,45 @@ authored on both sides because their original files need the object system;
 everything else runs original code. Scenarios use the existing schema-1 trace
 format with the words as fields, so the CLI comparator and private exports work
 unchanged.
+
+## Viewer play — 2026-10-09
+
+`rustario64::play` (core, GPU-free) drives the compared tick from held
+controls; the viewer maps keys and draws.
+
+- **Same code path.** A `Session` enters the level with `tick::enter_level` and
+  advances with `tick::tick`, the functions the oracle compares. The viewer's
+  entry is `LevelEntry::script_start`, built from the import: the script's Mario
+  start, the start area's terrain type, and the camera mode of the area's
+  GEO_CAMERA node, which create_camera copies into the mode and default mode.
+  The oracle's native setup converts from the same `LevelEntry`.
+- **Camera yaw.** The reference camera is not ported. A follow camera supplies
+  the yaw: it starts behind Mario and turns only on request, 0x300 per tick,
+  after Mario's update as the original camera updates after Mario. The yaw is
+  part of each tick's input, so play is reproducible; it does not claim to be
+  the original camera. Only the eye position (interpolated yaw, fixed distance
+  and height) is presentation.
+- **Keyboard to stick.** Keys give raw stick bytes past the original dead zone
+  and clamp (80, or 57 per axis on diagonals); the walk modifier gives about
+  half the magnitude. A button pressed since the last tick counts as held for
+  the next tick, so a tap shorter than a tick still reaches the game, as a
+  press held through one controller poll would. Each tick still reads one
+  sample; nothing is buffered or repeated.
+- **Stops.** Play stops where faithful simulation stops: a panic on a path the
+  port does not implement, an unsupported action group, or a warp request
+  (falling onto a death plane). R re-enters the level. Nothing invented runs
+  past those points.
+- **Input logs.** Every tick's `TickInput` is kept. `trace::InputLog` (schema 1:
+  producer, ROM identity, entry name, 30 Hz, inputs) stores one run, and the
+  oracle's `tick_trace --inputs` replays it against the native decomp. Logs are
+  the player's inputs rather than ROM data, but they go to private directories
+  like traces.
+- **Presentation.** Mario's pose interpolates between the last two completed
+  ticks; paused and stopped sessions hold the latest pose. The renderer places
+  a model with a per-model translation and yaw (the original's convention: yaw
+  0 faces +Z, positive turns toward +X). Mario is a hitbox-sized placeholder
+  box until his geo layout and display lists are imported and posed from the
+  animation table.
+- **Lifetime.** The viewer keeps one level for the life of the process and
+  leaks its collision, trig tables and animations once, so sessions borrow them
+  for `'static` without self-referential state.

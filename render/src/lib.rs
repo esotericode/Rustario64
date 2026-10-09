@@ -4,6 +4,7 @@
 pub mod camera;
 pub mod math;
 pub mod overlay;
+pub mod play;
 pub mod renderer;
 
 pub use renderer::{RenderOptions, Renderer};

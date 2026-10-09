@@ -225,7 +225,15 @@ cargo test --locked -p rustario64-oracle
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle -- --ignored --nocapture
 cargo run --locked --release -p rustario64-oracle --example input_trace -- /path/to/sm64.z64 private/input-traces
 cargo run --locked --release -p rustario64-oracle --example tick_trace -- /path/to/sm64.z64 private/tick-traces
+cargo run --locked --release -p rustario64-oracle --example tick_trace -- /path/to/sm64.z64 private/replay-1 --inputs private/runs/run-001.inputs.json
 ```
+
+`tick_trace --inputs` replays a run recorded by the viewer
+(`rustario64-viewer view ROM --mario --record private/runs`) from BOB's script
+start in the native decomp and compares every tick; a path the port does not
+support ends the comparison at the previous tick, as it ends play. The CI test
+`played_sessions_replay_exactly_in_the_decomp` does the same for
+`play::Session` runs on the authored playground.
 
 The authored tests run on independently authored collision streams, terrain,
 tables and animation data (CI-safe); the ignored tests use BOB's real

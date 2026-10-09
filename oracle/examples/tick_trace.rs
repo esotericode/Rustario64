@@ -1,19 +1,23 @@
 //! Owner-ROM native/Rust comparison of complete Mario ticks on BOB: the level
 //! script's start, BOB's collision, the ROM's trig tables and Mario's
-//! animations. Writes both traces to a new private directory.
+//! animations. The inputs are a built-in 60-second program or a viewer
+//! recording (`--inputs`). Writes both traces to a new private directory.
 use rustario64::{
     import::{animation, bob, collision, engine, mio0, rom::Rom, version},
+    play::BOB_SCRIPT_START,
     presentation::GraphicsOptions,
     simulation::{
         TickInput,
         collision::CollisionWorld,
         controller::{A_BUTTON, B_BUTTON, Z_TRIG},
-        mario::constants as c,
+        mario::tick::LevelEntry,
     },
-    trace,
+    trace::{self, InputLog},
 };
 use rustario64_oracle::{Oracle, TickSetup, input_trace::world_digest, tick_trace::TickScenario};
 use std::{error::Error, fs, io::Write, path::Path};
+
+const USAGE: &str = "usage: cargo run -p rustario64-oracle --example tick_trace -- ROM NEW_PRIVATE_OUTPUT_DIR [--inputs RUN.inputs.json]";
 
 /// Sixty seconds cycling through idle, walking, jump chains, punches,
 /// crouch moves, a turning stick and slide kicks under a rotating camera yaw.
@@ -54,9 +58,11 @@ fn program() -> Vec<TickInput> {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    if args.len() != 2 {
-        return Err("usage: cargo run -p rustario64-oracle --example tick_trace -- ROM NEW_PRIVATE_OUTPUT_DIR".into());
-    }
+    let recording = match args.as_slice() {
+        [_, _] => None,
+        [_, _, flag, log] if flag == "--inputs" => Some(InputLog::from_json(&fs::read(log)?)?),
+        _ => return Err(USAGE.into()),
+    };
     let rom = Rom::open(Path::new(&args[0]))?;
     let imported = bob::import(&rom)?;
     let trig = engine::trig_tables(&rom)?;
@@ -81,38 +87,50 @@ fn main() -> Result<(), Box<dyn Error>> {
     let oracle = Oracle::load(&stream);
     oracle.set_trig(trig.sine_table(), trig.arctan_table());
     oracle.set_mario_animations(&anims);
-    let (area, yaw, position) = imported
-        .level
-        .mario_start
-        .ok_or("missing Mario script start")?;
-    let terrain_type = imported
-        .level
-        .areas
-        .iter()
-        .find(|a| a.id == area)
-        .ok_or("missing start area")?
-        .terrain_type;
+    // The viewer's entry: BOB's script start, with the area camera's mode
+    // from its GEO_CAMERA node (radial).
+    let camera_mode = imported
+        .visual
+        .as_ref()
+        .and_then(|v| v.camera)
+        .ok_or("BOB's area has no camera node")?
+        .mode;
+    let entry = LevelEntry::script_start(&imported.level, camera_mode)?;
+    let (inputs, name) = match &recording {
+        Some(log) => {
+            if log.rom_sha1 != rom.fingerprint() {
+                return Err(format!("the recording is from ROM {}", log.rom_sha1).into());
+            }
+            if log.entry != BOB_SCRIPT_START {
+                return Err(format!(
+                    "the recording starts from {}, not {BOB_SCRIPT_START}",
+                    log.entry
+                )
+                .into());
+            }
+            (log.inputs.clone(), "bob-script-start-recording")
+        }
+        None => (program(), "bob-script-start-full-tick-60s"),
+    };
     let scenario = TickScenario {
         collision: &world,
         trig: &trig,
         anims: &anims,
-        // BOB's area camera (GEO_CAMERA mode 1) is radial.
-        setup: TickSetup::from_level_script(
-            c::LEVEL_BOB,
-            area.0,
-            yaw,
-            position,
-            terrain_type,
-            c::CAMERA_MODE_RADIAL as u8,
-        ),
+        setup: TickSetup::from_entry(&entry),
         rom_sha1: rom.fingerprint().into(),
         world_digest: world_digest(&stream, &trig),
-        scenario: "bob-script-start-full-tick-60s".into(),
+        scenario: name.into(),
         course: 1,
     };
-    let inputs = program();
-    let reference = scenario.native(&oracle, &inputs);
-    let candidate = scenario.rust(&inputs, 144, GraphicsOptions::default())?;
+    // A path the port does not support ends the comparison, as it ends play
+    // in the viewer; the ticks before it are compared.
+    let (completed, unsupported) = scenario.rust_until_unsupported(&inputs);
+    let inputs = &inputs[..completed.len()];
+    if inputs.is_empty() {
+        return Err("no complete tick to compare".into());
+    }
+    let reference = scenario.native(&oracle, inputs);
+    let candidate = scenario.rust(inputs, 144, GraphicsOptions::default())?;
     trace::compare(&reference, &candidate)?;
     let out = Path::new(&args[1]);
     if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
@@ -129,9 +147,21 @@ fn main() -> Result<(), Box<dyn Error>> {
             .open(out.join(name))?;
         file.write_all(&serde_json::to_vec_pretty(trace)?)?;
     }
+    let source = if recording.is_some() {
+        "recorded"
+    } else {
+        "scripted"
+    };
     println!(
-        "1,800 complete BOB Mario ticks compare exactly (native 30 Hz / Rust 144 Hz presentation)."
+        "{} {source} BOB Mario ticks compare exactly (native 30 Hz / Rust 144 Hz presentation).",
+        inputs.len()
     );
+    if let Some(message) = unsupported {
+        println!(
+            "The port stopped at tick {} on a path it does not support: {message}",
+            inputs.len() + 1
+        );
+    }
     println!(
         "Wrote {}. Private ROM-derived traces; keep them out of Git.",
         out.display()

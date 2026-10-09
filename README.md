@@ -2,8 +2,9 @@
 
 A new Rust engine that imports Super Mario 64 content from a user-supplied ROM.
 Bob-omb Battlefield is the first playable **target**; today it is an imported,
-viewable level, not yet a playable one. Read [PROJECT_PLAN.md](PROJECT_PLAN.md)
-for scope, milestones, and the live status.
+viewable level where Mario can be moved around by the compared simulation (as a
+placeholder box), not yet a playable course. Read
+[PROJECT_PLAN.md](PROJECT_PLAN.md) for scope, milestones, and the live status.
 
 What works now:
 
@@ -26,21 +27,27 @@ What works now:
   animation frame advance. **Complete ticks match the decomp bit for bit**:
   28,158 ticks on an authored playground (CI) and 64,158 on Bob-omb Battlefield
   with your ROM's collision, tables and animations, at several presentation rates.
+- **Mario mode in the viewer**: the keyboard drives that same tick at 30 Hz with
+  a simple follow camera supplying the camera yaw, presentation interpolates his
+  pose at any frame rate, and every run can be recorded and replayed exactly
+  against the decomp.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
   **full-tick** and input-stage trace pairs.
 
-Mario is not playable yet: his simulation runs and is compared tick by tick, but
-it is not connected to the viewer, and there is no reference camera (camera yaw
-is an input), no objects, no cutscene or water actions, and no missions. The
-comparisons are against the natively compiled decomp, not N64 execution. The
-imported level is independently validated against the pinned decompilation; see
-[docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md).
+This is level exploration with Mario's movement, not mission support: Mario is a
+red placeholder box (his model is not imported yet), the follow camera is not
+the original camera, and there are no objects (coins, enemies, trees, the
+cannon lid), cutscene or water actions, warps, deaths, or missions. Play stops
+where the port stops (unsupported paths, falling off the course); R re-enters.
+The comparisons are against the natively compiled decomp, not N64 execution.
+The imported level is independently validated against the pinned
+decompilation; see [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md).
 
 ## Layout
 
 | Crate | Path | Purpose |
 | --- | --- | --- |
-| `rustario64` | `.` | GPU-free core: import, content, simulation scaffolding, traces, headless CLI |
+| `rustario64` | `.` | GPU-free core: import, content, simulation, the play session that drives it from held controls, traces, headless CLI |
 | `rustario64-render` | `render/` | Optional wgpu renderer and the `rustario64-viewer` development binary |
 | `rustario64-oracle` | `oracle/` | Development-only: the pinned CC0 decomp's collision, math and Mario code compiled natively for bitwise component and full-tick differential tests (needs a C compiler); never a runtime dependency |
 
@@ -114,14 +121,39 @@ cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
   view /path/to/sm64.z64
 ```
 
-Graphics-only flags: `--msaa 4`, `--no-fog`, `--no-cull`, `--size WxH`;
-inspection overlays: `--collision` (floors blue, walls red, ceilings yellow) and
-`--placements` (Mario start, script objects, macro objects, specials). In the
-window, C, P, and F toggle collision, placements, and fog. The
-viewer launches straight into BOB area 1 as a development entry point. The camera
-is a presentation-only inspection camera, not the original game camera. The sky
-is a placeholder color until the skybox is imported; trees, coins, enemies, and
-other objects are not drawn yet (their painted ground shadows are terrain).
+Graphics-only flags: `--msaa 4`, `--no-fog`, `--no-cull`, `--size WxH`,
+`--no-interpolation`; inspection overlays: `--collision` (floors blue, walls
+red, ceilings yellow) and `--placements` (Mario start, script objects, macro
+objects, specials). In the window, C, P, and F toggle collision, placements, and
+fog. The viewer launches straight into BOB area 1 as a development entry point.
+The free camera is a presentation-only inspection camera, not the original game
+camera. The sky is a placeholder color until the skybox is imported; trees,
+coins, enemies, and other objects are not drawn yet (their painted ground
+shadows are terrain).
+
+#### Move Mario
+
+```sh
+# Window: Mario mode from the start, recording each run's inputs privately
+cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
+  view /path/to/sm64.z64 --mario --record private/runs
+# Offscreen: Mario after 90 ticks of holding the stick up, from the follow camera
+cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
+  screenshot /path/to/sm64.z64 --out private/mario.png --mario-ticks 90
+```
+
+Mario mode (`--mario`, or M in the window): WASD is the stick (hold Shift to
+walk), Space is A (jump), J is B (punch, dive), K is Z (crouch, ground pound),
+the Left/Right arrows turn the camera, R re-enters the level, and M returns to
+the free camera (Mario pauses). Mario starts at the level script's start and
+runs the tick that is compared with the decomp, at the original 30 Hz; the
+window interpolates his pose between ticks. The follow camera turns only when
+asked; its yaw is the camera input Mario's controls are relative to (stick up
+moves away from the camera), as the original camera's is. A key tapped between
+two ticks counts as held for the next tick. Play stops on paths the port does
+not support and on warps (falling off the course); the window title and terminal
+say why, and R re-enters. `--record DIR` writes `run-NNN.inputs.json` for each
+run (see Trace comparison to replay one against the decomp).
 
 ### Import export
 
@@ -155,7 +187,8 @@ cargo run --locked -- compare-traces private/foundation.trace.json private/found
 ```
 
 Export a native-vs-Rust **full-tick** trace pair with your ROM (60 seconds of
-scripted moves from BOB's script start; Rust runs at 144 Hz presentation):
+scripted moves from BOB's script start; Rust runs at 144 Hz presentation), or
+replay a run recorded in the viewer with `--inputs`:
 
 ```sh
 cargo test --locked -p rustario64-oracle --test mario_tick
@@ -163,6 +196,8 @@ cargo run --locked --release -p rustario64-oracle --example tick_trace -- \
   /path/to/sm64.z64 private/tick-traces
 cargo run --locked -- compare-traces \
   private/tick-traces/native-tick.trace.json private/tick-traces/rust-tick.trace.json
+cargo run --locked --release -p rustario64-oracle --example tick_trace -- \
+  /path/to/sm64.z64 private/replay-1 --inputs private/runs/run-001.inputs.json
 ```
 
 Each frame records about 260 named words: all of MarioState, Mario's object, his
@@ -201,9 +236,9 @@ holds the owner-ROM evidence.
 
 ## Next increment
 
-Connect the compared tick to the viewer: keyboard/gamepad into `TickInput`, a
-simple camera yaw source, and Mario drawn with his imported animations at the
-interpolated presentation rate, with a replay check that the viewer's ticks stay
-identical to the native trace. Then port the reference camera with its own
-per-tick comparisons. Original-execution traces remain the eventual authority.
-Skybox and placement models remain M1 work.
+Import Mario's model (his geo layout and display lists) and pose it from the
+imported animation table, replacing the placeholder box, so the viewer shows
+Mario as the simulation animates him. Then port the reference camera with its
+own per-tick comparisons, and begin objects for the first mission.
+Original-execution traces remain the eventual authority. Skybox and placement
+models remain M1 work.

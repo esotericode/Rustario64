@@ -1,14 +1,26 @@
 //! Development viewer for imported levels. `screenshot` renders offscreen to PNG
-//! (no window needed); `view` opens a window with a free inspection camera.
-//! Both are development entry points straight into Bob-omb Battlefield.
+//! (no window needed); `view` opens a window with a free inspection camera or,
+//! in Mario mode, Mario driven by the tick compared with the decomp. Both are
+//! development entry points straight into Bob-omb Battlefield.
 use rustario64::{
-    content::visual::{AreaVisual, VisualModel},
-    import::{bob, rom::Rom},
-    simulation::FixedClock,
+    content::{
+        animation::MarioAnimations,
+        visual::{AreaVisual, VisualModel},
+    },
+    import::{animation, bob, engine, rom::Rom},
+    play::{self, BOB_SCRIPT_START, Pad, Session},
+    presentation::GraphicsOptions,
+    simulation::{
+        FixedClock, collision::CollisionWorld, mario::tick::LevelEntry, math::TrigTables,
+    },
 };
-use rustario64_render::{RenderOptions, Renderer, camera, camera::FlyCamera, overlay};
+use rustario64_render::{
+    RenderOptions, Renderer, camera, camera::FlyCamera, overlay, play as present,
+};
 use std::{
-    path::Path,
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -24,14 +36,23 @@ use winit::{
 type AppResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 const HELP: &str = "Rustario64 development viewer (Bob-omb Battlefield, area 1)\n\n\
-  rustario64-viewer screenshot /path/to/sm64.z64 --out private/bob.png [--view start|overview|summit|top] [--size 1280x960] [--msaa 4] [--no-cull] [--no-fog] [--collision] [--placements]\n\
-  rustario64-viewer view /path/to/sm64.z64 [--view start] [--msaa 4] [--no-fog] [--frames N]\n\n\
+  rustario64-viewer screenshot /path/to/sm64.z64 --out private/bob.png [--view start|overview|summit|top] [--size 1280x960] [--msaa 4] [--no-cull] [--no-fog] [--collision] [--placements] [--mario-ticks N]\n\
+  rustario64-viewer view /path/to/sm64.z64 [--view start] [--msaa 4] [--no-fog] [--frames N] [--mario] [--no-interpolation] [--record NEW_PRIVATE_DIR]\n\n\
   View controls: WASD move, Q/E down/up, Shift faster, hold right mouse or arrow keys to look,\n\
-  1-4 select presets, C collision overlay, P placement markers, F fog, Esc quits.\n\
-  The camera is a presentation-only inspection camera, not the original camera.\n";
+  1-4 select presets, C collision overlay, P placement markers, F fog, M Mario mode, Esc quits.\n\
+  The camera is a presentation-only inspection camera, not the original camera.\n\n\
+  Mario mode (--mario or M): WASD stick (hold Shift to walk), Space A, J B, K Z, Left/Right\n\
+  arrows turn the follow camera, R re-enters the level, M returns to the free camera (Mario\n\
+  pauses). Mario runs the tick compared with the decomp from the level script's start. The\n\
+  follow camera is not the original camera; its yaw is the camera input Mario reads. Mario is\n\
+  a placeholder box until his model is imported. Play stops at paths the port does not support\n\
+  and at warps (falling off the course); R re-enters.\n\
+  --mario-ticks N renders Mario after N ticks of holding the stick up, from the follow camera.\n\
+  --record writes each run's tick inputs to a new directory for exact replay against the decomp:\n\
+  cargo run -p rustario64-oracle --example tick_trace -- ROM NEW_DIR --inputs RUN.inputs.json\n";
 
 struct Options {
-    view: String,
+    view: Option<String>,
     size: (u32, u32),
     msaa: u32,
     cull: bool,
@@ -40,11 +61,15 @@ struct Options {
     placements: bool,
     out: Option<String>,
     frames: Option<u64>,
+    mario: bool,
+    mario_ticks: Option<u64>,
+    interpolation: bool,
+    record: Option<PathBuf>,
 }
 
 fn parse(args: &[String]) -> AppResult<Options> {
     let mut options = Options {
-        view: "start".into(),
+        view: None,
         size: (1280, 960),
         msaa: 1,
         cull: true,
@@ -53,6 +78,10 @@ fn parse(args: &[String]) -> AppResult<Options> {
         placements: false,
         out: None,
         frames: None,
+        mario: false,
+        mario_ticks: None,
+        interpolation: true,
+        record: None,
     };
     let mut i = 0;
     while i < args.len() {
@@ -60,40 +89,36 @@ fn parse(args: &[String]) -> AppResult<Options> {
             args.get(i + 1)
                 .ok_or_else(|| format!("{} needs a value", args[i]).into())
         };
-        match args[i].as_str() {
-            "--view" => options.view = value(i)?.clone(),
-            "--out" => options.out = Some(value(i)?.clone()),
-            "--size" => {
-                let (w, h) = value(i)?
-                    .split_once('x')
-                    .ok_or("size must look like 1280x960")?;
-                options.size = (w.parse()?, h.parse()?);
-            }
-            "--msaa" => options.msaa = value(i)?.parse()?,
-            "--frames" => options.frames = Some(value(i)?.parse()?),
-            "--no-cull" => {
-                options.cull = false;
-                i += 1;
+        let flag = match args[i].as_str() {
+            "--no-cull" => &mut options.cull,
+            "--no-fog" => &mut options.fog,
+            "--no-interpolation" => &mut options.interpolation,
+            "--collision" => &mut options.collision,
+            "--placements" => &mut options.placements,
+            "--mario" => &mut options.mario,
+            _ => {
+                match args[i].as_str() {
+                    "--view" => options.view = Some(value(i)?.clone()),
+                    "--out" => options.out = Some(value(i)?.clone()),
+                    "--size" => {
+                        let (w, h) = value(i)?
+                            .split_once('x')
+                            .ok_or("size must look like 1280x960")?;
+                        options.size = (w.parse()?, h.parse()?);
+                    }
+                    "--msaa" => options.msaa = value(i)?.parse()?,
+                    "--frames" => options.frames = Some(value(i)?.parse()?),
+                    "--mario-ticks" => options.mario_ticks = Some(value(i)?.parse()?),
+                    "--record" => options.record = Some(value(i)?.into()),
+                    other => return Err(format!("unknown option {other}\n\n{HELP}").into()),
+                }
+                i += 2;
                 continue;
             }
-            "--no-fog" => {
-                options.fog = false;
-                i += 1;
-                continue;
-            }
-            "--collision" => {
-                options.collision = true;
-                i += 1;
-                continue;
-            }
-            "--placements" => {
-                options.placements = true;
-                i += 1;
-                continue;
-            }
-            other => return Err(format!("unknown option {other}\n\n{HELP}").into()),
-        }
-        i += 2;
+        };
+        // Flags turn on a feature or turn off a default.
+        *flag = !args[i].starts_with("--no-");
+        i += 1;
     }
     if !matches!(options.msaa, 1 | 4) {
         return Err("--msaa must be 1 or 4".into());
@@ -110,19 +135,36 @@ struct Level {
     collision: VisualModel,
     placements: VisualModel,
     mario_start: Option<(i16, [i16; 3])>,
+    /// Mario's simulation data. The viewer keeps one level for the life of
+    /// the process, so sessions borrow it for 'static.
+    world: &'static CollisionWorld,
+    trig: &'static TrigTables,
+    anims: &'static MarioAnimations,
+    entry: LevelEntry,
+    rom_sha1: &'static str,
 }
 
-/// Model indices in the renderer: terrain, collision overlay, placement markers.
+impl Level {
+    fn session(&self) -> Session<'static> {
+        Session::new(self.world, self.trig, self.anims, self.entry)
+    }
+}
+
+/// Model indices in the renderer: terrain, collision overlay, placement
+/// markers, Mario.
 const TERRAIN: usize = 0;
 const COLLISION: usize = 1;
 const PLACEMENTS: usize = 2;
+const MARIO: usize = 3;
 
-fn upload(renderer: &mut Renderer, level: &Level, collision: bool, placements: bool) {
+fn upload(renderer: &mut Renderer, level: &Level, collision: bool, placements: bool, mario: bool) {
     renderer.load_model(&level.visual.model);
     renderer.add_model(&level.collision);
     renderer.add_model(&level.placements);
+    renderer.add_model(&present::marker());
     renderer.set_visible(COLLISION, collision);
     renderer.set_visible(PLACEMENTS, placements);
+    renderer.set_visible(MARIO, mario);
     debug_assert!(renderer.is_visible(TERRAIN));
 }
 
@@ -130,11 +172,20 @@ fn load(rom_path: &Path) -> AppResult<Level> {
     let rom = Rom::open(rom_path)?;
     let imported = bob::import(&rom)?;
     let visual = imported.visual.ok_or("no visible geometry imported")?;
+    // create_camera takes Mario's camera mode from the area's GEO_CAMERA node.
+    let camera_mode = visual.camera.ok_or("the area has no camera node")?.mode;
+    let entry = LevelEntry::script_start(&imported.level, camera_mode)?;
+    let world = CollisionWorld::load_area_terrain(&imported.collision)?;
     Ok(Level {
-        visual,
         collision: overlay::collision(&imported.collision),
         placements: overlay::placements(&imported.level, &imported.collision),
         mario_start: imported.level.mario_start.map(|(_, yaw, pos)| (yaw, pos)),
+        visual,
+        world: Box::leak(Box::new(world)),
+        trig: Box::leak(Box::new(engine::trig_tables(&rom)?)),
+        anims: Box::leak(Box::new(animation::mario_animations(&rom)?)),
+        entry,
+        rom_sha1: rom.fingerprint(),
     })
 }
 
@@ -162,21 +213,81 @@ fn render_options(options: &Options) -> RenderOptions {
     }
 }
 
+fn graphics_options(options: &Options) -> GraphicsOptions {
+    GraphicsOptions {
+        interpolation: options.interpolation,
+        ..GraphicsOptions::default()
+    }
+}
+
+fn describe(session: &Session<'_>) -> String {
+    let m = session.mario();
+    format!(
+        "{} at ({:.0}, {:.0}, {:.0}) facing {:#06x}, tick {}",
+        play::action_name(m.action),
+        m.pos[0],
+        m.pos[1],
+        m.pos[2],
+        m.face_angle[1] as u16,
+        session.inputs().len()
+    )
+}
+
 fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
     let out = options.out.as_deref().ok_or("screenshot needs --out")?;
+    if options.record.is_some() || options.mario {
+        return Err("--mario and --record are window options; use --mario-ticks N".into());
+    }
     let level = load(rom_path)?;
     let (info, mut renderer) = rustario64_render::headless(render_options(options))?;
-    upload(&mut renderer, &level, options.collision, options.placements);
-    let camera = preset(&options.view, &level)?;
+    let mario = options.mario_ticks.is_some();
+    upload(
+        &mut renderer,
+        &level,
+        options.collision,
+        options.placements,
+        mario,
+    );
+    let view = options.view.as_deref().unwrap_or("start");
+    let camera = match options.mario_ticks {
+        Some(ticks) => {
+            let mut session = level.session();
+            let hold_up = Pad {
+                up: true,
+                ..Pad::default()
+            };
+            for _ in 0..ticks {
+                if !session.step(&hold_up) {
+                    break;
+                }
+            }
+            let pose = session.pose(1.0, graphics_options(options));
+            renderer.set_transform(MARIO, pose.position, present::radians(pose.yaw));
+            println!("Mario: {}", describe(&session));
+            if let Some(stop) = session.stopped() {
+                println!("Play stopped: {stop}");
+            }
+            match &options.view {
+                Some(name) => preset(name, &level)?,
+                None => {
+                    present::follow_view(session.camera(), pose.position, 1.0, level.visual.camera)
+                }
+            }
+        }
+        None => preset(view, &level)?,
+    };
     let (w, h) = options.size;
     let pixels = renderer.capture(w, h, &camera)?;
     rustario64_render::write_png(Path::new(out), w, h, &pixels)?;
+    let from = match (&options.view, mario) {
+        (None, true) => "the follow camera".to_owned(),
+        _ => format!("view '{view}'"),
+    };
     println!(
-        "Rendered {} triangles ({} batches, {} textures) from view '{}' at {w}x{h} on {} ({:?}) to {out}",
+        "Rendered {} triangles ({} batches, {} textures) from {from} at {w}x{h} on {} ({:?}) to {out}",
         level.visual.model.triangle_count(),
         level.visual.model.batches.len(),
         level.visual.model.textures.len(),
-        options.view,
         info.name,
         info.backend
     );
@@ -190,7 +301,10 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
             "Placement markers: Mario start red, script objects orange, macro objects yellow, specials cyan."
         );
     }
-    println!("Skybox, objects, and Mario are not drawn yet; the sky is a placeholder clear color.");
+    if mario {
+        println!("Mario is a placeholder box (red, blue front) until his model is imported.");
+    }
+    println!("Skybox and objects are not drawn yet; the sky is a placeholder clear color.");
     Ok(())
 }
 
@@ -213,6 +327,83 @@ struct Keys {
     fast: bool,
 }
 
+/// Writes each run's inputs (one level entry to the next) to a new directory.
+struct Recorder {
+    dir: PathBuf,
+    runs: u32,
+}
+
+impl Recorder {
+    fn create(dir: &Path) -> AppResult<Self> {
+        if let Some(parent) = dir.parent().filter(|p| !p.as_os_str().is_empty()) {
+            fs::create_dir_all(parent)?;
+        }
+        fs::create_dir(dir)
+            .map_err(|e| format!("{}: {e} (choose a new directory)", dir.display()))?;
+        Ok(Self {
+            dir: dir.to_owned(),
+            runs: 0,
+        })
+    }
+
+    fn save(&mut self, session: &Session<'_>, rom_sha1: &str) -> AppResult<()> {
+        if session.inputs().is_empty() {
+            return Ok(());
+        }
+        self.runs += 1;
+        let path = self.dir.join(format!("run-{:03}.inputs.json", self.runs));
+        let log = session.input_log("rustario64-viewer", rom_sha1, BOB_SCRIPT_START);
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)?
+            .write_all(&log.to_json_pretty())?;
+        println!("Recorded {} ticks to {}", log.inputs.len(), path.display());
+        Ok(())
+    }
+}
+
+/// Mario mode: held keys drive the session, which ticks with the fixed clock.
+struct Play {
+    session: Session<'static>,
+    pad: Pad,
+    /// Buttons pressed since the last tick. A tap released before the next
+    /// tick still reaches that tick, as a press longer than a frame would.
+    taps: Pad,
+    /// Keys drive Mario and the follow camera; otherwise the free camera
+    /// moves and Mario pauses.
+    active: bool,
+    graphics: GraphicsOptions,
+    recorder: Option<Recorder>,
+    reported_stop: bool,
+}
+
+impl Play {
+    /// The controls for the next tick: held keys plus unconsumed taps.
+    fn next_pad(&mut self) -> Pad {
+        let pad = Pad {
+            a: self.pad.a || self.taps.a,
+            b: self.pad.b || self.taps.b,
+            z: self.pad.z || self.taps.z,
+            ..self.pad
+        };
+        self.taps = Pad::default();
+        pad
+    }
+
+    fn release_all(&mut self) {
+        self.pad = Pad::default();
+        self.taps = Pad::default();
+    }
+
+    fn end_run(&mut self, rom_sha1: &str) -> AppResult<()> {
+        match self.recorder.as_mut() {
+            Some(recorder) => recorder.save(&self.session, rom_sha1),
+            None => Ok(()),
+        }
+    }
+}
+
 struct App {
     level: Level,
     options: RenderOptions,
@@ -225,6 +416,7 @@ struct App {
     ticks: u64,
     frames: u64,
     max_frames: Option<u64>,
+    play: Play,
     error: Option<String>,
 }
 
@@ -247,7 +439,7 @@ impl App {
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .ok_or("surface is not supported by the adapter")?;
         let capabilities = surface.get_capabilities(&adapter);
-        // Prefer a non-sRGB target: original colors are display-referred values.
+        // Prefer a non-sRGB target: original colors are display-referred.
         if let Some(format) = capabilities.formats.iter().find(|f| !f.is_srgb()) {
             config.format = *format;
         }
@@ -262,7 +454,7 @@ impl App {
             config,
             renderer,
         };
-        upload(&mut gpu.renderer, &self.level, false, false);
+        upload(&mut gpu.renderer, &self.level, false, false, true);
         resize_targets(&mut gpu);
         println!(
             "Viewer on {} ({:?}), surface {:?}",
@@ -277,26 +469,62 @@ impl App {
         let now = Instant::now();
         let elapsed = self.last.map_or(Duration::ZERO, |last| now - last);
         self.last = Some(now);
-        // Fixed 30 Hz gameplay cadence. No gameplay systems run yet; ticks are
-        // counted so the loop structure is the one gameplay will use.
-        if self.clock.add_elapsed(elapsed).is_ok() {
-            self.ticks += u64::from(self.clock.drain(8));
+        // Fixed 30 Hz gameplay cadence: Mario ticks only on drained clock ticks.
+        let drained = if self.clock.add_elapsed(elapsed).is_ok() {
+            self.clock.drain(8)
+        } else {
+            0
+        };
+        self.ticks += u64::from(drained);
+        let play = &mut self.play;
+        if play.active {
+            for _ in 0..drained {
+                let pad = play.next_pad();
+                play.session.step(&pad);
+            }
         }
-        // The inspection camera is presentation-only, so wall-clock motion is fine.
-        let seconds = elapsed.as_secs_f32().min(0.1);
-        let speed = if self.keys.fast { 6000.0 } else { 1500.0 } * seconds;
-        self.camera.translate([
-            self.keys.right * speed,
-            self.keys.up * speed,
-            self.keys.forward * speed,
-        ]);
-        self.camera.rotate(
-            self.keys.yaw * 1.6 * seconds,
-            self.keys.pitch * 1.6 * seconds,
-        );
+        if let Some(stop) = play.session.stopped()
+            && !play.reported_stop
+        {
+            play.reported_stop = true;
+            println!(
+                "Mario stopped ({}): {stop}. Press R to re-enter the level.",
+                describe(&play.session)
+            );
+        }
+        // A paused or stopped session holds its latest pose.
+        let alpha = if play.active && play.session.stopped().is_none() {
+            self.clock.alpha()
+        } else {
+            1.0
+        };
+        let pose = play.session.pose(alpha, play.graphics);
+        if play.active {
+            self.camera = present::follow_view(
+                play.session.camera(),
+                pose.position,
+                alpha,
+                self.level.visual.camera,
+            );
+        } else {
+            // The inspection camera is presentation-only, so wall-clock motion is fine.
+            let seconds = elapsed.as_secs_f32().min(0.1);
+            let speed = if self.keys.fast { 6000.0 } else { 1500.0 } * seconds;
+            self.camera.translate([
+                self.keys.right * speed,
+                self.keys.up * speed,
+                self.keys.forward * speed,
+            ]);
+            self.camera.rotate(
+                self.keys.yaw * 1.6 * seconds,
+                self.keys.pitch * 1.6 * seconds,
+            );
+        }
         let Some(gpu) = self.gpu.as_mut() else {
             return;
         };
+        gpu.renderer
+            .set_transform(MARIO, pose.position, present::radians(pose.yaw));
         let frame = match gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
@@ -321,13 +549,50 @@ impl App {
         gpu.window.pre_present_notify();
         gpu.renderer.queue().present(frame);
         self.frames += 1;
-        if self.frames.is_multiple_of(120) {
-            let p = self.camera.position;
-            gpu.window.set_title(&format!(
-                "Rustario64 — BOB viewer — {} ticks @30 Hz — camera ({:.0}, {:.0}, {:.0})",
-                self.ticks, p[0], p[1], p[2]
-            ));
+        if self.frames.is_multiple_of(10) {
+            let title = if play.active {
+                let stop = play.session.stopped().map_or(String::new(), |stop| {
+                    format!(" — stopped: {stop}; R re-enters")
+                });
+                format!("Rustario64 — BOB — Mario {}{stop}", describe(&play.session))
+            } else {
+                let p = self.camera.position;
+                format!(
+                    "Rustario64 — BOB viewer — {} ticks @30 Hz — camera ({:.0}, {:.0}, {:.0}) — M plays Mario",
+                    self.ticks, p[0], p[1], p[2]
+                )
+            };
+            gpu.window.set_title(&title);
         }
+    }
+
+    /// Mario mode's keys; returns whether the key was one of them.
+    fn play_key(&mut self, code: KeyCode, down: bool, repeat: bool) -> bool {
+        let (pad, taps) = (&mut self.play.pad, &mut self.play.taps);
+        match code {
+            KeyCode::KeyW => pad.up = down,
+            KeyCode::KeyS => pad.down = down,
+            KeyCode::KeyA => pad.left = down,
+            KeyCode::KeyD => pad.right = down,
+            KeyCode::ShiftLeft | KeyCode::ShiftRight => pad.walk = down,
+            KeyCode::Space => (pad.a, taps.a) = (down, taps.a || down),
+            KeyCode::KeyJ => (pad.b, taps.b) = (down, taps.b || down),
+            KeyCode::KeyK => (pad.z, taps.z) = (down, taps.z || down),
+            KeyCode::ArrowLeft => pad.camera_left = down,
+            KeyCode::ArrowRight => pad.camera_right = down,
+            KeyCode::KeyR => {
+                if down && !repeat {
+                    if let Err(e) = self.play.end_run(self.level.rom_sha1) {
+                        eprintln!("error: {e}");
+                    }
+                    self.play.session.reset();
+                    self.play.taps = Pad::default();
+                    self.play.reported_stop = false;
+                }
+            }
+            _ => return false,
+        }
+        true
     }
 
     fn key(&mut self, event_loop: &ActiveEventLoop, event: KeyEvent) {
@@ -335,6 +600,9 @@ impl App {
             return;
         };
         let down = event.state == ElementState::Pressed;
+        if self.play.active && self.play_key(code, down, event.repeat) {
+            return;
+        }
         let v = if down { 1.0 } else { 0.0 };
         match code {
             KeyCode::KeyW => self.keys.forward = v,
@@ -349,6 +617,12 @@ impl App {
             KeyCode::ArrowDown => self.keys.pitch = -v,
             KeyCode::ShiftLeft | KeyCode::ShiftRight => self.keys.fast = down,
             KeyCode::Escape if down => event_loop.exit(),
+            KeyCode::KeyM if down && !event.repeat => {
+                // Held keys belong to the mode they were pressed in.
+                self.keys = Keys::default();
+                self.play.release_all();
+                self.play.active ^= true;
+            }
             KeyCode::KeyC | KeyCode::KeyP if down => {
                 if let Some(gpu) = self.gpu.as_mut() {
                     let model = if code == KeyCode::KeyC {
@@ -437,9 +711,12 @@ impl ApplicationHandler for App {
                 }
             }
             // Pause tick accumulation while unfocused; resume from a fresh anchor.
+            // Held keys are released, since their release may go elsewhere.
             WindowEvent::Focused(focused) => {
                 if !focused {
                     self.last = None;
+                    self.keys = Keys::default();
+                    self.play.release_all();
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => self.key(event_loop, event),
@@ -474,6 +751,7 @@ impl ApplicationHandler for App {
     fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
         if let DeviceEvent::MouseMotion { delta } = event
             && self.looking
+            && !self.play.active
         {
             self.camera
                 .rotate(-delta.0 as f32 * 0.003, -delta.1 as f32 * 0.003);
@@ -482,8 +760,25 @@ impl ApplicationHandler for App {
 }
 
 fn view(rom_path: &Path, options: &Options) -> AppResult<()> {
+    if options.mario_ticks.is_some() {
+        return Err("--mario-ticks is a screenshot option; use --mario in the window".into());
+    }
+    let recorder = options
+        .record
+        .as_deref()
+        .map(Recorder::create)
+        .transpose()?;
     let level = load(rom_path)?;
-    let camera = preset(&options.view, &level)?;
+    let camera = preset(options.view.as_deref().unwrap_or("start"), &level)?;
+    let play = Play {
+        session: level.session(),
+        pad: Pad::default(),
+        taps: Pad::default(),
+        active: options.mario,
+        graphics: graphics_options(options),
+        recorder,
+        reported_stop: false,
+    };
     let mut app = App {
         level,
         options: render_options(options),
@@ -496,16 +791,22 @@ fn view(rom_path: &Path, options: &Options) -> AppResult<()> {
         ticks: 0,
         frames: 0,
         max_frames: options.frames,
+        play,
         error: None,
     };
     let event_loop = EventLoop::new()?;
-    event_loop.run_app(&mut app)?;
+    let result = event_loop.run_app(&mut app);
+    let saved = app.play.end_run(app.level.rom_sha1);
+    result?;
+    saved?;
     if let Some(error) = app.error {
         return Err(error.into());
     }
     println!(
-        "Viewer closed after {} frames and {} fixed 30 Hz ticks",
-        app.frames, app.ticks
+        "Viewer closed after {} frames and {} fixed 30 Hz ticks; Mario: {}",
+        app.frames,
+        app.ticks,
+        describe(&app.play.session)
     );
     Ok(())
 }

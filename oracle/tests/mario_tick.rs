@@ -9,17 +9,22 @@ use rustario64::{
         ANIM_FLAG_NOLOOP, ANIM_FLAG_VERT_TRANS, Animation, MarioAnimations,
     },
     import::collision,
+    play::{Pad, Session, Stop},
     presentation::GraphicsOptions,
     simulation::{
         TickInput,
         collision::CollisionWorld,
         controller::{A_BUTTON, B_BUTTON, Z_TRIG},
-        mario::constants as c,
+        mario::{constants as c, tick::LevelEntry},
         math::{ARCTAN_ENTRIES, SINE_ENTRIES, TrigTables},
     },
-    trace,
+    trace::{self, InputLog},
 };
-use rustario64_oracle::{Oracle, TickSetup, input_trace::world_digest, tick_trace::TickScenario};
+use rustario64_oracle::{
+    Oracle, TickSetup,
+    input_trace::world_digest,
+    tick_trace::{TickScenario, capture},
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 struct Lcg(u64);
@@ -844,6 +849,116 @@ fn presentation_rates_and_settings_do_not_change_ticks() {
     assert_eq!(error.tick, Some(301));
 }
 
+/// Held controls as a player gives them: segments of held directions,
+/// buttons and camera turns, with single-tick taps and releases between.
+fn held_controls(seed: u64, ticks: usize) -> Vec<Pad> {
+    let mut rng = Lcg(seed ^ 0x9AD);
+    let mut pad = Pad::default();
+    (0..ticks)
+        .map(|i| {
+            if i % 12 == 0 {
+                pad = Pad {
+                    up: rng.chance(2),
+                    down: rng.chance(6),
+                    left: rng.chance(4),
+                    right: rng.chance(4),
+                    walk: rng.chance(5),
+                    a: rng.chance(4),
+                    b: rng.chance(6),
+                    z: rng.chance(6),
+                    camera_left: rng.chance(4),
+                    camera_right: rng.chance(5),
+                };
+            } else if rng.chance(6) {
+                match rng.next() % 3 {
+                    0 => pad.a ^= true,
+                    1 => pad.b ^= true,
+                    _ => pad.z ^= true,
+                }
+            }
+            pad
+        })
+        .collect()
+}
+
+/// The viewer's play path: a `play::Session` driven by held controls, with
+/// the follow camera turning, logs its inputs; the decomp replaying that log
+/// reports the session's own words after every tick. Re-entering the level
+/// and playing the same controls gives the same words.
+#[test]
+fn played_sessions_replay_exactly_in_the_decomp() {
+    let stream = playground();
+    let world = world(&stream);
+    let trig = computed_tables();
+    let anims = authored_animations(0x5EED_0003);
+    let oracle = Oracle::load(&stream);
+    oracle.set_trig(trig.sine_table(), trig.arctan_table());
+    oracle.set_mario_animations(&anims);
+    let starts = [
+        (0, [0, 0, 0]),
+        (90, [700, 0, 0]),
+        (45, [-500, 0, -2500]),
+        (0, [0, 400, 2700]),
+        (-90, [-1350, 0, 0]),
+        (30, [2500, 0, 2500]),
+    ];
+    let (mut ticks, mut camera_yaws, mut actions) = (0, BTreeSet::new(), BTreeSet::new());
+    for (seed, (yaw, pos)) in starts.into_iter().enumerate() {
+        let s = scenario(&world, &trig, &anims, &stream, "played", yaw, pos);
+        let mut session = Session::new(&world, &trig, &anims, s.setup.entry());
+        let initial = capture(session.mario(), session.world());
+        let controls = held_controls(seed as u64, 600);
+        let mut words = vec![];
+        for pad in &controls {
+            if !session.step(pad) || matches!(session.stopped(), Some(Stop::Panic(_))) {
+                break;
+            }
+            words.push(capture(session.mario(), session.world()));
+        }
+        let log = session.input_log("test", "synthetic", "playground");
+        let log = InputLog::from_json(&log.to_json_pretty()).unwrap();
+        let (rust, _) = s.rust_until_unsupported(&log.inputs);
+        assert_eq!(rust, words, "a replay of the log reaches the same states");
+        let native = s.native(&oracle, &log.inputs[..words.len()]);
+        if let Some(d) = diff(&native.metadata.initial_state.fields, &initial) {
+            panic!("played session {seed}: level entry: {d}");
+        }
+        for (frame, words) in native.frames.iter().zip(&words) {
+            if let Some(d) = diff(&frame.state.fields, words) {
+                panic!(
+                    "played session {seed}: tick {} ({:?}): {d}",
+                    frame.tick, frame.input
+                );
+            }
+            actions.insert(words["m.action"]);
+        }
+        session.reset();
+        for (pad, expected) in controls.iter().zip(&words) {
+            assert!(session.step(pad));
+            assert_eq!(&capture(session.mario(), session.world()), expected);
+        }
+        ticks += words.len();
+        camera_yaws.extend(log.inputs.iter().map(|i| i.camera_yaw));
+    }
+    println!(
+        "played sessions: {ticks} ticks identical, {} actions, {} camera yaws",
+        actions.len(),
+        camera_yaws.len()
+    );
+    assert!(ticks > 1500, "sessions stopped early: {ticks} ticks");
+    assert!(camera_yaws.len() > 30, "the follow camera barely turned");
+    assert!(actions.len() > 15, "few actions reached: {}", actions.len());
+}
+
+/// The level entry the viewer builds from an import equals the oracle's.
+#[test]
+fn level_script_entries_match_the_native_setup() {
+    let entry = LevelEntry::from_level_script(c::LEVEL_BOB, 1, 135, [-6558, 0, 6464], 0, 1);
+    assert_eq!(TickSetup::from_entry(&entry).entry(), entry);
+    assert_eq!(entry.spawn.start_angle, [0, 0x6000, 0]);
+    assert_eq!(entry.camera_def_mode, entry.camera_mode);
+}
+
 #[test]
 #[ignore = "diagnostic: prints action timelines"]
 fn print_action_timelines() {
@@ -913,25 +1028,35 @@ fn bob_ticks_match_the_decomp_with_rom_data() {
         .find(|a| a.id == area)
         .unwrap()
         .terrain_type;
+    // create_camera takes the mode from the area's GEO_CAMERA node: radial.
+    let camera_mode = imported.visual.as_ref().unwrap().camera.unwrap().mode;
+    assert_eq!(camera_mode, c::CAMERA_MODE_RADIAL);
     let digest = world_digest(&stream, &trig);
     let bob_scenario = |name: String, yaw: i16, pos: [i16; 3]| TickScenario {
         collision: &world,
         trig: &trig,
         anims: &anims,
-        // BOB's area camera (GEO_CAMERA mode 1) is radial.
         setup: TickSetup::from_level_script(
             c::LEVEL_BOB,
             area.0,
             yaw,
             pos,
             terrain_type,
-            c::CAMERA_MODE_RADIAL as u8,
+            camera_mode as u8,
         ),
         rom_sha1: rom.fingerprint().into(),
         world_digest: digest.clone(),
         scenario: name,
         course: 1,
     };
+    // The viewer enters BOB with the same setup the script-start scenarios use.
+    let viewer_entry = LevelEntry::script_start(&imported.level, camera_mode).unwrap();
+    assert_eq!(
+        bob_scenario(String::new(), script_yaw, script_pos)
+            .setup
+            .entry(),
+        viewer_entry
+    );
     let mut coverage = new_coverage();
     // Every scripted move set from the script's start.
     for (name, _, _, inputs) in scripted_scenarios() {

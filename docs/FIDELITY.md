@@ -7,8 +7,11 @@ on an authored playground and on Bob-omb Battlefield with the owner ROM's data.
 That is not yet coverage against original N64 execution, and the camera,
 objects, interactions with objects, cutscene/submerged actions and RNG-driven
 behaviors have **zero validated coverage**. Collision, math, physics steps and
-pre-action inputs also keep their component suites. The diagnostic marker
-visualizes a tick counter; it is not a Mario approximation.
+pre-action inputs also keep their component suites. The viewer's Mario mode
+runs the same tick, and its recorded runs replay exactly in the decomp (Played
+sessions below); its placeholder box shows Mario's pose, not his model. The
+`demo` command's diagnostic marker visualizes a tick counter; it is not a Mario
+approximation.
 
 Target US v1.0 at n64decomp/sm64 revision
 9921382a68bb0c865e5e45eb594d9c64db59b1af, ROM SHA-1
@@ -62,12 +65,13 @@ cargo test --locked --test timing_and_traces
 Tests cover 300 synthetic counter/input ticks at 30/60/120/144 Hz and toggle
 interpolation/graphics flags. They test wrapped angles, discontinuities,
 retained backlog, clock drift, one-bit float changes, signed zero, metadata
-differences, ordered objects, and invalid traces. The optional wgpu viewer now
-renders imported BOB terrain and feeds the same fixed 30 Hz clock, but no
-gameplay runs in it, so there is still no real gameplay render-cap coverage.
-Enhanced lighting/shadows are not implemented; the renderer's options (MSAA,
-fog/culling toggles, free camera) live in the render crate and have no path into
-simulation state.
+differences, ordered objects, and invalid traces. The optional wgpu viewer
+renders imported BOB terrain and, in Mario mode, runs Mario's compared tick on
+the same fixed 30 Hz clock; real gameplay's render-rate independence is covered
+by the full-tick presentation checks below. Enhanced lighting/shadows are not
+implemented; the renderer's options (MSAA, fog/culling toggles, interpolation,
+free and follow camera placement) live in the render crate or presentation and
+have no path into simulation state.
 
 The ignored owner-ROM test is documented in README. It checks original collision
 and macro records against canonical source-derived digests, script counts/area
@@ -255,17 +259,31 @@ Limits of this evidence:
   is in view, the hand-scale counter) are not modelled on either side; they
   never feed back into gameplay.
 
+## Played sessions
+
+The viewer's Mario mode runs `play::Session`, which enters the level with the
+same `enter_level` and advances with the same `tick` as the suites above, and
+keeps each tick's input: buttons, stick bytes and the follow camera's yaw. The
+follow camera is not the original camera; its yaw is an input like the
+recorded yaws above. Two checks cover this path:
+
+| Check | Evidence |
+| --- | --- |
+| CI: `played_sessions_replay_exactly_in_the_decomp` | Six sessions on the authored playground driven by held controls (directions, walking, held buttons, single-tick taps, camera turns): 3,600 ticks, 31 actions, 322 camera yaws. The decomp replaying each session's input log reports the session's own words after every tick; the log survives a JSON round trip; re-entering the level with the same controls gives the same words. `level_script_entries_match_the_native_setup` checks the entry conversion |
+| Owner ROM: viewer recordings | `rustario64-viewer view ROM --mario --record DIR` writes one input log per run; `tick_trace ROM NEW_DIR --inputs RUN` replays it in the native decomp. Two windowed BOB runs driven by synthetic key events under Xvfb (154 ticks: running onto the cannon mound, a jump, a camera turn; 79 ticks after a reset: a dive into a stomach slide) compared exactly, and the CLI comparator agrees. The ROM test also checks that the viewer's entry equals the script-start scenarios' |
+
+These show the port matches the decomp for the inputs given. They do not show
+that a player using the original camera would give the same inputs, and play
+stops at the same boundaries as the suites (unsupported paths and warps).
+
 ## Next reference work
 
-1. Drive the viewer's Mario from the compared tick (keyboard/gamepad into
-   `TickInput`, a recorded or simple camera yaw) and render him with his imported
-   animations; any viewer replay must stay identical to the native trace.
-2. Port the reference camera (camera.c) so camera yaw and mode stop being inputs,
+1. Port the reference camera (camera.c) so camera yaw and mode stop being inputs,
    with its own per-tick comparisons; then the submerged and cutscene groups BOB
    needs (water is absent from BOB, but deaths, star dances and spawn actions are
    not).
-3. Objects for the first mission, with object state added to the tick snapshot.
-4. Obtain original-execution traces from a matching US build and emulator. Those
+2. Objects for the first mission, with object state added to the tick snapshot.
+3. Obtain original-execution traces from a matching US build and emulator. Those
    remain unavailable and are the eventual authority over native-host results.
    libsm64 remains excluded as a fidelity oracle because it changes collision
    ordering. A finite exact suite covers its cases and platforms, not all
