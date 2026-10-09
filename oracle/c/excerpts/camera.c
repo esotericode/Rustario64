@@ -103,6 +103,9 @@ s16 sHandheldShakeYaw;
 /* src/game/camera.c: s16 sHandheldShakeRoll */
 s16 sHandheldShakeRoll;
 
+/* src/game/camera.c: s16 s2ndRotateFlags */
+s16 s2ndRotateFlags;
+
 /* src/game/camera.c: find_c_buttons_pressed */
 s32 find_c_buttons_pressed(u16 currentState, u16 buttonsPressed, u16 buttonsDown) {
     buttonsPressed &= CBUTTON_MASK;
@@ -1221,4 +1224,450 @@ void update_lakitu(struct Camera *c) {
     clamp_pitch(gLakituState.pos, gLakituState.focus, 0x3E00, -0x3E00);
     gLakituState.mode = c->mode;
     gLakituState.defMode = c->defMode;
+}
+
+/* src/game/camera.c: calc_avoid_yaw */
+s32 calc_avoid_yaw(s16 yawFromMario, s16 wallYaw) {
+    s16 yawDiff;
+    UNUSED u8 filler[34]; // Debug print buffer? ;)
+    UNUSED s32 unused1 = 0;
+    UNUSED s32 unused2 = 0;
+
+    yawDiff = wallYaw - yawFromMario + DEGREES(90);
+
+    if (yawDiff < 0) {
+        // Deflect to the right
+        yawFromMario = wallYaw;
+    } else {
+        // Note: this favors the left side if the wall is exactly perpendicular to the camera.
+        // Deflect to the left
+        yawFromMario = wallYaw + DEGREES(180);
+    }
+    return yawFromMario;
+}
+
+/* src/game/camera.c: is_surf_within_bounding_box */
+s32 is_surf_within_bounding_box(struct Surface *surf, f32 xMax, f32 yMax, f32 zMax) {
+    // Surface vertex coordinates
+    Vec3s sx;
+    Vec3s sy;
+    Vec3s sz;
+    // Max delta between x, y, and z
+    s16 dxMax = 0;
+    s16 dyMax = 0;
+    s16 dzMax = 0;
+    // Current deltas between x, y, and z
+    f32 dx;
+    f32 dy;
+    f32 dz;
+    UNUSED u8 filler[4];
+    s32 i;
+    s32 j;
+    // result
+    s32 smaller = FALSE;
+
+    sx[0] = surf->vertex1[0];
+    sx[1] = surf->vertex2[0];
+    sx[2] = surf->vertex3[0];
+    sy[0] = surf->vertex1[1];
+    sy[1] = surf->vertex2[1];
+    sy[2] = surf->vertex3[1];
+    sz[0] = surf->vertex1[2];
+    sz[1] = surf->vertex2[2];
+    sz[2] = surf->vertex3[2];
+
+    for (i = 0; i < 3; i++) {
+        j = i + 1;
+        if (j >= 3) {
+            j = 0;
+        }
+        dx = ABS(sx[i] - sx[j]);
+        if (dx > dxMax) {
+            dxMax = dx;
+        }
+        dy = ABS(sy[i] - sy[j]);
+        if (dy > dyMax) {
+            dyMax = dy;
+        }
+        dz = ABS(sz[i] - sz[j]);
+        if (dz > dzMax) {
+            dzMax = dz;
+        }
+    }
+    if (yMax != -1.f) {
+        if (dyMax < yMax) {
+            smaller = TRUE;
+        }
+    }
+    if (xMax != -1.f && zMax != -1.f) {
+        if (dxMax < xMax && dzMax < zMax) {
+            smaller = TRUE;
+        }
+    }
+    return smaller;
+}
+
+/* src/game/camera.c: is_behind_surface */
+s32 is_behind_surface(Vec3f pos, struct Surface *surf) {
+    s32 behindSurface = 0;
+    // Surface normal
+    f32 normX = (surf->vertex2[1] - surf->vertex1[1]) * (surf->vertex3[2] - surf->vertex2[2]) -
+                (surf->vertex3[1] - surf->vertex2[1]) * (surf->vertex2[2] - surf->vertex1[2]);
+    f32 normY = (surf->vertex2[2] - surf->vertex1[2]) * (surf->vertex3[0] - surf->vertex2[0]) -
+                (surf->vertex3[2] - surf->vertex2[2]) * (surf->vertex2[0] - surf->vertex1[0]);
+    f32 normZ = (surf->vertex2[0] - surf->vertex1[0]) * (surf->vertex3[1] - surf->vertex2[1]) -
+                (surf->vertex3[0] - surf->vertex2[0]) * (surf->vertex2[1] - surf->vertex1[1]);
+    f32 dirX = surf->vertex1[0] - pos[0];
+    f32 dirY = surf->vertex1[1] - pos[1];
+    f32 dirZ = surf->vertex1[2] - pos[2];
+
+    if (dirX * normX + dirY * normY + dirZ * normZ < 0) {
+        behindSurface = 1;
+    }
+    return behindSurface;
+}
+
+/* src/game/camera.c: is_range_behind_surface */
+s32 is_range_behind_surface(Vec3f from, Vec3f to, struct Surface *surf, s16 range, s16 surfType) {
+    s32 behindSurface = TRUE;
+    s32 leftBehind = 0;
+    s32 rightBehind = 0;
+    UNUSED u8 filler[20];
+    f32 checkDist;
+    s16 checkPitch;
+    s16 checkYaw;
+    Vec3f checkPos;
+
+    if (surf != NULL) {
+        if (surfType == -1 || surf->type != surfType) {
+            if (range == 0) {
+                behindSurface = is_behind_surface(to, surf);
+            } else {
+                vec3f_get_dist_and_angle(from, to, &checkDist, &checkPitch, &checkYaw);
+                vec3f_set_dist_and_angle(from, checkPos, checkDist, checkPitch, checkYaw + range);
+                leftBehind = is_behind_surface(checkPos, surf);
+                vec3f_set_dist_and_angle(from, checkPos, checkDist, checkPitch, checkYaw - range);
+                rightBehind = is_behind_surface(checkPos, surf);
+                behindSurface = leftBehind * rightBehind;
+            }
+        }
+    }
+    return behindSurface;
+}
+
+/* src/game/camera.c: is_mario_behind_surface */
+s32 is_mario_behind_surface(UNUSED struct Camera *c, struct Surface *surf) {
+    s32 behindSurface = is_behind_surface(sMarioCamState->pos, surf);
+
+    return behindSurface;
+}
+
+/* src/game/camera.c: rotate_camera_around_walls */
+s32 rotate_camera_around_walls(struct Camera *c, Vec3f cPos, s16 *avoidYaw, s16 yawRange) {
+    UNUSED u8 filler1[4];
+    struct WallCollisionData colData;
+    struct Surface *wall;
+    UNUSED u8 filler2[12];
+    f32 dummyDist, checkDist;
+    UNUSED u8 filler3[4];
+    f32 coarseRadius;
+    f32 fineRadius;
+    s16 wallYaw, horWallNorm;
+    UNUSED s16 unused;
+    s16 dummyPitch;
+    // The yaw of the vector from Mario to the camera.
+    s16 yawFromMario;
+    UNUSED u8 filler4[2];
+    s32 status = 0;
+    /// The current iteration. The algorithm takes 8 equal steps from Mario back to the camera.
+    s32 step = 0;
+    UNUSED u8 filler5[4];
+
+    vec3f_get_dist_and_angle(sMarioCamState->pos, cPos, &dummyDist, &dummyPitch, &yawFromMario);
+    sStatusFlags &= ~CAM_FLAG_CAM_NEAR_WALL;
+    colData.offsetY = 100.0f;
+    // The distance from Mario to Lakitu
+    checkDist = 0.0f;
+    /// The radius used to find potential walls to avoid.
+    /// @bug Increases to 250.f, but the max collision radius is 200.f
+    coarseRadius = 150.0f;
+    /// This only increases when there is a wall collision found in the coarse pass
+    fineRadius = 100.0f;
+
+    for (step = 0; step < 8; step++) {
+        // Start at Mario, move backwards to Lakitu's position
+        colData.x = sMarioCamState->pos[0] + ((cPos[0] - sMarioCamState->pos[0]) * checkDist);
+        colData.y = sMarioCamState->pos[1] + ((cPos[1] - sMarioCamState->pos[1]) * checkDist);
+        colData.z = sMarioCamState->pos[2] + ((cPos[2] - sMarioCamState->pos[2]) * checkDist);
+        colData.radius = coarseRadius;
+        // Increase the coarse check radius
+        camera_approach_f32_symmetric_bool(&coarseRadius, 250.f, 30.f);
+
+        if (find_wall_collisions(&colData) != 0) {
+            wall = colData.walls[colData.numWalls - 1];
+
+            // If we're over halfway from Mario to Lakitu, then there's a wall near the camera, but
+            // not necessarily obstructing Mario
+            if (step >= 5) {
+                sStatusFlags |= CAM_FLAG_CAM_NEAR_WALL;
+                if (status <= 0) {
+                    status = 1;
+                    wall = colData.walls[colData.numWalls - 1];
+                    // wallYaw is parallel to the wall, not perpendicular
+                    wallYaw = atan2s(wall->normal.z, wall->normal.x) + DEGREES(90);
+                    // Calculate the avoid direction. The function returns the opposite direction so add 180
+                    // degrees.
+                    *avoidYaw = calc_avoid_yaw(yawFromMario, wallYaw) + DEGREES(180);
+                }
+            }
+
+            colData.x = sMarioCamState->pos[0] + ((cPos[0] - sMarioCamState->pos[0]) * checkDist);
+            colData.y = sMarioCamState->pos[1] + ((cPos[1] - sMarioCamState->pos[1]) * checkDist);
+            colData.z = sMarioCamState->pos[2] + ((cPos[2] - sMarioCamState->pos[2]) * checkDist);
+            colData.radius = fineRadius;
+            // Increase the fine check radius
+            camera_approach_f32_symmetric_bool(&fineRadius, 200.f, 20.f);
+
+            if (find_wall_collisions(&colData) != 0) {
+                wall = colData.walls[colData.numWalls - 1];
+                horWallNorm = atan2s(wall->normal.z, wall->normal.x);
+                wallYaw = horWallNorm + DEGREES(90);
+                // If Mario would be blocked by the surface, then avoid it
+                if ((is_range_behind_surface(sMarioCamState->pos, cPos, wall, yawRange, SURFACE_WALL_MISC) == 0)
+                    && (is_mario_behind_surface(c, wall) == TRUE)
+                    // Also check if the wall is tall enough to cover Mario
+                    && (is_surf_within_bounding_box(wall, -1.f, 150.f, -1.f) == FALSE)) {
+                    // Calculate the avoid direction. The function returns the opposite direction so add 180
+                    // degrees.
+                    *avoidYaw = calc_avoid_yaw(yawFromMario, wallYaw) + DEGREES(180);
+                    camera_approach_s16_symmetric_bool(avoidYaw, horWallNorm, yawRange);
+                    status = 3;
+                    step = 8;
+                }
+            }
+        }
+        checkDist += 0.125f;
+    }
+
+    return status;
+}
+
+/* src/game/camera.c: offset_yaw_outward_radial */
+s32 offset_yaw_outward_radial(struct Camera *c, s16 areaYaw) {
+    s16 yawGoal = DEGREES(60);
+    s16 yaw = sModeOffsetYaw;
+    f32 distFromAreaCenter;
+    Vec3f areaCenter;
+    s16 dYaw;
+    switch (gCurrLevelArea) {
+        case AREA_TTC:
+            areaCenter[0] = c->areaCenX;
+            areaCenter[1] = sMarioCamState->pos[1];
+            areaCenter[2] = c->areaCenZ;
+            distFromAreaCenter = calc_abs_dist(areaCenter, sMarioCamState->pos);
+            if (800.f > distFromAreaCenter) {
+                yawGoal = 0x3800;
+            }
+            break;
+        case AREA_SSL_PYRAMID:
+            // This mask splits the 360 degrees of yaw into 4 corners. It adds 45 degrees so that the yaw
+            // offset at the corner will be 0, but the yaw offset near the center will face more towards
+            // the direction Mario is running in.
+            yawGoal = (areaYaw & 0xC000) - areaYaw + DEGREES(45);
+            if (yawGoal < 0) {
+                yawGoal = -yawGoal;
+            }
+            yawGoal = yawGoal / 32 * 48;
+            break;
+        case AREA_LLL_OUTSIDE:
+            yawGoal = 0;
+            break;
+    }
+    dYaw = gMarioStates[0].forwardVel / 32.f * 128.f;
+
+    if (sAreaYawChange < 0) {
+        camera_approach_s16_symmetric_bool(&yaw, -yawGoal, dYaw);
+    }
+    if (sAreaYawChange > 0) {
+        camera_approach_s16_symmetric_bool(&yaw, yawGoal, dYaw);
+    }
+    // When the final yaw is out of [-60,60] degrees, approach yawGoal faster than dYaw will ever be,
+    // making the camera lock in one direction until yawGoal drops below 60 (or Mario presses a C button)
+    if (yaw < -DEGREES(60)) {
+        //! Maybe they meant to reverse yawGoal's sign?
+        camera_approach_s16_symmetric_bool(&yaw, -yawGoal, 0x200);
+    }
+    if (yaw > DEGREES(60)) {
+        //! Maybe they meant to reverse yawGoal's sign?
+        camera_approach_s16_symmetric_bool(&yaw, yawGoal, 0x200);
+    }
+    return yaw;
+}
+
+/* src/game/camera.c: radial_camera_move */
+void radial_camera_move(struct Camera *c) {
+    s16 maxAreaYaw = DEGREES(60);
+    s16 minAreaYaw = DEGREES(-60);
+    s16 rotateSpeed = 0x1000;
+    s16 avoidYaw;
+    s32 avoidStatus;
+    UNUSED s16 unused1 = 0;
+    UNUSED s32 unused2 = 0;
+    f32 areaDistX = sMarioCamState->pos[0] - c->areaCenX;
+    f32 areaDistZ = sMarioCamState->pos[2] - c->areaCenZ;
+    UNUSED u8 filler[4];
+
+    // How much the camera's yaw changed
+    s16 yawOffset = calculate_yaw(sMarioCamState->pos, c->pos) - atan2s(areaDistZ, areaDistX);
+
+    if (yawOffset > maxAreaYaw) {
+        yawOffset = maxAreaYaw;
+    }
+    if (yawOffset < minAreaYaw) {
+        yawOffset = minAreaYaw;
+    }
+
+    // Check if Mario stepped on a surface that rotates the camera. For example, when Mario enters the
+    // gate in BoB, the camera turns right to face up the hill path
+    if (!(gCameraMovementFlags & CAM_MOVE_ROTATE)) {
+        if (sMarioGeometry.currFloorType == SURFACE_CAMERA_MIDDLE
+            && sMarioGeometry.prevFloorType != SURFACE_CAMERA_MIDDLE) {
+            gCameraMovementFlags |= (CAM_MOVE_RETURN_TO_MIDDLE | CAM_MOVE_ENTERED_ROTATE_SURFACE);
+        }
+        if (sMarioGeometry.currFloorType == SURFACE_CAMERA_ROTATE_RIGHT
+            && sMarioGeometry.prevFloorType != SURFACE_CAMERA_ROTATE_RIGHT) {
+            gCameraMovementFlags |= (CAM_MOVE_ROTATE_RIGHT | CAM_MOVE_ENTERED_ROTATE_SURFACE);
+        }
+        if (sMarioGeometry.currFloorType == SURFACE_CAMERA_ROTATE_LEFT
+            && sMarioGeometry.prevFloorType != SURFACE_CAMERA_ROTATE_LEFT) {
+            gCameraMovementFlags |= (CAM_MOVE_ROTATE_LEFT | CAM_MOVE_ENTERED_ROTATE_SURFACE);
+        }
+    }
+
+    if (gCameraMovementFlags & CAM_MOVE_ENTERED_ROTATE_SURFACE) {
+        rotateSpeed = 0x200;
+    }
+
+    if (c->mode == CAMERA_MODE_OUTWARD_RADIAL) {
+        areaDistX = -areaDistX;
+        areaDistZ = -areaDistZ;
+    }
+
+    // Avoid obstructing walls
+    avoidStatus = rotate_camera_around_walls(c, c->pos, &avoidYaw, 0x400);
+    if (avoidStatus == 3) {
+        if (avoidYaw - atan2s(areaDistZ, areaDistX) + DEGREES(90) < 0) {
+            avoidYaw += DEGREES(180);
+        }
+
+        // We want to change sModeOffsetYaw so that the player is no longer obstructed by the wall.
+        // So, we make avoidYaw relative to the yaw around the area center
+        avoidYaw -= atan2s(areaDistZ, areaDistX);
+
+        // Bound avoid yaw to radial mode constraints
+        if (avoidYaw > DEGREES(105)) {
+            avoidYaw = DEGREES(105);
+        }
+        if (avoidYaw < DEGREES(-105)) {
+            avoidYaw = DEGREES(-105);
+        }
+    }
+
+    if (gCameraMovementFlags & CAM_MOVE_RETURN_TO_MIDDLE) {
+        if (camera_approach_s16_symmetric_bool(&sModeOffsetYaw, 0, rotateSpeed) == 0) {
+            gCameraMovementFlags &= ~CAM_MOVE_RETURN_TO_MIDDLE;
+        }
+    } else {
+        // Prevent the player from rotating into obstructing walls
+        if ((gCameraMovementFlags & CAM_MOVE_ROTATE_RIGHT) && avoidStatus == 3
+            && avoidYaw + 0x10 < sModeOffsetYaw) {
+            sModeOffsetYaw = avoidYaw;
+            gCameraMovementFlags &= ~(CAM_MOVE_ROTATE_RIGHT | CAM_MOVE_ENTERED_ROTATE_SURFACE);
+        }
+        if ((gCameraMovementFlags & CAM_MOVE_ROTATE_LEFT) && avoidStatus == 3
+            && avoidYaw - 0x10 > sModeOffsetYaw) {
+            sModeOffsetYaw = avoidYaw;
+            gCameraMovementFlags &= ~(CAM_MOVE_ROTATE_LEFT | CAM_MOVE_ENTERED_ROTATE_SURFACE);
+        }
+
+        // If it's the first time rotating, just rotate to +-60 degrees
+        if (!(s2ndRotateFlags & CAM_MOVE_ROTATE_RIGHT) && (gCameraMovementFlags & CAM_MOVE_ROTATE_RIGHT)
+            && camera_approach_s16_symmetric_bool(&sModeOffsetYaw, maxAreaYaw, rotateSpeed) == 0) {
+            gCameraMovementFlags &= ~(CAM_MOVE_ROTATE_RIGHT | CAM_MOVE_ENTERED_ROTATE_SURFACE);
+        }
+        if (!(s2ndRotateFlags & CAM_MOVE_ROTATE_LEFT) && (gCameraMovementFlags & CAM_MOVE_ROTATE_LEFT)
+            && camera_approach_s16_symmetric_bool(&sModeOffsetYaw, minAreaYaw, rotateSpeed) == 0) {
+            gCameraMovementFlags &= ~(CAM_MOVE_ROTATE_LEFT | CAM_MOVE_ENTERED_ROTATE_SURFACE);
+        }
+
+        // If it's the second time rotating, rotate all the way to +-105 degrees.
+        if ((s2ndRotateFlags & CAM_MOVE_ROTATE_RIGHT) && (gCameraMovementFlags & CAM_MOVE_ROTATE_RIGHT)
+            && camera_approach_s16_symmetric_bool(&sModeOffsetYaw, DEGREES(105), rotateSpeed) == 0) {
+            gCameraMovementFlags &= ~(CAM_MOVE_ROTATE_RIGHT | CAM_MOVE_ENTERED_ROTATE_SURFACE);
+            s2ndRotateFlags &= ~CAM_MOVE_ROTATE_RIGHT;
+        }
+        if ((s2ndRotateFlags & CAM_MOVE_ROTATE_LEFT) && (gCameraMovementFlags & CAM_MOVE_ROTATE_LEFT)
+            && camera_approach_s16_symmetric_bool(&sModeOffsetYaw, DEGREES(-105), rotateSpeed) == 0) {
+            gCameraMovementFlags &= ~(CAM_MOVE_ROTATE_LEFT | CAM_MOVE_ENTERED_ROTATE_SURFACE);
+            s2ndRotateFlags &= ~CAM_MOVE_ROTATE_LEFT;
+        }
+    }
+    if (!(gCameraMovementFlags & CAM_MOVE_ROTATE)) {
+        // If not rotating, rotate away from walls obscuring Mario from view
+        if (avoidStatus == 3) {
+            approach_s16_asymptotic_bool(&sModeOffsetYaw, avoidYaw, 10);
+        } else {
+            if (c->mode == CAMERA_MODE_RADIAL) {
+                // sModeOffsetYaw only updates when Mario is moving
+                rotateSpeed = gMarioStates[0].forwardVel / 32.f * 128.f;
+                camera_approach_s16_symmetric_bool(&sModeOffsetYaw, yawOffset, rotateSpeed);
+            }
+            if (c->mode == CAMERA_MODE_OUTWARD_RADIAL) {
+                sModeOffsetYaw = offset_yaw_outward_radial(c, atan2s(areaDistZ, areaDistX));
+            }
+        }
+    }
+
+    // Bound sModeOffsetYaw within (-120, 120) degrees
+    if (sModeOffsetYaw > 0x5554) {
+        sModeOffsetYaw = 0x5554;
+    }
+    if (sModeOffsetYaw < -0x5554) {
+        sModeOffsetYaw = -0x5554;
+    }
+}
+
+/* src/game/camera.c: lakitu_zoom */
+void lakitu_zoom(f32 rangeDist, s16 rangePitch) {
+    if (sLakituDist < 0) {
+        if ((sLakituDist += 30) > 0) {
+            sLakituDist = 0;
+        }
+    } else if (rangeDist < sLakituDist) {
+        if ((sLakituDist -= 30) < rangeDist) {
+            sLakituDist = rangeDist;
+        }
+    } else if (gCameraMovementFlags & CAM_MOVE_ZOOMED_OUT) {
+        if ((sLakituDist += 30) > rangeDist) {
+            sLakituDist = rangeDist;
+        }
+    } else {
+        if ((sLakituDist -= 30) < 0) {
+            sLakituDist = 0;
+        }
+    }
+
+    if (gCurrLevelArea == AREA_SSL_PYRAMID && gCamera->mode == CAMERA_MODE_OUTWARD_RADIAL) {
+        rangePitch /= 2;
+    }
+
+    if (gCameraMovementFlags & CAM_MOVE_ZOOMED_OUT) {
+        if ((sLakituPitch += rangePitch / 13) > rangePitch) {
+            sLakituPitch = rangePitch;
+        }
+    } else {
+        if ((sLakituPitch -= rangePitch / 13) < 0) {
+            sLakituPitch = 0;
+        }
+    }
 }

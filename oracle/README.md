@@ -272,6 +272,14 @@ path. Full handheld/spline/random-vector functions are retained verbatim for
 the native call graph, but RNG-driven behavior is not ported or claimed. No
 reference asset data or spline control points are copied into the repository.
 
+`--test radial` compares obstruction helpers, eight-probe wall scans, radial
+rotation, outward offsets and zoom. Native globals remain independent across
+rotation, zoom, radial goal construction and Lakitu updates. The authored stage
+adapter deliberately omits full mode input, set_camera_height, pan and dispatch;
+it is not a replacement for mode_radial_camera. Vertex tests transport only
+vertices/type, forcing the reference to recompute its own integer normal.
+The owner-ROM case is `bob_radial_and_obstruction_stages_match_with_rom_tables`.
+
 ### Camera excerpt item hashes
 
 Regenerate/check with the existing excerpt tool; all items below are byte-identical
@@ -279,7 +287,6 @@ to camera.c at the pinned revision. Only include lines and adapters are authored
 
 | Item | SHA-1 |
 | --- | --- |
-| `#define CBUTTON_MASK (U_CBUTTONS \| D_CBUTTONS \| L_CBUTTONS \| R_CBUTTONS)` | `899d78b81adb830ce52b153a83a6fc5c611205d3` |
 | `struct PlayerGeometry sMarioGeometry` | `5eccb38136dc52bb6e7a38cc237ba632ed7d583b` |
 | `struct Camera *gCamera` | `f14d58fcba1048fe552b808e877c434e83eafce3` |
 | `s16 sStatusFlags` | `66d0eed3417d7df10e69adc95d414b93e37ec1b8` |
@@ -359,3 +366,13 @@ to camera.c at the pinned revision. Only include lines and adapters are authored
 | `random_vec3s` | `abf6a69a5d4646563906ef7d29e90f36ad460a3b` |
 | `shake_camera_handheld` | `cd07230526f9fc653eef2134bf5a5f331b318e55` |
 | `update_lakitu` | `8a6dac0b214a965c475754c8f16f86508c6e0e5c` |
+| `s16 s2ndRotateFlags` | `87fa5a31e80e544dff4bc4be92c43b92f6d625c5` |
+| `calc_avoid_yaw` | `e05f2a7eeac64c65417438756739cb477f5b37d9` |
+| `is_surf_within_bounding_box` | `82adf92f72ef10ab3bde2e6a816c265df13e1d56` |
+| `is_behind_surface` | `c7fabd708ebf85057fba4e0e46c04a52283ceeca` |
+| `is_range_behind_surface` | `1b520e489ecc442e7710c853a7dc8a7d797091e2` |
+| `is_mario_behind_surface` | `ea2988e218e059d46189bf7e5435cd983c951b3e` |
+| `rotate_camera_around_walls` | `4ed6f487bab0ecb11a4fa92d0e0e2e5f916896e7` |
+| `offset_yaw_outward_radial` | `1eaf2ae4a42260f4f99caa6d10c54452219b4fef` |
+| `radial_camera_move` | `6da010f8e767b7a9d4f30c984a44ffe80a93eec9` |
+| `lakitu_zoom` | `6d1606928bacaf3089030374328d07b21be14d8e` |

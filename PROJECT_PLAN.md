@@ -232,7 +232,7 @@ Every handoff should report the working result, commands actually run, missing f
 | Bob-omb Battlefield | Imported level: 1,101 visible area triangles (24 batches, 18 textures) from eight script-named dependent segments, plus the gate/seesaw/grate geo models; collision (570 vertices, 1,060 triangles), 17 specials, 30 script placements, 88 macros, seven warps. Every visible triangle and texture matches independent decomp-derived references. Renders in the viewer with collision and placement overlays. Collision loads into the ported original partition and answers queries identically to the decomp. Mario's complete ticks run identically to the decomp on it with the ROM's animations (64,158 compared ticks). Mario can be moved around it in the viewer with his ROM model and animations and a follow camera; recorded runs replay exactly. No skybox, objects, Mario shadow, original camera, warps or missions |
 | Fidelity coverage | Component checks against the natively compiled decomp, all bitwise-identical. Collision: loader and floor/ceiling/wall/water/gas queries (857k authored comparisons in CI; 4.08M on BOB). Math: ROM trig tables, sins/coss/atan2s/atan2f/approach (3.99M). Mario steps: ground/air/stationary steps, ledge grabs, gravity, wind, moving sand, bonk, velocity helpers from generated states (124k authored in CI; 1.18M on BOB with ROM tables). Exact trace comparator tested; 300 synthetic counter/input ticks identical at 30/60/120/144 Hz. Input stage: 196,608 controller/intent cases on authored and again on ROM tables; 10,009 authored and 20,000 BOB geometry cases; 1,200 chained ticks at multiple presentation rates. **Complete Mario ticks** (Mario's object only, against the native decomp): 28,158 authored ticks (69 actions) and 64,158 BOB ticks with ROM animations (60 actions), all identical, also at 15–144 Hz presentation. **Played sessions:** 3,600 CI ticks of held-control sessions replay identically in the decomp; two recorded BOB viewer runs (233 ticks) replay identically. Camera helpers/radial goals and persistent Lakitu/transition updates have exact authored and owner-ROM native comparisons; no full camera dispatcher, object, cutscene/submerged or original-N64 coverage |
 | Optional enhancements | Graphics-only options: higher resolution, 4x MSAA, culling and fog toggles, interpolation toggle, free inspection camera. Mario's skinned model interpolates between ticks at any frame rate. No enhanced lighting/shadows |
-| Immediate next task | M2: connect compared helpers and persistent Lakitu/transition ticks to BOB radial/free-roam controllers, wall avoidance, surface-mode selection and initialization; compare combined Mario/camera ticks before viewer integration. Then shadow and objects. D0 native build/CI bundles passed at be65225; D1/D2 ROM launcher and settings before wider playtesting. BOB's named trigger table is unused in the reference. |
+| Immediate next task | M2: finish BOB radial mode input/height/pan, free-roam control, surface-mode selection and initialization; obstruction, radial rotation/zoom and composed radial/Lakitu stages now have exact comparisons. Compare combined Mario/camera ticks before viewer integration. Then shadow and objects. D0 native Windows/Linux build/CI bundles passed at 0a62784; D1/D2 ROM launcher and settings remain early playtesting priorities. BOB's named trigger table is unused in the reference. |
 
 ### Implementation session 1 — 2026-10-08 (M0 and early M1)
 
@@ -482,6 +482,48 @@ Every handoff should report the working result, commands actually run, missing f
 - **Next:** Port wall-avoidance/rotation and BOB mode controllers/init, compare
   complete camera-and-Mario ticks, then replace the viewer camera. D1 ROM-picker
   and D2 pause/settings remain priorities before wider human playtesting.
+
+### Implementation session 10 — 2026-10-09 (camera obstruction and radial movement)
+
+- **Base:** Continued the latest remote `codex/reference-camera-foundation` at
+  `0a627845fa540dc89a8e83a435263d0d6c3296ef`; the existing draft PR is the
+  review point. Main remains 15368f8.
+- **ROM:** The new private attachment validates as the same supported 8 MiB
+  US v1.0 ROM. Full owner-ROM checks pass; no private content is tracked.
+- **Increment:** Original eight-probe wall obstruction scan, vertex/sector
+  helpers, radial surface/first/second rotation, outward offsets and zoom.
+  Preserve integer cross products, strict height bounds, last-wall selection,
+  coarse/fine query order, conflicting flags, signed narrowing and promoted
+  angle comparisons. Shared globals remain in Rig; area center and second-turn
+  flags live in RadialMovement. No runtime dependency added.
+- **Comparison:** Nine additional verbatim pinned native functions. 655,360
+  angle cases; 20,000 randomized vertex/bounds cases and targeted boundaries;
+  40,000 authored/80,000 BOB obstruction scans; 20,000 authored/40,000 BOB
+  rotation/offset/zoom states. Persistent radial movement → zoom → radial goals
+  → Lakitu compositions compare every shared word after each stage for 18,000
+  ticks per terrain, at 15–144 Hz with interpolation off/on. Native state is
+  never repaired from Rust output. Mario paths/floor inputs remain authored.
+- **Checks:** Full release workspace/all-target suite, every ignored test
+  enabled with the ROM and offscreen GPU required: 129 passed, zero failures or
+  ignored. New authored suite passes in debug and release. Warnings-denied
+  Clippy, formatting, excerpt/layout regeneration and packaging checks pass.
+  Native release runtime binaries and the headless demo run.
+  Selecting the first wall, using an inclusive low-wall cutoff, or narrowing
+  the promoted radial angle condition each fails its intended comparison;
+  all three mutations are reverted and the restored stage checks pass.
+- **Desktop evidence:** Latest preceding Windows/Linux test/build/package jobs
+  and artifacts passed at 0a62784:
+  [workflow 37963513367](https://github.com/esotericode/Rustario64/actions/runs/37963513367).
+  These remain compile/package evidence; physical GPU/human control checks need
+  testers. Updated CI also runs optimized radial comparisons.
+- **Still missing:** Complete radial input/height/pan, free-roam controller,
+  surface-mode selection, BOB initialization and full camera dispatch;
+  combined Mario/camera comparisons and original-execution traces. The viewer
+  continues using its approximate follow camera. GUI/settings, gamepad,
+  shadows, objects and missions remain pending.
+- **Next:** Finish the remaining BOB mode logic and init, compare combined ticks
+  before viewer integration. D1 ROM-picker and D2 pause/settings remain early
+  priorities before wider human playtesting; then shadow and first-mission actors.
 
 ### Bob-omb Battlefield acceptance tracker
 

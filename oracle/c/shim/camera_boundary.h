@@ -11,4 +11,9 @@ BAD_RETURN(f32) calc_y_to_curr_floor(f32 *posOff, f32 posMul, f32 posBound,
 void focus_on_mario(Vec3f focus, Vec3f pos, f32 posOff, f32 focOff,
                     f32 dist, s16 pitch, s16 yaw);
 s32 update_radial_camera(struct Camera *camera, Vec3f focus, Vec3f pos);
+s32 is_behind_surface(Vec3f pos, struct Surface *surface);
+s32 is_surf_within_bounding_box(struct Surface *surface, f32 x, f32 y, f32 z);
+s32 is_mario_behind_surface(struct Camera *camera, struct Surface *surface);
+void radial_camera_move(struct Camera *camera);
+void lakitu_zoom(f32 rangeDist, s16 rangePitch);
 #endif

@@ -19,6 +19,89 @@ static u32 bits(f32 value) { u32 word; memcpy(&word, &value, sizeof(word)); retu
 static f32 oracle_camera_random_unavailable(void) { abort(); }
 #include "lakitu_state.inc.c"
 
+s32 oracle_camera_avoid_yaw(s16 yaw, s16 wallYaw) { return calc_avoid_yaw(yaw, wallYaw); }
+
+/* Authored transport only: the vertex-based helpers do not use cached normals. */
+void oracle_camera_surface(const s16 *vertices, s16 type, s32 present,
+                           const f32 *from, const f32 *to, s16 range, s16 exclude,
+                           const f32 *bounds, u32 *out) {
+    struct Surface surf;
+    memset(&surf, 0, sizeof(surf));
+    memcpy(surf.vertex1, vertices, 3 * sizeof(s16));
+    memcpy(surf.vertex2, vertices + 3, 3 * sizeof(s16));
+    memcpy(surf.vertex3, vertices + 6, 3 * sizeof(s16));
+    surf.type = type;
+    out[0] = is_surf_within_bounding_box(&surf, bounds[0], bounds[1], bounds[2]);
+    out[1] = is_behind_surface((f32 *)to, &surf);
+    out[2] = is_range_behind_surface((f32 *)from, (f32 *)to, present ? &surf : NULL, range, exclude);
+}
+
+void oracle_camera_obstruction(const f32 *mario, const f32 *pos, s16 yaw, s16 range,
+                               s16 status, s16 forCamera, s16 intangible, u32 *out) {
+    vec3f_copy(sMarioCamState->pos, (f32 *)mario);
+    sStatusFlags = status;
+    gCheckingSurfaceCollisionsForCamera = forCamera;
+    gFindFloorIncludeSurfaceIntangible = intangible;
+    out[0] = rotate_camera_around_walls(&sComponentCamera, (f32 *)pos, &yaw, range);
+    out[1] = (u32)(s32)yaw;
+    out[2] = (u32)(s32)sStatusFlags;
+    out[3] = gCheckingSurfaceCollisionsForCamera;
+    out[4] = gFindFloorIncludeSurfaceIntangible;
+}
+
+/* Persistent radial globals are initialized once; later calls never load Rust
+ * output. Shared Rig words use the existing transport. */
+void oracle_camera_radial_reset(s32 area, const f32 *center, u16 secondRotate) {
+    gCurrLevelArea = area;
+    sComponentCamera.areaCenX = center[0];
+    sComponentCamera.areaCenZ = center[1];
+    s2ndRotateFlags = secondRotate;
+    sAreaYaw = 0;
+}
+void oracle_camera_radial_move(const f32 *mario, f32 forwardVel, s16 currFloor, s16 prevFloor,
+                               s16 forCamera, s16 intangible, u32 *out, u32 *extra) {
+    vec3f_copy(sMarioCamState->pos, (f32 *)mario);
+    gMarioStates[0].forwardVel = forwardVel;
+    sMarioGeometry.currFloorType = currFloor;
+    sMarioGeometry.prevFloorType = prevFloor;
+    gCheckingSurfaceCollisionsForCamera = forCamera;
+    gFindFloorIncludeSurfaceIntangible = intangible;
+    radial_camera_move(gCamera);
+    store_lakitu_words(out);
+    extra[0] = (u16)s2ndRotateFlags;
+    extra[1] = gCheckingSurfaceCollisionsForCamera;
+    extra[2] = gFindFloorIncludeSurfaceIntangible;
+}
+void oracle_camera_radial_zoom(f32 rangeDist, s16 rangePitch, u32 *out) {
+    lakitu_zoom(rangeDist, rangePitch);
+    store_lakitu_words(out);
+}
+/* Authored input setup only; not the result of a Rust camera computation. */
+void oracle_camera_radial_toggle_zoom(void) { gCameraMovementFlags ^= CAM_MOVE_ZOOMED_OUT; }
+s32 oracle_camera_radial_offset(const f32 *mario, f32 forwardVel, s16 areaYaw) {
+    vec3f_copy(sMarioCamState->pos, (f32 *)mario);
+    gMarioStates[0].forwardVel = forwardVel;
+    return offset_yaw_outward_radial(gCamera, areaYaw);
+}
+
+/* Composes compared components for the stage test. This is NOT the complete
+ * mode_radial_camera: it deliberately excludes set_camera_height/pan/input. */
+void oracle_camera_radial_goal_stage(const f32 *mario, u32 action, f32 floorHeight,
+                                     s16 forCamera, s16 intangible, u32 *out, u32 *extra) {
+    Vec3f pos;
+    vec3f_copy(sMarioCamState->pos, (f32 *)mario);
+    sMarioCamState->action = action;
+    sMarioGeometry.currFloorHeight = floorHeight;
+    gCheckingSurfaceCollisionsForCamera = forCamera;
+    gFindFloorIncludeSurfaceIntangible = intangible;
+    gCamera->nextYaw = update_radial_camera(gCamera, gCamera->focus, pos);
+    vec3f_copy(gCamera->pos, pos);
+    store_lakitu_words(out);
+    extra[0] = (u32)(s32)sAreaYaw;
+    extra[1] = gCheckingSurfaceCollisionsForCamera;
+    extra[2] = gFindFloorIncludeSurfaceIntangible;
+}
+
 s32 oracle_camera_lakitu_word_count(void) { return LAKITU_STATE_WORDS; }
 void oracle_camera_lakitu_reset(const u32 *words) {
     memset(&sComponentCamera, 0, sizeof(sComponentCamera));

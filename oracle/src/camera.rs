@@ -4,8 +4,9 @@ use rustario64::simulation::{
     camera::{
         PlayerGeometry, RadialState,
         lakitu::{Camera, Rig, STATE_WORDS},
+        radial::RadialMovement,
     },
-    collision::CollisionFlags,
+    collision::{CollisionFlags, Surface},
     mario::constants::ACT_FLAG_ON_POLE,
     math::TrigTables,
 };
@@ -58,6 +59,51 @@ struct RadialSetup {
 }
 
 unsafe extern "C" {
+    fn oracle_camera_avoid_yaw(yaw: i16, wall_yaw: i16) -> i32;
+    fn oracle_camera_surface(
+        vertices: *const i16,
+        surface_type: i16,
+        present: i32,
+        from: *const f32,
+        to: *const f32,
+        range: i16,
+        exclude: i16,
+        bounds: *const f32,
+        out: *mut u32,
+    );
+    fn oracle_camera_obstruction(
+        mario: *const f32,
+        pos: *const f32,
+        yaw: i16,
+        range: i16,
+        status: i16,
+        for_camera: i16,
+        intangible: i16,
+        out: *mut u32,
+    );
+    fn oracle_camera_radial_reset(area: i32, center: *const f32, second_rotate: u16);
+    fn oracle_camera_radial_move(
+        mario: *const f32,
+        forward_vel: f32,
+        curr_floor: i16,
+        prev_floor: i16,
+        for_camera: i16,
+        intangible: i16,
+        out: *mut u32,
+        extra: *mut u32,
+    );
+    fn oracle_camera_radial_zoom(range_dist: f32, range_pitch: i16, out: *mut u32);
+    fn oracle_camera_radial_toggle_zoom();
+    fn oracle_camera_radial_offset(mario: *const f32, forward_vel: f32, area_yaw: i16) -> i32;
+    fn oracle_camera_radial_goal_stage(
+        mario: *const f32,
+        action: u32,
+        floor_height: f32,
+        for_camera: i16,
+        intangible: i16,
+        out: *mut u32,
+        extra: *mut u32,
+    );
     fn oracle_camera_lakitu_word_count() -> i32;
     fn oracle_camera_lakitu_reset(words: *const u32);
     fn oracle_camera_lakitu_goal(
@@ -131,6 +177,152 @@ pub struct CameraOracle {
 }
 
 impl CameraOracle {
+    pub fn avoid_yaw(&self, yaw: i16, wall_yaw: i16) -> i16 {
+        // SAFETY: scalar inputs; existing global lock held.
+        unsafe { oracle_camera_avoid_yaw(yaw, wall_yaw) as i16 }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn surface_checks(
+        &self,
+        surface: &Surface,
+        present: bool,
+        from: [f32; 3],
+        to: [f32; 3],
+        range: i16,
+        exclude: i16,
+        bounds: [f32; 3],
+    ) -> [u32; 3] {
+        let vertices = [surface.vertex1, surface.vertex2, surface.vertex3];
+        let mut out = [0; 3];
+        // SAFETY: nine contiguous s16 vertices, fixed arrays and output; lock held.
+        unsafe {
+            oracle_camera_surface(
+                vertices.as_flattened().as_ptr(),
+                surface.surface_type,
+                present.into(),
+                from.as_ptr(),
+                to.as_ptr(),
+                range,
+                exclude,
+                bounds.as_ptr(),
+                out.as_mut_ptr(),
+            );
+        }
+        out
+    }
+
+    pub fn obstruction(
+        &self,
+        mario: [f32; 3],
+        pos: [f32; 3],
+        yaw: i16,
+        range: i16,
+        status: i16,
+        flags: CollisionFlags,
+    ) -> [u32; 5] {
+        let mut out = [0; 5];
+        // SAFETY: fixed-size arrays, loaded terrain and global lock held.
+        unsafe {
+            oracle_camera_obstruction(
+                mario.as_ptr(),
+                pos.as_ptr(),
+                yaw,
+                range,
+                status,
+                flags.checking_for_camera.into(),
+                flags.find_floor_include_surface_intangible.into(),
+                out.as_mut_ptr(),
+            );
+        }
+        out
+    }
+
+    pub fn reset_radial(&self, rig: Rig, radial: RadialMovement) {
+        self.reset_lakitu(rig);
+        // SAFETY: two-element center, scalar inputs; lock held.
+        unsafe {
+            oracle_camera_radial_reset(radial.area, radial.center.as_ptr(), radial.second_rotate);
+        }
+    }
+
+    pub fn radial_move(
+        &self,
+        mario: [f32; 3],
+        forward_vel: f32,
+        curr_floor: i16,
+        prev_floor: i16,
+        flags: CollisionFlags,
+    ) -> ([u32; STATE_WORDS], [u32; 3]) {
+        let mut out = [0; STATE_WORDS];
+        let mut extra = [0; 3];
+        // SAFETY: fixed output arrays, loaded terrain, initialized Rig; lock held.
+        unsafe {
+            oracle_camera_radial_move(
+                mario.as_ptr(),
+                forward_vel,
+                curr_floor,
+                prev_floor,
+                flags.checking_for_camera.into(),
+                flags.find_floor_include_surface_intangible.into(),
+                out.as_mut_ptr(),
+                extra.as_mut_ptr(),
+            );
+        }
+        (out, extra)
+    }
+
+    pub fn radial_zoom(&self, range_dist: f32, range_pitch: i16) -> [u32; STATE_WORDS] {
+        let mut out = [0; STATE_WORDS];
+        // SAFETY: fixed output, initialized Rig; lock held.
+        unsafe {
+            oracle_camera_radial_zoom(range_dist, range_pitch, out.as_mut_ptr());
+        }
+        out
+    }
+
+    pub fn radial_toggle_zoom(&self) {
+        // SAFETY: authored input event, initialized Rig; global lock held.
+        unsafe {
+            oracle_camera_radial_toggle_zoom();
+        }
+    }
+
+    pub fn radial_offset(&self, mario: [f32; 3], forward_vel: f32, area_yaw: i16) -> i16 {
+        // SAFETY: fixed input, initialized radial globals; lock held.
+        unsafe { oracle_camera_radial_offset(mario.as_ptr(), forward_vel, area_yaw) as i16 }
+    }
+
+    /// Stage composition only; excludes full mode input, height adjustment and pan.
+    pub fn radial_goal_stage(
+        &self,
+        mario: [f32; 3],
+        action: u32,
+        floor_height: f32,
+        flags: CollisionFlags,
+    ) -> ([u32; STATE_WORDS], [u32; 3]) {
+        assert_eq!(
+            action & ACT_FLAG_ON_POLE,
+            0,
+            "native pole path needs objects"
+        );
+        let mut out = [0; STATE_WORDS];
+        let mut extra = [0; 3];
+        // SAFETY: fixed arrays, supported action, initialized radial globals; lock held.
+        unsafe {
+            oracle_camera_radial_goal_stage(
+                mario.as_ptr(),
+                action,
+                floor_height,
+                flags.checking_for_camera.into(),
+                flags.find_floor_include_surface_intangible.into(),
+                out.as_mut_ptr(),
+                extra.as_mut_ptr(),
+            );
+        }
+        (out, extra)
+    }
+
     pub fn reset_lakitu(&self, rig: Rig) {
         assert!(rig.transition.frames_left <= i32::from(i16::MAX));
         assert!(

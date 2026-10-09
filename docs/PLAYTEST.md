@@ -8,6 +8,13 @@ reproduce the original camera. Play stops on unsupported paths; R re-enters.
 
 ## Start
 
+Windows and Linux ZIP builds are attached to successful runs of the
+[Rust foundation workflow](https://github.com/esotericode/Rustario64/actions/workflows/rust.yml).
+Choose the latest successful run for `codex/reference-camera-foundation`, then
+download `rustario64-windows-x86_64` or `rustario64-linux-x86_64` under Artifacts.
+GitHub's artifact ZIP contains the runtime ZIP; extract both layers. The build
+identifier is in the runtime folder's BUILD_INFO.txt.
+
 Extract the whole ZIP. Keep your own ROM outside this folder. Only the original
 8 MiB US v1.0 ROM is supported, identified after byte-order normalization by
 SHA-1 `9bef1128717f958171a4afac3ed78ee2bb4e86ce` (Z64, V64 or N64).

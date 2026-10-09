@@ -35,8 +35,9 @@ What works now:
   cap, torso tilt, level of detail) as the original render pass does, skinned
   on the CPU and interpolated between ticks at any frame rate. Six switch
   configurations match triangle digests rebuilt from the pinned decomp source.
-- Reference-camera helpers, camera collision/geometry, radial goals, and the
-  persistent Lakitu/transition stage with exact native comparisons on authored
+- Reference-camera helpers, camera collision/geometry and obstruction scans,
+  radial rotation/zoom and goals, and the persistent Lakitu/transition stage
+  with exact native comparisons on authored
   fixtures and BOB's ROM data. Full mode dispatch is pending; the viewer keeps
   its labeled follow camera.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
@@ -278,13 +279,14 @@ holds the owner-ROM evidence.
 ## Next increment
 
 Connect the compared reference-camera helpers and persistent Lakitu/transition
-stage to full BOB radial and free-roam mode controllers, with per-tick comparisons
+stage to full BOB radial and free-roam mode controllers (input, height/pan,
+surface-mode selection and initialization), with per-tick comparisons
 so camera yaw and mode stop being inputs (the source's named BOB trigger table
 is unused); draw Mario's shadow; then begin objects for the first
 mission. Original-execution traces remain the eventual authority. Skybox and
 placement models remain M1 work.
 
-Camera checks without a ROM: `cargo test --locked -p rustario64-oracle --test camera --test lakitu`;
+Camera checks without a ROM: `cargo test --locked -p rustario64-oracle --test camera --test lakitu --test radial`;
 repeat with `--release` for optimized comparisons. The owner-ROM camera test
 is ignored in ordinary CI; see [docs/FIDELITY.md](docs/FIDELITY.md).
 

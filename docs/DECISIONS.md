@@ -569,6 +569,35 @@ the perspective node's FOV animation/rendering is not implemented here.
 Authored goals and Mario paths drive persistent comparisons. Owner-ROM tests use
 BOB collision, original trig tables and the imported spawn; they do not run the
 complete mode dispatcher or validate original camera-relative Mario play. The
-viewer is unchanged. Next: wall-avoidance/rotation, radial and free-roam mode
+viewer is unchanged. Wall-avoidance/rotation and radial movement/zoom now have
+the compared stage described below. Next: full radial and free-roam mode
 controllers, course surface selection and initialization; then compare combined
 camera-and-Mario ticks before replacing the viewer's follow camera.
+
+## Camera obstruction and radial movement — 2026-10-09
+
+`simulation::camera::obstruction` owns camera.c's vertex-based surface tests and
+eight-probe wall scan. It calls the existing original collision query, preserving
+the capped coarse radius, fine-radius growth only after a coarse hit, repeated
+queries from the original probe, last-wall selection, near-wall flag clearing
+and low-wall exclusion. Recompute the unnormalized integer cross product for
+behind-surface tests; cached normalized plane tests change boundary rounding.
+Integer products wrap under the native oracle's existing `-fwrapv` contract.
+
+`simulation::camera::radial::RadialMovement` holds the area center and second
+rotation flags. Shared movement/status/zoom/offset fields stay in `Rig`, so
+controllers and Lakitu stages use one authoritative copy. Rotation surface entry,
+return-to-middle, first/second rotation limits, obstruction limits, stationary
+camera behavior, outward offsets and zoom follow the source, including conflicting
+rotation flags and promoted (not prematurely narrowed) angle comparisons.
+Other areas' outward-offset branches are retained and component-tested; this
+does not enable those courses.
+
+Native comparisons initialize each side once, then independently compose radial
+movement, zoom, existing radial goals and Lakitu updates. An authored zoom event
+toggles each side's own flags; no Rust result repairs native state between stages.
+Record all 94 shared words plus second-rotation flags, area yaw and collision
+flags. This composition deliberately omits mode input, camera height/pan, free
+roam, surface-mode selection, initialization and outer dispatch. Those need their
+own comparisons before this replaces the viewer camera. The runtime remains
+entirely Rust; generated C excerpts are development-only, with pinned hashes.

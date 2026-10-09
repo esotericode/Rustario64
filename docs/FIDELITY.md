@@ -367,7 +367,7 @@ python3 oracle/tools/lakitu_layout.py --check
 ```
 
 This is **not** `update_camera` coverage: initialization, surface-based mode
-selection, radial/free-roam controller movement, wall-obstruction rotation,
+selection, complete radial/free-roam mode controllers,
 C-Up/R-trigger handling, cutscene dispatch and the original RNG remain missing.
 Active handheld/random shock requests are explicit unsupported boundaries;
 existing handheld angle offsets decay when no random request is active.
@@ -380,3 +380,41 @@ Deliberately truncating a float shake increment before adding it to the angle
 fails the native comparison; unconditionally clearing the camera-floor flag
 fails the independent flag assertion. Both changes are reverted, and the
 restored authored/owner-ROM stage suites pass.
+
+## Camera obstruction and radial stages (2026-10-09)
+
+The Rust obstruction and radial modules translate nine additional original
+functions (the Mario-behind-surface wrapper is inlined). Verbatim excerpts from
+the same pinned revision provide the native behavior. Helpers use original
+integer products, strict extent checks, surface exclusions and signed sectors.
+The wall scan preserves eight probes, coarse/fine query ordering, last-wall
+selection and the source radius clamp. Radial movement preserves surface-entry
+flags, conflicting rotations, first/second turn limits, stationary behavior,
+promoted angle comparisons, outward offsets and zoom narrowing.
+
+| Comparison | Authored fixtures | Owner ROM |
+| --- | --- | --- |
+| Avoid yaw | Every s16 starting yaw with ten relative boundary angles (655,360 cases) | Existing helper uses original integer angles; no ROM needed |
+| Vertex/sector tests | Loaded authored surfaces, exact-plane/reversed winding, 149/150/151-unit walls and 20,000 randomized vertex/bounds cases, including full s16 coordinates | Real BOB walls exercised through obstruction scans |
+| Obstruction scan | 10,000 generated pairs × four query-flag combinations (40,000); all three outcomes occur; targeted low/ignored/near/clear walls | 20,000 × four (80,000), original BOB collision and ROM tables |
+| Radial rotation, outward offsets and zoom | 20,000 states; floor transitions, both modes, first/second flags, signed extremes and fractional distance bounds; persistent surface turns reach source limits | 40,000 states |
+| Persistent movement → zoom → radial goals → Lakitu | 1,800 ticks at 15/30/60/120/144 Hz with interpolation off/on (18,000 ticks); all shared words compared after each stage | Same 18,000 composed ticks on BOB with original tables |
+
+Both sides retain independent persistent state. The 94-word shared record and
+controller second-rotation flags, area yaw and collision flags compare exactly.
+No Rust post-tick value is loaded into native state. Authored Mario paths and
+floor inputs make this a **stage-composition check**, not combined Mario/camera
+gameplay or complete mode_radial_camera. Input, height/pan, free roam, mode
+selection, initialization and full update_camera remain pending. The viewer
+still uses its approximate follow camera, and original-N64 traces remain missing.
+
+Selecting the first wall instead of the last, making the low-wall cutoff
+inclusive, or narrowing the radial condition before its comparison each causes
+a native divergence. All three deliberate mutations are reverted; restored
+authored and owner-ROM comparisons pass.
+
+```sh
+cargo test --locked -p rustario64-oracle --test radial -- --nocapture
+cargo test --locked --release -p rustario64-oracle --test radial -- --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test radial -- --include-ignored --nocapture
+```

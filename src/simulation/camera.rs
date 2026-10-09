@@ -15,6 +15,8 @@ use super::{
 };
 
 pub mod lakitu;
+pub mod obstruction;
+pub mod radial;
 
 pub const U_CBUTTONS: u16 = 0x0008;
 pub const D_CBUTTONS: u16 = 0x0004;
