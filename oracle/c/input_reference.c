@@ -280,4 +280,3 @@ void update_mario_inputs(struct MarioState *m) {
         m->doubleJumpTimer--;
     }
 }
-
