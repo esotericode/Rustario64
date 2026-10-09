@@ -525,3 +525,48 @@ and live interpolation/fog/VSync changes. A fresh 68-frame owner-ROM recording
 with movement/jump inputs and a pause replays every Mario and camera word
 exactly via `tick_trace --inputs`. ROM content and exported state traces stay
 under ignored private paths; neither is distributed or staged.
+
+## Landing and action-change interpolation — session 14
+
+The remaining animation-entry check in `MarioDrawer::frame` discarded the
+previous model pose on clip changes. The new owner-ROM regression reproduces
+17 such changes, including five landing transitions, in three 180-frame BOB
+sessions: jump → landing → run, jump → landing → turn, and jump → landing →
+stop/restart. It uses real completed positions and animation frames, without
+the artificial translation used by the blink regression. For unchanged geometry
+it compares the displayed vertices at alpha 0, 0.25, 0.5, 0.75 and 1 against
+the independently completed endpoint vertices. The old guard fails on every
+one of those 17 switches; the fix preserves every intermediate pose.
+
+The authored regression also changes joint rotations and root translations
+between clips, including simultaneous clip/material and clip/skeleton-branch
+changes. It checks the expected coordinates, interpolation-off and non-finite
+alpha behavior, and level reset. The existing blink/LOD regression covers mesh
+changes under the current selection. These tests verify presentation; they do
+not advance the original animation clock or change the 30 Hz game frame.
+
+To export the three authored input programs into a private ignored directory:
+
+```bash
+RUSTARIO64_ROM=/path/to/sm64.z64 \
+RUSTARIO64_TRANSITION_LOG_DIR=private/transitions \
+cargo test --locked --release -p rustario64 --test mario_model \
+  local_us_rom_landing_and_action_changes_keep_interpolating -- --ignored --nocapture
+```
+
+Replay each recording (`landing-run`, `landing-turn`, `landing-stop-restart`)
+with the linked reference camera, using a new output directory per recording:
+
+```bash
+cargo run --locked --release -p rustario64-oracle --example tick_trace -- \
+  /path/to/sm64.z64 NEW_PRIVATE_REPLAY_DIR \
+  --inputs private/transitions/landing-run.inputs.json
+```
+
+All three 180-frame recordings replay every Mario and camera word exactly against
+the native reference (540 frames total). The optimized core/oracle suite passes
+128 tests with all owner-ROM checks enabled; desktop/render checks pass another
+10 with offscreen GPU required. Warnings-denied workspace Clippy and formatting
+pass. Window smoke checks use Xvfb/software Vulkan. This is automated presentation
+and native-oracle coverage, with physical-GPU human transition playtesting still
+pending.

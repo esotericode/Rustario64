@@ -150,3 +150,11 @@ The four published `epaint_default_fonts` 0.36.2 font notices (Hack, Noto/OFL,
 Ubuntu/UFL and emoji-icon-font/MIT) are also retained and included in runtime
 notices. These open-source UI fonts are unrelated to imported ROM assets.
 Dependency graphs for both native desktop targets are checked before packaging.
+
+### Animation transition presentation — session 14
+
+The clip-transition interpolation change and its authored regression are MIT
+code. They reuse the existing imported-model traversal and completed pose
+endpoints; no new upstream source, dependency or ROM-derived asset is added.
+The owner-ROM transition scripts are authored controls. Generated input logs
+and native/Rust state traces remain private and ignored.

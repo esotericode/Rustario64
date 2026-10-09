@@ -213,8 +213,10 @@ appears from his first tick on, as in the original, whose first frame renders
 after his first update). The original's levels of detail apply: moving Mario
 switches to the medium and low-detail bodies with his distance from the camera.
 Blinks, material switches and detail changes keep interpolating the skeleton using
-the newly selected mesh at both endpoints. Animation changes and level re-entry
-snap. Interpolation presents completed frames about one 30 Hz tick behind real time;
+the newly selected mesh at both endpoints. Jumping, landing, turning, stopping
+and other animation changes also interpolate between completed poses. Level
+re-entry and pause/resume clear pose history. Interpolation presents completed
+frames about one 30 Hz tick behind real time;
 it does not change input processing or simulation cadence.
 If his model cannot be imported, a red placeholder box is drawn instead. With
 a clean pinned decomp checkout, `python3 -I tools/check_mario_model_reference.py

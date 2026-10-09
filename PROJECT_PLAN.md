@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-09
 
-Status: M0 complete. M1 imported level works: BOB's original terrain and textures import from the ROM and render through an optional wgpu viewer with collision/placement overlays. M2 in progress: Mario's complete tick (inputs, non-object actions, his object update and animation frame advance, with the ROM's animations) matches the natively compiled decomp per tick, and BOB's original camera (radial, R/close, C-Up, boss-fight modes, shakes, FOV and graph camera) runs with it in the original frame order, matching the decomp word for word per frame. The viewer's Mario mode drives that frame from the keyboard and draws from the reference camera; recorded runs replay exactly against the decomp with its own camera. Mario's model and display lists import from the ROM and are posed from each tick as the original render pass does. D1 local ROM launcher and D2 development pause/settings are implemented; blink and LOD switches preserve Mario's pose interpolation. Mario's shadow, objects, cutscenes, other areas' camera modes and triggers, cutscene/water actions, warps and missions remain missing.
+Status: M0 complete. M1 imported level works: BOB's original terrain and textures import from the ROM and render through an optional wgpu viewer with collision/placement overlays. M2 in progress: Mario's complete tick (inputs, non-object actions, his object update and animation frame advance, with the ROM's animations) matches the natively compiled decomp per tick, and BOB's original camera (radial, R/close, C-Up, boss-fight modes, shakes, FOV and graph camera) runs with it in the original frame order, matching the decomp word for word per frame. The viewer's Mario mode drives that frame from the keyboard and draws from the reference camera; recorded runs replay exactly against the decomp with its own camera. Mario's model and display lists import from the ROM and are posed from each tick as the original render pass does. D1 local ROM launcher and D2 development pause/settings are implemented; blink, LOD and animation/action switches preserve Mario's pose interpolation. Mario's shadow, objects, cutscenes, other areas' camera modes and triggers, cutscene/water actions, warps and missions remain missing.
 Initial content target: Bob-omb Battlefield from a supported Super Mario 64 ROM.  
 Long-term intent: Support the complete original game through the same engine.
 
@@ -607,7 +607,8 @@ Every handoff should report the working result, commands actually run, missing f
   entire skinned model's interpolation. The new mesh now draws from both poses,
   with the previous skeleton evaluated under current switches/LOD. Authored
   material/geometry regressions and a 256-frame owner-ROM blink/LOD regression
-  cover 32 switches. Animation changes and level re-entry still snap; authoritative
+  cover 32 switches. Animation changes initially snapped (superseded by session
+  14); level re-entry still snaps. Authoritative
   animation advancement remains at 30 Hz.
 - **D1:** Local ROM-selection window (Browse, path entry or drag/drop), supported
   identity validation/import before play, recoverable errors, opt-in remembered
@@ -640,6 +641,31 @@ Every handoff should report the working result, commands actually run, missing f
   audio, saves and original-N64 execution traces.
 - **Next:** D3 playtesting; Mario's original shadow, then object-list processing
   and the first BOB actors with independent per-tick comparisons.
+
+### Session 14 — animation changes retain their intermediate poses (2026-10-09)
+
+- **Report/reproduction:** Landing, resuming running and other action changes
+  still stuttered after the blink fix. The remaining clip-ID equality guard
+  snapped the complete model, including its origin, while the camera kept
+  interpolating. An owner-ROM script reproduces 17 affected clip changes,
+  including five landing transitions, across three 180-frame BOB sessions.
+- **Change:** Interpolate the completed model endpoints regardless of clip ID
+  when they share the same geometry and epoch. The mesh-switch path continues
+  to pose today's geometry under the earlier skeleton. No extra simulation
+  ticks, animation advancement, delayed crossfade or input changes are added.
+- **Regression:** Authored different-clip translations/joint poses and combined
+  clip/material/geometry changes check endpoints and intermediate frames. The
+  540-frame owner-ROM test covers landing → run, landing → turn and landing →
+  stop/restart at five render fractions. Both tests fail against the previous
+  guard and pass with the fix. Reset and interpolation-off behavior remain.
+- **Checks:** 128 optimized core/oracle tests with all owner-ROM checks enabled
+  and 10 desktop/render tests with offscreen GPU required pass (138 total).
+  All 540 recorded transition-script frames replay every Mario and camera word
+  exactly against native C. Warnings-denied Clippy-driver workspace checks and
+  formatting pass. Linux runtime checks use Xvfb/software Vulkan; human hardware
+  playtesting remains necessary.
+- **Next:** Hardware playtesting of transitions at 60 Hz and higher, then the
+  previously planned Mario shadow and BOB actors. Other milestone gaps remain.
 
 ### Bob-omb Battlefield acceptance tracker
 

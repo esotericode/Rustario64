@@ -81,9 +81,11 @@ during backlog. The future window app should stop elapsed-time accumulation on
 pause/focus loss and reset its wall-clock anchor on resume, retaining existing
 tick backlog.
 
-Interpolation uses completed snapshots for the same entity/epoch/animation.
-Spawn, animation switches, teleport/death/area transitions snap. A discontinuity
-flag covers same-area teleports; despawn removes the displayed entity.
+The foundation's generic interpolation uses completed snapshots for the same
+entity/epoch/animation marker. Played Mario uses a constant marker for world
+placement and a separate model drawer for the joints; his clip changes now
+interpolate (session 14). Spawn and teleport/death/area transitions snap. A
+discontinuity flag covers same-area teleports; despawn removes the displayed entity.
 Angles wrap as i16 on the shortest arc, with the negative arc for a half-turn
 tie. Alpha is clamped and non-finite alpha snaps. No displayed pose can mutate
 authoritative state. Lighting/shadow flags are configuration scaffolding only.
@@ -689,7 +691,28 @@ Mario's blink cycle changes those lists, so it periodically snapped his entire
 skinned model. Geometry changes now skin the newly selected mesh at both tick
 endpoints, traversing yesterday's skeleton with today's discrete switches and
 LOD. This also initializes previously inactive bones; unrelated vertex arrays
-are never blended. Animation-entry changes and level entry snap. The authoritative
+are never blended. Animation-entry changes initially snapped (superseded by
+session 14); level entry still snaps. The authoritative
 30 Hz animation advancement is unchanged. Authored switch/material/animation
 regressions and an owner-ROM test of blink cycles plus three detail levels cover
 the fix. Interpolation still adds approximately one simulation tick of delay.
+
+## Animation transition interpolation — session 14
+
+The follow-up landing/turn/run report exposed the remaining animation-entry
+guard in `MarioDrawer::frame`. It snapped the entire model to the latest tick
+when the clip changed, skipping the intermediate pose and root placement while
+the camera continued to interpolate. The previous mesh-switch fix already makes
+both endpoints refer to the same geometry, so clip identity is not a reason to
+discard that interval. Jump, landing, run, braking and idle changes now blend
+between the two completed, skinned poses over one simulation interval. There is
+no extended crossfade, animation-clock resampling or extra animation advancement.
+
+Each 30 Hz endpoint remains the original completed pose. Geometry/material
+choices still come from the current tick at both endpoints; incompatible vertex
+arrays are never blended. Hidden poses, level re-entry and explicit pause/resume
+history resets retain their snap behavior, as do disabled interpolation and
+non-finite alpha. Simulation, input timing, camera state and replay formats are
+unchanged. Tests reproduce five landing transitions among 17 real clip changes
+in 540 owner-ROM BOB frames and cover different authored joint poses plus a
+simultaneous clip/geometry switch.

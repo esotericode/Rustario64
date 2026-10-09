@@ -164,8 +164,8 @@ fn snapshot(m: &MarioState, epoch: u64) -> Snapshot {
         // The original draws Mario's object at its graphics position and yaw.
         position: m.obj.gfx.pos,
         yaw: m.obj.gfx.angle[1],
-        // Without a skeleton there is no pose to keep from blending across an
-        // animation switch, so the position always interpolates.
+        // Clip IDs are not world discontinuities. The placeholder's position
+        // follows the same tick interval as Mario's model and the camera.
         animation: 0,
         discontinuity: false,
     }

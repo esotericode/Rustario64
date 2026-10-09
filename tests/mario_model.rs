@@ -4,7 +4,7 @@
 //! that tools/check_mario_model_reference.py reproduces from the pinned decomp
 //! sources, then poses Mario through a played session.
 use rustario64::{
-    content::visual::SkinnedModel,
+    content::visual::{SkinnedModel, VisualVertex},
     import::{animation, bob, engine, mario, rom::Rom, sha1_hex},
     play::{Pad, Session},
     presentation::mario::{MarioDrawer, MarioPose},
@@ -275,4 +275,135 @@ fn local_us_rom_blinks_and_lod_keep_interpolating() {
     );
     assert!(drawer.issues.is_empty());
     println!("{switches} blink/LOD switches preserve interpolation over 256 owner-ROM frames");
+}
+
+#[test]
+#[ignore = "requires a privately supplied supported ROM via RUSTARIO64_ROM"]
+fn local_us_rom_landing_and_action_changes_keep_interpolating() {
+    let rom = Rom::open(std::path::Path::new(
+        &std::env::var_os("RUSTARIO64_ROM").unwrap(),
+    ))
+    .unwrap();
+    let source = mario::import(&rom).unwrap();
+    let trig = engine::trig_tables(&rom).unwrap();
+    let anims = animation::mario_animations(&rom).unwrap();
+    let imported = bob::import(&rom).unwrap();
+    let world = CollisionWorld::load_area_terrain(&imported.collision).unwrap();
+    let camera = imported.visual.as_ref().unwrap().camera.unwrap();
+    let entry = GameEntry::script_start(&imported.level, &camera).unwrap();
+    let run = Pad {
+        up: true,
+        ..Pad::default()
+    };
+    let turn = Pad {
+        left: true,
+        ..Pad::default()
+    };
+    let (mut switches, mut landings, mut failures) = (0, 0, Vec::new());
+    for (label, after_landing) in [
+        ("landing-run", run),
+        ("landing-turn", turn),
+        ("landing-stop-restart", Pad::default()),
+    ] {
+        let mut session = Session::new(&world, &trig, &anims, entry);
+        let mut drawer = MarioDrawer::new(&source, &trig, &anims);
+        let (mut jumped, mut landed, mut ground_ticks) = (false, false, 0);
+        let mut previous: Option<(MarioPose, usize, Vec<Vec<VisualVertex>>)> = None;
+        for tick in 0..180 {
+            let pad = match tick {
+                0..=9 => Pad::default(),
+                10..=24 => run,
+                25 | 26 => Pad { a: true, ..run },
+                _ if !landed => run,
+                _ => match ground_ticks {
+                    0..=24 => after_landing,
+                    25..=44 => Pad::default(),
+                    45..=64 => run,
+                    _ => Pad::default(),
+                },
+            };
+            assert!(session.step(&pad), "{label} tick {tick}: session stopped");
+            assert_eq!(session.stopped(), None, "{label} tick {tick}");
+            let pose = session.mario_pose();
+            if tick >= 25 {
+                if pose.body.action & c::ACT_FLAG_AIR != 0 {
+                    jumped = true;
+                } else if jumped && !landed {
+                    landed = true;
+                } else if landed {
+                    ground_ticks += 1;
+                }
+            }
+            drawer.update(&pose, Some(1000)).unwrap();
+            let current = drawer.frame(1.0, false).unwrap();
+            if let Some((old, build, vertices)) = previous.as_ref()
+                && *build == current.build
+                && old.animation.map(|a| a.entry) != pose.animation.map(|a| a.entry)
+            {
+                // Equal draw lists give independently completed vertex endpoints.
+                // A clip change must keep both root movement and joint motion
+                // between those endpoints, including the landing and run poses.
+                let from = rustario64::play::action_name(old.body.action);
+                let to = rustario64::play::action_name(pose.body.action);
+                if from.contains("LAND") || to.contains("LAND") {
+                    landings += 1;
+                }
+                let mut error = 0.0_f32;
+                for alpha in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                    let frame = drawer.frame(alpha, true).unwrap();
+                    assert_eq!(
+                        frame.vertices.iter().map(Vec::len).collect::<Vec<_>>(),
+                        vertices.iter().map(Vec::len).collect::<Vec<_>>()
+                    );
+                    for ((a, b), v) in vertices
+                        .iter()
+                        .flatten()
+                        .zip(current.vertices.iter().flatten())
+                        .zip(frame.vertices.iter().flatten())
+                    {
+                        for i in 0..3 {
+                            let want = a.position[i] + (b.position[i] - a.position[i]) * alpha;
+                            error = error.max((v.position[i] - want).abs());
+                        }
+                    }
+                }
+                if error > 0.002 {
+                    failures.push(format!(
+                        "{label} tick {tick}: {from} -> {to}, animation {:?} -> {:?}, error {error}",
+                        old.animation.map(|a| a.entry),
+                        pose.animation.map(|a| a.entry)
+                    ));
+                }
+                switches += 1;
+            }
+            previous = Some((pose, current.build, current.vertices));
+        }
+        assert!(jumped && landed, "{label} did not jump and land");
+        assert!(drawer.issues.is_empty());
+        // Optional private recordings reproduce these exact transitions in the
+        // native oracle; no ROM data or input logs are committed.
+        if let Some(dir) = std::env::var_os("RUSTARIO64_TRANSITION_LOG_DIR") {
+            let dir = std::path::PathBuf::from(dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let log = session.input_log(
+                "mario-transition-regression",
+                rom.fingerprint(),
+                rustario64::play::BOB_SCRIPT_START,
+            );
+            std::fs::write(
+                dir.join(format!("{label}.inputs.json")),
+                log.to_json_pretty(),
+            )
+            .unwrap();
+        }
+    }
+    println!(
+        "{switches} clip switches, including {landings} landing transitions in 540 BOB frames"
+    );
+    assert!(switches >= 12, "only {switches} clip switches exercised");
+    assert!(
+        landings >= 3,
+        "only {landings} landing transitions exercised"
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

@@ -71,7 +71,11 @@ Presentation flags: `--msaa 4`, `--no-fog`, `--no-cull`, `--size 1280x960`,
 Simulation stays at 30 ticks per second. Pause/settings can change interpolation,
 fog, VSync and fullscreen without altering game state or logs. Smooth presentation
 uses completed-frame interpolation with about one simulation tick of delay. Blink
-and model-detail switches no longer snap the entire animation to 30 Hz.
+and model-detail switches, landing and other animation changes no longer snap
+the entire model to 30 Hz. With interpolation on, test jump → landing → run,
+jump → landing → turn, and stop → idle → run. Clip changes keep Mario's position
+and joint poses on the same completed-frame interval as the camera. Level restart
+and pause/resume still clear pose history.
 
 ## Report a problem
 

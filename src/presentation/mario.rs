@@ -793,10 +793,12 @@ impl<'a> MarioDrawer<'a> {
         Ok(())
     }
 
-    /// The model between the last two ticks: interpolated when both drew the
-    /// same animation in the same epoch and interpolation is on, otherwise
-    /// the latest tick's. Geometry switches select the current mesh at both
-    /// endpoints, never unrelated vertex arrays.
+    /// The model between the last two ticks in the same epoch. Clip changes
+    /// are completed poses too: snapping them skips a displayed midpoint for
+    /// the whole model, including its position, while the camera keeps moving.
+    /// Geometry switches select the current mesh at both endpoints, never
+    /// unrelated vertex arrays. Reset, hidden poses and disabled interpolation
+    /// still draw without blending.
     pub fn frame(&self, alpha: f32, interpolation: bool) -> Option<MarioFrame<'_>> {
         let current = self.current.as_ref()?;
         let template = &self.builds[current.build].model;
@@ -805,9 +807,7 @@ impl<'a> MarioDrawer<'a> {
                 if interpolation
                     && alpha.is_finite()
                     && previous.build == current.build
-                    && previous.epoch == current.epoch
-                    && previous.pose.animation.map(|a| a.entry)
-                        == current.pose.animation.map(|a| a.entry) =>
+                    && previous.epoch == current.epoch =>
             {
                 lerp_vertices(
                     &previous.vertices,
@@ -1073,11 +1073,12 @@ mod tests {
     }
 
     #[test]
-    fn material_switches_keep_motion_but_animation_changes_and_reset_snap() {
+    fn material_and_animation_switches_interpolate_but_reset_snaps() {
         let source = source();
         let trig = tables();
         let mut anims = animations(0);
         anims.animations.push(anims.animations[0].clone());
+        anims.animations[1].values = vec![25, 47, -31, 0, 0];
         let mut drawer = MarioDrawer::new(&source, &trig, &anims);
         let a = pose(ACT_JUMP, [0; 3], [0.0; 3]);
         let mut b = pose(ACT_JUMP, [0; 3], [30.0, 0.0, 0.0]);
@@ -1091,7 +1092,30 @@ mod tests {
         b.animation.as_mut().unwrap().entry = 1;
         b.position[0] = 60.0;
         drawer.update(&b, None).unwrap();
-        assert_near(at(&drawer, 0.0), [112.5, 3.5, -0.5]);
+        // Changing clips is a new completed pose, not a world discontinuity.
+        // Both the object's movement and the different joint pose interpolate.
+        assert_near(at(&drawer, 0.0), [82.5, 3.5, -0.5]);
+        assert_near(at(&drawer, 0.25), [93.75, 8.5, -4.25]);
+        assert_near(at(&drawer, 0.5), [105.0, 13.5, -8.0]);
+        assert_near(at(&drawer, 1.0), [127.5, 23.5, -15.5]);
+        assert_near(
+            drawer.frame(0.0, false).unwrap().vertices[0][1].position,
+            [127.5, 23.5, -15.5],
+        );
+        assert_near(at(&drawer, f32::NAN), [127.5, 23.5, -15.5]);
+        // A clip switch and a material switch can occur on the same tick.
+        drawer.update(&a, None).unwrap();
+        assert_near(at(&drawer, 0.0), [127.5, 23.5, -15.5]);
+        assert_near(at(&drawer, 0.5), [90.0, 13.5, -8.0]);
+        // A clip switch with a different skeleton branch still uses only
+        // today's geometry. Its earlier endpoint is posed at the old origin.
+        drawer.update(&b, None).unwrap();
+        drawer
+            .update(&pose(ACT_IDLE, [0; 3], [-30.0, 0.0, 0.0]), None)
+            .unwrap();
+        assert_near(at(&drawer, 0.0), [65.0, 0.0, 0.0]);
+        assert_near(at(&drawer, 0.5), [20.0, 0.0, 0.0]);
+        assert_near(at(&drawer, 1.0), [-25.0, 0.0, 0.0]);
         drawer.reset();
         drawer.update(&a, None).unwrap();
         assert_near(at(&drawer, 0.0), [52.5, 3.5, -0.5]);
