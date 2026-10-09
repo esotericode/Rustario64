@@ -120,6 +120,18 @@ pub struct ImportedArea {
     pub macro_spawns: Vec<MacroPlacement>,
     pub spawns: Vec<ImportedSpawn>,
     pub warps: Vec<WarpNode>,
+    /// Original area defaults and TERRAIN_TYPE bitwise accumulation.
+    pub terrain_type: u16,
+    /// SHOW_DIALOG's two slots; 0xFF is the original DIALOG_NONE sentinel.
+    pub dialog_ids: [u8; 2],
+    pub background_music: AreaMusic,
+}
+
+/// Original signed music words, retained as data; no audio is executed at import.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AreaMusic {
+    pub settings_preset: i16,
+    pub sequence: i16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

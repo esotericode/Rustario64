@@ -15,7 +15,8 @@ by src/diagnostics.rs and tests; they are not samples from the game.
 | Same pinned sm64 | include/level_commands.h, src/engine/level_script.c, levels/bob/script.c, levels/level_defines.h | import/level.rs, import/bob.rs, content.rs | Referenced command layouts, course/level identity, entry load pattern, local call structure, act-mask sentinel, placement and warp fields. New bounded static extractor; no native functions executed or source placements bundled. | CC0. Independent call/field/error fixtures and real-ROM static import pass; runtime gaps explicit. |
 | Same pinned sm64 | include/surface_terrains.h, src/engine/surface_load.c, include/special_presets.h, include/special_presets.inc.c, src/game/macro_special_objects.c | import/collision.rs, import/special.rs, content.rs | Referenced collision stream/surface semantics; translated preset-to-record-width metadata. Preserves force words including surface 0x0004. Adds bounds, signed-count/index checks and limits. The loader and queries are ported separately in simulation/collision.rs (below). | CC0. Authored record/width/error fixtures and exact real collision record comparison pass. |
 | Same pinned sm64 | include/level_misc_macros.h, include/macro_presets.h, include/macro_presets.inc.c, src/game/macro_special_objects.c, src/engine/surface_load.c | import/macros.rs, import/level.rs, import/version.rs, content.rs | Translated modern macro record decoding: bias, packed angle, terminators and legacy dispatch; preserves raw params and source order. Bounded reads, table limit, record budget, segment-boundary checks. Defaults, behaviors and respawn decisions are not applied. | CC0. Authored malformed/rotation/termination fixtures; all 88 BOB macro records match pinned source exactly. |
-| Same pinned sm64 | levels/bob/areas/1/collision.inc.c, levels/bob/areas/1/macro.inc.c, include/dialog_ids.h, include/special_presets.h, include/surface_terrains.h | tests/import.rs (ignored test), docs/ROM_VALIDATION.md | Validation only: independently expanded source macros into expected raw streams and typed records. Stored only counts/addresses/digests in tests/docs; no source placements or binary content bundled. | CC0 source reference. All 570 vertices, 1,060 ordered triangles, 17 specials and 88 macro placements match; no gameplay validation implied. |
+| Same pinned sm64 | levels/bob/areas/1/collision.inc.c, levels/bob/areas/1/macro.inc.c, include/dialog_ids.h, include/special_presets.h, include/surface_terrains.h, include/macro_presets.h | tools/check_bob_reference.py, tests/import.rs (ignored test), docs/ROM_VALIDATION.md | Validation only: independently expand source macros into expected raw streams and typed records from a user-provided clean pinned checkout. Stored only counts/addresses/digests in tests/docs; no expanded placements or binary content bundled. | CC0 source reference. All 570 vertices, 1,060 ordered triangles, 17 specials and 88 macro placements match; no gameplay validation implied. |
+| Same pinned sm64 | include/level_commands.h, src/engine/level_script.c, src/game/area.c, include/seq_ids.h | import/level.rs, content/mod.rs, tests/import.rs | Area metadata formats and defaults: terrain word OR, two dialog slots, signed music words. Static Rust extraction, without executing gameplay/audio. | CC0 reference. Authored repeated-command/default/bounds fixtures and owner-ROM BOB values. |
 | Same pinned sm64 | include/geo_commands.h, src/engine/geo_layout.c, src/engine/geo_layout.h, src/engine/graph_node.h, src/engine/graph_node.c, src/engine/graph_node_manager.c | import/geo.rs | Translated geo command widths, stack/END/RETURN/branch semantics, node depth list and attachment, flag operations, layer-in-flags rule, and the `(deg << 15) / 180` angle conversion into a bounded Rust decoder that records (never runs) callbacks. | CC0. Authored parenting/control-flow/error fixtures; real BOB area and model layouts decode. |
 | Same pinned sm64 | include/PR/gbi.h, include/PR/mbi.h (F3D_OLD), src/game/game_init.c (init_rsp/init_rdp), src/game/rendering_graph_node.c (render-mode tables, master lists, transforms), src/engine/math_util.c (mtxf_rotate_zxy_and_translate, mtxf_mul), include/sm64.h (layers), include/geo_commands.h (backgrounds) | import/gfx.rs, import/model.rs, content/visual.rs, render/src/shader.wgsl | Translated Fast3D command encodings, combiner/othermode/geometry-mode bit layouts, default state, layer render modes, fog-position contract and transform order. Render-mode and combiner constants were computed by compiling the gbi.h macros with gcc (not vendored). | CC0. Authored command-word fixtures from the compiled macros; 1,101-triangle BOB comparison passes. |
 | Same pinned sm64 | levels/bob/script.c, levels/bob/areas/1/geo.inc.c, levels/bob/areas/1/*/model.inc.c, levels/bob/leveldata.c, levels/bob/texture.inc.c | tests/import.rs (ignored test), docs/ROM_VALIDATION.md | Validation only: a separate script expanded the display-list source in geo order into expected triangle vertices; only counts/digests are stored. | CC0 source reference; no source geometry bundled. |
@@ -45,30 +46,33 @@ scheduler, presentation, renderer, shader, viewer, trace comparator, exporters,
 fixtures, and the oracle's shim headers and glue use this repository's MIT
 license. Translated collision, math, and Mario step code derives from CC0 sources.
 
-| Dependency | Exact direct version | Purpose | Declared terms |
+| Dependency | Resolved direct version | Purpose | Declared terms |
 | --- | --- | --- | --- |
-| sha1 | 0.10.6 | Upstream ROM fingerprint | MIT OR Apache-2.0 |
-| serde | 1.0.228 | Typed import/trace serialization | MIT OR Apache-2.0 |
-| serde_json | 1.0.145 | JSON reports and exact-integer traces | MIT OR Apache-2.0 |
+| sha1 | 0.11.0 | Upstream ROM/table/content fingerprint | MIT OR Apache-2.0 |
+| serde | 1.0.229 | Typed import/trace serialization | MIT OR Apache-2.0 |
+| serde_json | 1.0.151 | JSON reports and exact-integer traces | MIT OR Apache-2.0 |
 | wgpu | 30.0.1 | Optional renderer (render crate only) | MIT OR Apache-2.0 |
 | winit | 0.30.13 | Development viewer window/input (render crate only) | Apache-2.0 |
 | pollster | 1.0.1 | Blocking on wgpu adapter/device futures | Apache-2.0/MIT |
 | png | 0.18.1 | Screenshot encoding | MIT OR Apache-2.0 |
-| cc | 1.4.7 | Build-time C compilation for the development oracle only | MIT OR Apache-2.0 |
+| cc | 1.6.0 | Build-time C compilation for the development oracle only | MIT OR Apache-2.0 |
 
 Cargo.lock pins transitive versions and registry checksums. A metadata scan of
-the resolved workspace found only permissive declarations (MIT, Apache-2.0,
-BSD-2/3-Clause, Zlib, ISC, Unicode-3.0, BSL-1.0, Unlicense, 0BSD, and dual/tri
-licenses including those); a formal per-file notice bundle for binary releases
-is still to be produced before distributing builds. A publish-date audit of the
-lockfile on 2026-10-08 pinned recently released transitive crates (cc, libc,
-smallvec, zerocopy, tokio, toml_*, objc2, find-msvc-tools) back to releases at
-least two weeks old. The wasm-bindgen/js-sys/web-sys family stays at its current
-interlocked versions; it is only compiled for wasm32, not for the supported
-desktop targets. Dependencies are
+the resolved workspace found permissive license choices (MIT, Apache-2.0,
+BSD-2/3-Clause, Zlib, ISC, Unicode-3.0, Unlicense, 0BSD, and dual/tri license
+choices including those). The updated 278-package workspace metadata was checked
+again on 2026-10-08; a formal per-file notice bundle for binary releases
+is still to be produced before distributing builds. Stable direct releases were
+checked against crates.io metadata on 2026-10-08. The lockfile is updated to the
+latest compatible stable resolution rather than imposing an arbitrary release
+age. Upstream dependency constraints still apply, including interlocked
+wasm-bindgen/js-sys/web-sys versions. Dependencies are
 downloaded by Cargo rather than copied into repository source. Preserve their
 notices when packaging their source or distributable dependencies. The Rust
-1.90.0 toolchain is pinned separately; current runtime code is entirely Rust.
+1.99.0 toolchain is pinned separately (official stable release dated 2026-10-01);
+current runtime code is entirely Rust. GitHub CI uses SHA-pinned
+actions/checkout v7.0.1. Tool updates do not change the original behavioral
+reference revision or the simulation cadence.
 
 ## Reference comparison status
 

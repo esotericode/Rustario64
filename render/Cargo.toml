@@ -2,7 +2,7 @@
 name = "rustario64-render"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.90"
+rust-version = "1.99"
 publish = false
 license = "MIT"
 description = "Optional wgpu presentation and viewer for Rustario64; never feeds gameplay state"
@@ -13,10 +13,10 @@ path = "src/main.rs"
 
 [dependencies]
 rustario64 = { path = ".." }
-wgpu = "=30.0.1"
-winit = "=0.30.13"
-pollster = "=1.0.1"
-png = "=0.18.1"
+wgpu = "30.0.1"
+winit = "0.30.13"
+pollster = "1.0.1"
+png = "0.18.1"
 
 [lints.rust]
 unsafe_code = "forbid"

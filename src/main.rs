@@ -15,6 +15,8 @@ use std::{
 
 type AppResult<T> = Result<T, Box<dyn Error>>;
 
+mod export;
+
 const HELP: &str = "Rustario64 foundation (headless; no playable course yet)\n\n\
   cargo run --locked -- demo\n\
   cargo run --locked -- demo --trace private/foundation.trace.json\n\
@@ -104,15 +106,6 @@ fn import_bob(rom_path: &Path, output_root: &Path) -> AppResult<()> {
             version::IMPORT_SCHEMA
         ))
         .join("bob");
-    // Reserve the destination: exports never overwrite existing files.
-    if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::create_dir(&output)?;
-    write_new(
-        &output.join(".gitignore"),
-        b"# Private ROM-derived export\n*\n",
-    )?;
     let manifest = serde_json::json!({
         "schema": version::IMPORT_SCHEMA, "rom_sha1": rom.fingerprint(),
         "input_byte_order": rom.input_order, "reference_revision": version::REFERENCE_REVISION,
@@ -131,29 +124,32 @@ fn import_bob(rom_path: &Path, output_root: &Path) -> AppResult<()> {
         "import_status": "partial", "visible_terrain_decoded": true, "playable": false,
         "unsupported": &imported.level.issues,
     });
-    json_new(&output.join("manifest.json"), &manifest)?;
-    json_new(&output.join("level.json"), &imported.level)?;
-    json_new(&output.join("collision.json"), &imported.collision)?;
-    write_new(
-        &output.join("collision.obj"),
-        collision::to_obj(&imported.collision).as_bytes(),
-    )?;
-    json_new(&output.join("visual.json"), visual)?;
-    json_new(&output.join("models.json"), &imported.models)?;
-    for (i, texture) in visual.model.textures.iter().enumerate() {
-        let name = format!(
-            "visual-{i:02}-{:08X}-{}x{}",
-            texture.source, texture.width, texture.height
-        );
-        write_new(&output.join(format!("{name}.rgba")), &texture.rgba)?;
-    }
-    for (i, texture) in imported.textures.iter().enumerate() {
+    export::directory_new(&output, |output| {
+        json_new(&output.join("level.json"), &imported.level)?;
+        json_new(&output.join("collision.json"), &imported.collision)?;
         write_new(
-            &output.join(format!("terrain-{i}-32x32.rgba")),
-            &texture.rgba,
+            &output.join("collision.obj"),
+            collision::to_obj(&imported.collision).as_bytes(),
         )?;
-        write_new(&output.join(format!("terrain-{i}.ppm")), &texture.to_ppm())?;
-    }
+        json_new(&output.join("visual.json"), visual)?;
+        json_new(&output.join("models.json"), &imported.models)?;
+        for (i, texture) in visual.model.textures.iter().enumerate() {
+            let name = format!(
+                "visual-{i:02}-{:08X}-{}x{}",
+                texture.source, texture.width, texture.height
+            );
+            write_new(&output.join(format!("{name}.rgba")), &texture.rgba)?;
+        }
+        for (i, texture) in imported.textures.iter().enumerate() {
+            write_new(
+                &output.join(format!("terrain-{i}-32x32.rgba")),
+                &texture.rgba,
+            )?;
+            write_new(&output.join(format!("terrain-{i}.ppm")), &texture.to_ppm())?;
+        }
+        json_new(&output.join("manifest.json"), &manifest)?;
+        Ok(())
+    })?;
     println!(
         "Imported BOB collision, script/macro placements, warps, textures, and visible geometry into {}",
         output.display()

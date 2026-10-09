@@ -455,7 +455,9 @@ fn bob_collision_matches_the_decomp_on_a_dense_grid() {
     let start = (version::BOB_COLLISION & 0xFFFFFF) as usize;
     let (mesh, consumed) = collision::decode(&terrain[start..]).unwrap();
     let words: Vec<i16> = terrain[start..start + consumed]
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|b| i16::from_be_bytes([b[0], b[1]]))
         .collect();
     assert_eq!(mesh, bob::import(&rom).unwrap().collision);

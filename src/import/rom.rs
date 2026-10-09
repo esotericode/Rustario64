@@ -1,6 +1,5 @@
 use super::{ImportError, Result, reader::Reader, version};
 use serde::Serialize;
-use sha1::{Digest, Sha1};
 use std::{fs::File, io::Read, path::Path};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -69,7 +68,7 @@ impl Rom {
             ));
         }
         let (bytes, input_order) = normalize(bytes)?;
-        let digest = format!("{:x}", Sha1::digest(&bytes));
+        let digest = super::sha1_hex(&bytes);
         if digest != version::US_SHA1 {
             return Err(ImportError::new(
                 "ROM identity",

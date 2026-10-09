@@ -753,7 +753,9 @@ fn bob_steps_match_the_decomp_with_rom_tables() {
     let (mesh, consumed) = collision::decode(&terrain[start..]).unwrap();
     assert_eq!(mesh, bob::import(&rom).unwrap().collision);
     let words: Vec<i16> = terrain[start..start + consumed]
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|b| i16::from_be_bytes([b[0], b[1]]))
         .collect();
     let world = CollisionWorld::load_area_terrain(&mesh).unwrap();

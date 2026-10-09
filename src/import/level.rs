@@ -44,9 +44,26 @@ fn expected_length(opcode: u8) -> Option<usize> {
 /// The exact verified ROM's entry is found from the upstream INIT_LEVEL/load pair.
 /// No guessed symbol offset: match must be unique and aligned in the bounded blob.
 pub fn bob_entry(script: &[u8]) -> Result<u32> {
-    let needle = [
-        0x1B, 4, 0, 0, 0x18, 12, 0, 7, 0, 0x3F, 0xC2, 0xB0, 0, 0x40, 0x5A, 0x60,
+    let mut needle = [
+        0x1B,
+        4,
+        0,
+        0,
+        0x18,
+        12,
+        0,
+        version::TERRAIN_SEGMENT,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
     ];
+    needle[8..12].copy_from_slice(&(version::BOB_TERRAIN.start as u32).to_be_bytes());
+    needle[12..16].copy_from_slice(&(version::BOB_TERRAIN.end as u32).to_be_bytes());
     let matches: Vec<_> = script
         .windows(needle.len())
         .enumerate()
@@ -211,6 +228,9 @@ pub fn extract(
                     macro_spawns: vec![],
                     spawns: vec![],
                     warps: vec![],
+                    terrain_type: 0,
+                    dialog_ids: [0xFF; 2],
+                    background_music: AreaMusic::default(),
                 });
                 area_index = Some(result.areas.len() - 1);
             }
@@ -321,8 +341,42 @@ pub fn extract(
                     }
                 }
             }
-            // Import scaffolding and presentation metadata: no gameplay execution.
-            0x1B..=0x1E | 0x30..=0x32 | 0x36 => {}
+            0x30 | 0x31 | 0x36 => {
+                let i = area_index.ok_or_else(|| {
+                    ImportError::new(
+                        "level script",
+                        address as usize,
+                        "area metadata outside AREA",
+                    )
+                })?;
+                let area = &mut result.areas[i];
+                match opcode {
+                    0x30 => {
+                        let slot = usize::from(r.u8(2)?);
+                        if let Some(dialog) = area.dialog_ids.get_mut(slot) {
+                            *dialog = r.u8(3)?;
+                        } else {
+                            result.issues.push(ImportIssue {
+                                address,
+                                feature: format!(
+                                    "SHOW_DIALOG slot {slot} ignored by the original; dialog {}",
+                                    r.u8(3)?
+                                ),
+                            });
+                        }
+                    }
+                    0x31 => area.terrain_type |= r.u16(2)?,
+                    0x36 => {
+                        area.background_music = AreaMusic {
+                            settings_preset: r.i16(2)?,
+                            sequence: r.i16(4)?,
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            // Import scaffolding and NOP: no gameplay execution.
+            0x1B..=0x1E | 0x32 => {}
             _ => {
                 return Err(ImportError::new(
                     "level script",
