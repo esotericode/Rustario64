@@ -9,7 +9,7 @@ never depends on it. No ECS, universal VM, or plugin system.
 | --- | --- |
 | import | Bounded reads, identity/version metadata, MIO0, segments, static scripts, geo layouts, Fast3D, collision, textures |
 | content | Typed course/level/area/act IDs, placements/warps, static/dynamic collision, behavior registry, transitions, engine-owned visual models |
-| simulation | Exact 30 Hz scheduler/input edges, original collision/math/Mario physics steps; actions and per-tick gameplay still missing |
+| simulation | Exact 30 Hz scheduler/input edges, original collision/math/Mario physics and inputs; actions and complete gameplay ticks still missing |
 | presentation | Immutable snapshots, wrapped-angle interpolation, discontinuities, graphics-only settings |
 | trace | Initial-state/world/input metadata, exact float-bit comparison, first divergence |
 | diagnostics | Independently authored fixtures and a synthetic counter replay |
@@ -279,3 +279,37 @@ Not ported: mario_update_quicksand and mario_push_off_steep_floor (they change
 actions and belong with the action port), the bully collision helpers, and sound
 playback, which has no gameplay state. The oracle stubs the action setters to
 abort, so a test that reached them would fail instead of passing silently.
+
+## Pre-action input stage — 2026-10-08
+
+`simulation/controller.rs` translates the connected-controller path and analog
+normalization from `game_init.c`. `simulation/mario/inputs.rs` translates
+`update_mario_inputs`, its helpers and floor classification. No new runtime
+libraries. Controller sampling occurs once per 30 Hz tick; held-button history
+is an initial replay condition. No added dead zone or buffering. Original f32
+operation order and signed angle wrap are retained.
+
+New `MarioState` fields mirror the original input stage. Its zeroed `Default`
+is fixture storage, not spawn initialization. `InputContext` explicitly provides
+reference camera yaw and mutable movement flags plus Mario-object interaction
+inputs. There is no reference camera/object implementation. `gfx_pos` used by
+the original floor fallback must be written by authoritative step/action code;
+never copy an interpolated presentation pose into it. Missing floors return a
+must-use death-warp request. Lives, warp timers and saves are future level logic.
+
+The native oracle compiles seven verbatim CC0 excerpts instead of pretending
+that unported actions are successful stubs. Debug text is disabled; warp calls
+are recorded at the boundary. The original empty step stub runs. All other
+observed input-stage effects are represented. Native host results are still not
+original N64 execution evidence.
+
+Both schema-1 producers carry independent state between ticks. Every exposed
+field is recorded, floats as bits. Zero action timers/RNG and empty objects are
+explicitly excluded placeholders. The digest covers ordered collision words
+and trig tables; initial snapshots include level/terrain, controller history,
+camera/object context. The BOB fixture converts raw `MARIO_POS` yaw degrees with
+`(i32::from(yaw) * 0x8000 / 180) as i16`, like `level_cmd_set_mario_start_pos`.
+It does not claim an original spawn. Render schedules only sample completed
+snapshots, snapping geometry corrections. They never add gameplay ticks.
+The exporter uses the existing serde_json version as a dev dependency and
+refuses an existing output directory. Keep the exported traces private.

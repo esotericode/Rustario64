@@ -2,14 +2,15 @@
 
 `rustario64-oracle` compiles a minimal, byte-identical set of CC0 sources from
 [n64decomp/sm64 at 9921382a68bb0c865e5e45eb594d9c64db59b1af](https://github.com/n64decomp/sm64/tree/9921382a68bb0c865e5e45eb594d9c64db59b1af)
-natively, so tests can compare the Rust collision, math, and Mario step ports
+natively, so tests can compare the Rust collision, math, Mario step and input ports
 with the original code bit for bit.
 
 **Boundary.** This crate is a test/comparison tool. Nothing in the game runtime
 or renderer depends on it, and it is never shipped. The C keeps global state, so
 all access goes through one process-wide lock. It is compiled with `-fwrapv`
 (MIPS integer arithmetic wraps) and `-ffp-contract=off` (no fused multiply-add),
-giving IEEE single-precision results that match the N64's for these operations.
+giving native IEEE single-precision results. Agreement with N64 execution
+still needs original-execution traces.
 Float-to-integer casts of values outside the s32 range are outside coverage.
 
 **Replacement plan.** Native compilation of the decomp is a practical oracle,
@@ -87,3 +88,43 @@ RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-ora
 The first runs on independently authored collision streams, terrain, and tables
 (CI-safe); the others use BOB's real collision and the real trig tables from the
 owner's ROM. Coverage counts are in [docs/FIDELITY.md](../docs/FIDELITY.md).
+
+## Pre-action input oracle
+
+`c/input_reference.c` contains these **verbatim function excerpts** from the same
+pinned CC0 decomp. SHA-1 includes the function text and its trailing newline:
+
+| Upstream | Function | SHA-1 |
+| --- | --- | --- |
+| `src/game/game_init.c` | `adjust_analog_stick` | `c18431659aa9f2a2af4526a55f1d1ee88036ff17` |
+| `src/game/mario.c` | `mario_get_floor_class` | `0084735627314e7b8c086c5c8d2ac5f5e748d625` |
+| Same | `mario_floor_is_slippery` | `db70023b656516ddc34fd49a5c6852f92e754e55` |
+| Same | `update_mario_button_inputs` | `892d3aab8c1017863c24d712d6b732aa43d34aec` |
+| Same | `update_mario_joystick_inputs` | `1359741d55df34eacb6aa4d6029f7b02fb3a1505` |
+| Same | `update_mario_geometry_inputs` | `a65f628f0ffc61949be0f6b9f8d931c1ea563f84` |
+| Same | `update_mario_inputs` | `3d3b7816ad9c4eee95f0e4feacffd2fef11f619d` |
+
+All seven were re-extracted and byte-compared after the workspace reset.
+The CC0 notice remains `c/decomp/LICENSE-CC0.txt`. `input_reference.h` and
+`oracle_input_tick` are authored declarations/glue (MIT). Camera/interaction/warp
+macros come from the pinned `camera.h`, `interaction.h`, `level_update.h`;
+input/floor constants are evaluated from the real headers and checked by the
+existing constant test. Button masks follow `include/PR/os_cont.h` definitions.
+
+The shim structs add only referenced fields. Debug text is disabled. A death
+warp records a request; it does not execute warp timers, lives or save state.
+The original empty `stub_mario_step_1` runs. Action setters still abort, and no
+unimplemented action is silently accepted. Camera yaw and object status are
+explicit inputs, not original camera/object implementations.
+
+```sh
+cargo test --locked -p rustario64-oracle --test mario_input -- --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test mario_input bob_input -- --ignored --nocapture
+cargo run --locked --release -p rustario64-oracle --example input_trace -- /path/to/sm64.z64 private/input-traces
+```
+
+The example compares 1,200 input-stage ticks using imported BOB collision and
+ROM tables and writes two private schema-1 traces into a new directory. It uses
+explicit fixture initialization at the imported script start. This is not a
+spawn or action replay. Full movement, dynamic surfaces and original N64
+execution remain separate gates; see docs/FIDELITY.md.

@@ -4,6 +4,7 @@
 fn main() {
     let files = [
         "c/oracle.c",
+        "c/input_reference.c",
         "c/decomp/src/engine/surface_load.c",
         "c/decomp/src/engine/surface_collision.c",
         "c/decomp/src/engine/math_util.c",
@@ -34,6 +35,7 @@ fn main() {
         build.file(file);
         println!("cargo:rerun-if-changed={file}");
     }
+    println!("cargo:rerun-if-changed=c/input_reference.h");
     for dir in ["c/shim", "c/decomp"] {
         println!("cargo:rerun-if-changed={dir}");
     }

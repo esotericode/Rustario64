@@ -6,6 +6,8 @@
 //! Boundary: this crate is never a dependency of the game runtime or renderer.
 //! Replacement plan: once per-tick traces from original execution cover these
 //! queries, those traces become the authority and this harness can be retired.
+pub mod input_trace;
+
 use std::sync::{Mutex, MutexGuard};
 
 #[repr(C)]
@@ -63,6 +65,7 @@ unsafe extern "C" {
     fn oracle_approach_s32(current: i32, target: i32, inc: i32, dec: i32) -> i32;
     fn oracle_approach_f32(current: f32, target: f32, inc: f32, dec: f32) -> f32;
     fn oracle_mario_call(state: *mut OracleMario, which: i32, arg: u32) -> i32;
+    fn oracle_input_tick(state: *mut OracleMario, input: *mut OracleInput, which: i32);
     fn oracle_constant_count() -> i32;
     fn oracle_constant(i: i32, value: *mut i64) -> *const std::ffi::c_char;
 }
@@ -76,6 +79,15 @@ pub struct OracleMario {
     pub flags: u32,
     pub action: u32,
     pub terrain_sound_addend: u32,
+    pub particle_flags: u32,
+    pub collided_obj_interact_types: u32,
+    pub intended_mag: f32,
+    pub intended_yaw: i16,
+    pub frames_since_a: u8,
+    pub frames_since_b: u8,
+    pub squish_timer: u8,
+    pub wall_kick_timer: u8,
+    pub double_jump_timer: u8,
     pub face_angle: [i16; 3],
     pub angle_vel: [i16; 3],
     pub pos: [f32; 3],
@@ -135,6 +147,31 @@ pub fn decomp_constants() -> Vec<(String, i64)> {
     }
 }
 
+/// Controller and explicit camera/object context. button_down is the previous
+/// sample on entry, and the consumed sample on return.
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct OracleInput {
+    pub raw_stick: [i16; 2],
+    pub stick_x: f32,
+    pub stick_y: f32,
+    pub stick_mag: f32,
+    pub button_down: u16,
+    pub button_pressed: u16,
+    pub sample_buttons: u16,
+    pub camera_yaw: i16,
+    pub camera_movement_flags: u16,
+    pub object_interact_status: u32,
+    pub object_collided_interact_types: u32,
+    pub death_warp_requests: i32,
+}
+#[derive(Debug, Clone, Copy)]
+pub enum InputCall {
+    Controller,
+    ButtonsAndJoystick,
+    Full,
+}
+
 static LOCK: Mutex<()> = Mutex::new(());
 
 /// A surface as stored by the original loader.
@@ -170,6 +207,21 @@ pub struct Oracle {
 }
 
 impl Oracle {
+    /// Advance a selected input stage. No action or camera algorithm runs.
+    pub fn input_tick(&self, state: &mut OracleMario, input: &mut OracleInput, call: InputCall) {
+        for s in [state.wall, state.ceil, state.floor] {
+            assert!(s == -1 || s == -2 || (0..self.surfaces as i32).contains(&s));
+        }
+        assert!(input.raw_stick.iter().all(|s| (-128..=127).contains(s)));
+        let which = match call {
+            InputCall::Controller => 0,
+            InputCall::ButtonsAndJoystick => 1,
+            InputCall::Full => 2,
+        };
+        // SAFETY: valid flat records, checked surface indices, process-wide lock.
+        unsafe { oracle_input_tick(state, input, which) };
+    }
+
     /// load_area_terrain on a raw TerrainData stream (big-endian words already
     /// converted to host i16). The stream must end with TERRAIN_LOAD_END.
     pub fn load(stream: &[i16]) -> Self {

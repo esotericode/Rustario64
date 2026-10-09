@@ -145,6 +145,23 @@ address has been promoted to an implemented runtime behavior.
 Skybox import, object models from globally loaded segments, animation import,
 dynamic object collision, Mario actions, camera, audio, and missions are missing. No
 movement fidelity claim follows from matching the asset streams. Native
-collision, math, and Mario step component comparisons exist; no original-execution
-per-tick exporter or genuine gameplay trace exists. Next: skybox/object models
-for content, and the per-tick Mario oracle plus spawn/input/actions for fidelity.
+collision, math, Mario step and input-stage component comparisons exist; no
+original-execution per-tick exporter or complete gameplay trace exists. Next:
+skybox/object models for content, and spawn/action initialization plus
+idle/walking/stopping actions for fidelity.
+
+## Input-stage integration — 2026-10-08
+
+The supplied US ROM passed the new pre-action input suite before a workspace
+reset: 196,608 controller/button/intent checks using actual ROM tables, 20,000
+BOB geometry-input cases, and 1,200 chained input-stage ticks at multiple render
+rates. Both native/Rust trace files exported and the exact trace CLI comparison
+passed. The fixture includes imported BOB collision and script-start data;
+script yaw is converted from degrees. It is not a spawn or action replay.
+
+The reset removed the ROM mount and unpushed files. The change was reconstructed
+and fresh authored checks pass. The final reconstructed commit still needs a
+fresh owner-ROM run; use README's `mario_input bob_input` and `input_trace`
+commands after supplying the ROM again. Existing asset digests and previous
+independent source comparisons were not replaced or rederived in this increment.
+No ROM, decoded assets, or traces were uploaded to the repository.

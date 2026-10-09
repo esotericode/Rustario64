@@ -17,11 +17,14 @@ What works now:
   steps from `mario_step.c` (ground, air, and stationary steps, ledge grabs,
   gravity, wind), ported to Rust and verified bit for bit against the pinned
   decompilation's C.
-- Exact per-tick trace comparison tooling and a fixed 30 Hz scheduler.
+- Original controller normalization and Mario's pre-action input update: button
+  edges, intended magnitude/yaw, geometry flags, floor fallback, and input timers.
+- A fixed 30 Hz scheduler and exact trace comparison, now with exportable
+  native-C/Rust **input-stage** trace pairs.
 
 Mario is not playable yet: the physics steps exist and are tested on their own,
-but there are no actions, input handling, spawn, camera logic, animation,
-objects, or missions. The imported level is independently validated against the
+but there are no actions, spawn initializer, camera logic, animation, objects,
+or missions. Input-stage traces do not validate complete movement ticks. The imported level is independently validated against the
 pinned decompilation; see [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md).
 
 ## Layout
@@ -30,7 +33,7 @@ pinned decompilation; see [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md).
 | --- | --- | --- |
 | `rustario64` | `.` | GPU-free core: import, content, simulation scaffolding, traces, headless CLI |
 | `rustario64-render` | `render/` | Optional wgpu renderer and the `rustario64-viewer` development binary |
-| `rustario64-oracle` | `oracle/` | Development-only: pinned CC0 decomp collision, math, and Mario step C compiled natively for bitwise differential tests (needs a C compiler); never a runtime dependency |
+| `rustario64-oracle` | `oracle/` | Development-only: pinned CC0 decomp collision, math, Mario step and input C compiled natively for bitwise differential tests (needs a C compiler); never a runtime dependency |
 
 The core never depends on the renderer, so simulation and replay comparisons run
 without a GPU or window.
@@ -53,7 +56,7 @@ cargo run --locked -- demo
 ```
 
 Oracle tests compile vendored decomp C with the system C compiler and compare it
-with the Rust collision, math, and Mario step ports on authored data; see
+with the Rust collision, math, Mario step and input ports on authored data; see
 [oracle/README.md](oracle/README.md).
 Render tests draw small authored models offscreen. Without a GPU adapter they
 skip; set `RUSTARIO64_REQUIRE_GPU=1` to make a missing adapter fail (CI does this
@@ -80,6 +83,7 @@ RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --test import local_us_rom_
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test collision bob_collision -- --ignored --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked -p rustario64-oracle --test math rom_trig -- --ignored --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test mario_step bob_steps -- --ignored --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test mario_input bob_input -- --ignored --nocapture
 ```
 
 The oracle tests compare BOB's real collision (about four million queries), the
@@ -138,6 +142,24 @@ cargo run --locked -- demo --trace private/foundation.trace.json
 cargo run --locked -- compare-traces private/foundation.trace.json private/foundation.trace.json
 ```
 
+Export a native-vs-Rust **input-stage** trace pair with your ROM:
+
+```sh
+cargo test --locked -p rustario64-oracle --test mario_input
+cargo run --locked --release -p rustario64-oracle --example input_trace -- \
+  /path/to/sm64.z64 private/input-traces
+cargo run --locked -- compare-traces \
+  private/input-traces/native-input.trace.json private/input-traces/rust-input.trace.json
+```
+
+Use a new output directory. Both files are private ROM-derived traces. The
+40-second fixture uses BOB's imported script position/yaw, original collision,
+and ROM trig tables. It does **not** run `init_mario`, a spawn warp, actions,
+reference camera logic, objects, or animation. Missing-floor death-warp requests
+are recorded, not executed. Mario does not run or jump. Scope metadata,
+controller history, a terrain/table digest, input fields and exact float bits
+make these input-stage comparisons reviewable.
+
 A mismatch fails with the first tick and field. Authoritative floats compare as
 `f32::to_bits()` integers with no tolerance. See [docs/FIDELITY.md](docs/FIDELITY.md).
 
@@ -150,10 +172,8 @@ holds the owner-ROM evidence.
 
 ## Next increment
 
-Extend the native-decomp oracle from the physics steps to the per-tick Mario
-update (mario.c's input, floor, and action dispatch plus the stationary and
-moving actions, emitting schema-1 traces), then port Mario's spawn, input
-processing, and first stationary/walking actions against exact per-tick traces
-on BOB. libsm64 was audited and is not used as a fidelity oracle (see
-DECISIONS.md). In parallel, finish M1 presentation gaps: skybox and object
-models for placements.
+Extend the input-stage oracle to spawn initialization, action setters/dispatch,
+and idle/walking/stopping actions. Represent animation state where it controls
+transitions and declare camera/object/sound boundaries. Compare complete ticks
+on BOB before connecting validated actions to the viewer. Original-execution
+traces remain the eventual authority. Skybox and placement models remain M1 work.

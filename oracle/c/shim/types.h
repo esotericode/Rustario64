@@ -64,6 +64,8 @@ struct ObjectNode {
 
 struct Object {
     struct ObjectNode header;
+    u32 collidedObjInteractTypes;
+    u32 oInteractStatus;
     s16 activeFlags;
     const BehaviorScript *behavior;
     void *collisionData;
@@ -80,7 +82,14 @@ struct MarioBodyState {
     s8 wingFlutter;
 };
 
+struct Controller {
+    s16 rawStickX, rawStickY;
+    f32 stickX, stickY, stickMag;
+    u16 buttonDown, buttonPressed;
+};
+struct Camera { s16 yaw; };
 struct Area {
+    struct Camera *camera;
     u16 terrainType;
 };
 
@@ -90,6 +99,16 @@ struct MarioState {
     u32 flags;
     u32 action;
     u32 terrainSoundAddend;
+    u32 particleFlags;
+    u32 collidedObjInteractTypes;
+    f32 intendedMag;
+    s16 intendedYaw;
+    u8 framesSinceA;
+    u8 framesSinceB;
+    u8 squishTimer;
+    u8 wallKickTimer;
+    u8 doubleJumpTimer;
+    struct Controller *controller;
     Vec3s faceAngle;
     Vec3s angleVel;
     Vec3f pos;
