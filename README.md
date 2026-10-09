@@ -35,9 +35,10 @@ What works now:
   cap, torso tilt, level of detail) as the original render pass does, skinned
   on the CPU and interpolated between ticks at any frame rate. Six switch
   configurations match triangle digests rebuilt from the pinned decomp source.
-- Reference-camera helpers, camera collision/geometry and radial goal construction
-  with exact native comparisons on authored fixtures. The complete camera update
-  is still pending; the viewer keeps its labeled follow camera.
+- Reference-camera helpers, camera collision/geometry, radial goals, and the
+  persistent Lakitu/transition stage with exact native comparisons on authored
+  fixtures and BOB's ROM data. Full mode dispatch is pending; the viewer keeps
+  its labeled follow camera.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
   **full-tick** and input-stage trace pairs.
 
@@ -65,7 +66,8 @@ without a GPU or window.
 
 Rust 1.99.0 (current stable as of 2026-10-08) with rustfmt and Clippy is selected
 by `rust-toolchain.toml`. Linux x86_64 is the locally checked platform. CI also builds/tests the Rust
-runtime on Windows x86_64; consult that run before treating Windows as verified. Dependencies use
+runtime on Windows x86_64. Both targets passed build/test/package CI at
+`be65225`; consult each new run before treating that revision as verified. Dependencies use
 compatible SemVer requirements; committed Cargo.lock and `--locked` make builds
 reproducible. Upgrade the toolchain and lockfile together and rerun the component
 oracles; compiler age is not a requirement for original gameplay behavior.
@@ -275,13 +277,20 @@ holds the owner-ROM evidence.
 
 ## Next increment
 
-Extend the compared reference-camera helpers/radial goals into full BOB radial
-and free-roam modes, transitions and Lakitu updates, with per-tick comparisons
+Connect the compared reference-camera helpers and persistent Lakitu/transition
+stage to full BOB radial and free-roam mode controllers, with per-tick comparisons
 so camera yaw and mode stop being inputs (the source's named BOB trigger table
 is unused); draw Mario's shadow; then begin objects for the first
 mission. Original-execution traces remain the eventual authority. Skybox and
 placement models remain M1 work.
 
-Camera checks without a ROM: `cargo test --locked -p rustario64-oracle --test camera`;
+Camera checks without a ROM: `cargo test --locked -p rustario64-oracle --test camera --test lakitu`;
 repeat with `--release` for optimized comparisons. The owner-ROM camera test
 is ignored in ordinary CI; see [docs/FIDELITY.md](docs/FIDELITY.md).
+
+With your supported ROM, run the whole integration suite locally:
+
+```sh
+RUSTARIO64_ROM=/path/to/sm64.z64 RUSTARIO64_REQUIRE_GPU=1 \
+  cargo test --locked --release --workspace --all-targets -- --include-ignored
+```

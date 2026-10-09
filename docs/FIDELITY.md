@@ -8,7 +8,8 @@ That is not yet coverage against original N64 execution, and the complete camera
 objects, interactions with objects, cutscene/submerged actions and RNG-driven
 behaviors have **zero validated coverage**. Collision, math, physics steps and
 pre-action inputs also keep their component suites. Camera helpers and radial
-goal construction now have native component checks (Camera components below). The viewer's Mario mode
+goal construction have native component checks; the persistent Lakitu/transition
+stage also has per-tick native comparisons (Camera sections below). The viewer's Mario mode
 runs the same tick, and its recorded runs replay exactly in the decomp (Played
 sessions below). Mario's drawn model is presentation: it reads completed ticks
 and is checked as imported content (ROM_VALIDATION.md), not compared per tick;
@@ -326,11 +327,56 @@ RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-ora
 ```
 
 The owner-ROM camera check imports BOB's raw collision and original trig tables.
-It is blocked in this session because no ROM is attached. Existing owner-ROM
-results above are prior-session evidence, not fresh checks of this revision.
-The complete reference camera and original-N64 execution remain unvalidated.
+The ROM attached on 2026-10-09 validates as supported US v1.0 and passes all
+20,000 positions x four collision-flag combinations. The complete reference
+camera and original-N64 execution remain unvalidated.
 
 Fresh authored checks pass in debug and release (eight tests, one owner-ROM
 test ignored). Deliberately changing strict trigger bounds to inclusive bounds
 or last-wall reuse to first-wall reuse fails the intended native comparison.
 Both mutations are reverted; the restored suite passes.
+
+## Persistent Lakitu stage (2026-10-09)
+
+`simulation::camera::lakitu` translates `update_lakitu`, `next_lakitu_state`,
+level-oriented transition setup, deterministic pitch/yaw/roll shakes, damage
+shake priority and FOV shake setup. Its mode goals are explicit inputs. The
+native adapter compiles verbatim originals; after initialization, native and
+Rust state persist independently. Exact comparison covers 94 modeled words
+(camera goals/yaw, current/render Lakitu state, speeds, shakes, transitions,
+mode/status fields and helper globals) and the two collision flags after every
+tick. The shared generated layout only transports fields; it contains no camera
+algorithm or expected state.
+
+Checks pass for 10,000 randomized states x four collision-flag combinations on
+authored terrain and 20,000 x four on BOB's real collision/original ROM tables.
+Each terrain also runs a 3,600-tick persistent sequence at 15/30/60/120/144 Hz,
+with interpolation on and off (36,000 compared ticks per terrain). Authored
+mode goals and Mario paths exercise moving transition origins, mode changes,
+dive edges, interrupted/repeated transitions, signed shake phases and speed
+recovery. Mode-change tests cover init-frame suppression, mode restoration,
+flag clearing and damage-shake priority. A separate assertion covers retained
+camera-filter flags when the rendered camera is floor-corrected or finds no
+floor. Random requests are rejected before state changes.
+
+```sh
+cargo test --locked -p rustario64-oracle --test lakitu -- --nocapture
+cargo test --locked --release -p rustario64-oracle --test lakitu -- --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test lakitu -- --include-ignored --nocapture
+python3 oracle/tools/lakitu_layout.py --check
+```
+
+This is **not** `update_camera` coverage: initialization, surface-based mode
+selection, radial/free-roam controller movement, wall-obstruction rotation,
+C-Up/R-trigger handling, cutscene dispatch and the original RNG remain missing.
+Active handheld/random shock requests are explicit unsupported boundaries;
+existing handheld angle offsets decay when no random request is active.
+FOV setup is compared, not the perspective node's FOV animation or rendering.
+The outer update must write `last_frame_action` after this stage; tests compare
+that assignment separately. Original camera-relative Mario movement is not
+validated, and the viewer continues using its approximate follow camera.
+
+Deliberately truncating a float shake increment before adding it to the angle
+fails the native comparison; unconditionally clearing the camera-floor flag
+fails the independent flag assertion. Both changes are reverted, and the
+restored authored/owner-ROM stage suites pass.

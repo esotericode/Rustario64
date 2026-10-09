@@ -1,7 +1,10 @@
 //! Safe, locked adapters to the verbatim camera.c component excerpts.
 use crate::Oracle;
 use rustario64::simulation::{
-    camera::{PlayerGeometry, RadialState},
+    camera::{
+        PlayerGeometry, RadialState,
+        lakitu::{Camera, Rig, STATE_WORDS},
+    },
     collision::CollisionFlags,
     mario::constants::ACT_FLAG_ON_POLE,
     math::TrigTables,
@@ -55,6 +58,27 @@ struct RadialSetup {
 }
 
 unsafe extern "C" {
+    fn oracle_camera_lakitu_word_count() -> i32;
+    fn oracle_camera_lakitu_reset(words: *const u32);
+    fn oracle_camera_lakitu_goal(
+        mario: *const f32,
+        action: u32,
+        pos: *const f32,
+        focus: *const f32,
+        next_yaw: i16,
+        mode: u8,
+        def_mode: u8,
+        cutscene: u8,
+    );
+    fn oracle_camera_lakitu_control(operation: i32, value: i16, frames: i16);
+    fn oracle_camera_lakitu_snapshot(out: *mut u32);
+    fn oracle_camera_lakitu_update(
+        for_camera: i16,
+        intangible: i16,
+        out: *mut u32,
+        flags: *mut u32,
+    );
+    fn oracle_camera_lakitu_end_frame();
     fn oracle_camera_float(
         which: i32,
         current: f32,
@@ -107,6 +131,90 @@ pub struct CameraOracle {
 }
 
 impl CameraOracle {
+    pub fn reset_lakitu(&self, rig: Rig) {
+        assert!(rig.transition.frames_left <= i32::from(i16::MAX));
+        assert!(
+            rig.handheld_magnitude == 0
+                || rig.movement & rustario64::simulation::mario::constants::CAM_MOVE_PAUSE_SCREEN
+                    != 0,
+            "native RNG-driven handheld shake is unavailable"
+        );
+        let words = rig.state_words();
+        // SAFETY: lock held, valid exact-word layout, supported transition/RNG boundary.
+        unsafe {
+            assert_eq!(oracle_camera_lakitu_word_count() as usize, STATE_WORDS);
+            oracle_camera_lakitu_reset(words.as_ptr());
+        }
+    }
+
+    /// Supply mode-controller goals without overwriting persistent yaw/state.
+    pub fn lakitu_goal(&self, mario: [f32; 3], action: u32, goal: Camera) {
+        // SAFETY: lock held, valid three-element arrays and scalar arguments.
+        unsafe {
+            oracle_camera_lakitu_goal(
+                mario.as_ptr(),
+                action,
+                goal.pos.as_ptr(),
+                goal.focus.as_ptr(),
+                goal.next_yaw,
+                goal.mode,
+                goal.def_mode,
+                goal.cutscene,
+            );
+        }
+    }
+    pub fn lakitu_transition_next(&self, frames: i16) {
+        // SAFETY: supported selector and s16 frame count; lock held.
+        unsafe {
+            oracle_camera_lakitu_control(0, 0, frames);
+        }
+    }
+    pub fn lakitu_transition_mode(&self, mode: i16, frames: i16) {
+        // SAFETY: supported selector; this function does not dispatch a mode.
+        unsafe {
+            oracle_camera_lakitu_control(1, mode, frames);
+        }
+    }
+    pub fn lakitu_hit(&self, shake: i16) {
+        assert_ne!(
+            shake,
+            rustario64::simulation::mario::constants::SHAKE_SHOCK,
+            "native shock RNG unavailable"
+        );
+        // SAFETY: supported selector, no RNG request; lock held.
+        unsafe {
+            oracle_camera_lakitu_control(2, shake, 0);
+        }
+    }
+    pub fn lakitu_snapshot(&self) -> [u32; STATE_WORDS] {
+        let mut out = [0; STATE_WORDS];
+        // SAFETY: matching generated layout and output size; lock held.
+        unsafe {
+            oracle_camera_lakitu_snapshot(out.as_mut_ptr());
+        }
+        out
+    }
+    pub fn lakitu_update(&self, flags: CollisionFlags) -> ([u32; STATE_WORDS], [u32; 2]) {
+        let mut out = [0; STATE_WORDS];
+        let mut native_flags = [0; 2];
+        // SAFETY: fixed-size outputs and supported initialized state; lock held.
+        unsafe {
+            oracle_camera_lakitu_update(
+                flags.checking_for_camera.into(),
+                flags.find_floor_include_surface_intangible.into(),
+                out.as_mut_ptr(),
+                native_flags.as_mut_ptr(),
+            );
+        }
+        (out, native_flags)
+    }
+    pub fn lakitu_end_frame(&self) {
+        // SAFETY: lock held, corresponds to update_camera's final assignment.
+        unsafe {
+            oracle_camera_lakitu_end_frame();
+        }
+    }
+
     pub fn new(stream: &[i16], tables: &TrigTables) -> Self {
         let oracle = Oracle::load(stream);
         oracle.set_trig(tables.sine_table(), tables.arctan_table());

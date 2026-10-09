@@ -1,13 +1,69 @@
 /* Authored adapters for verbatim camera.c components; MIT. These do not
- * dispatch modes, run update_lakitu, or change the Mario tick harness. */
+ * dispatch modes or change the Mario tick harness. */
 #include <stdlib.h>
 #include <string.h>
+/* Preserve Mario's existing event boundary. Only these verbatim camera
+ * excerpts call the real camera shake implementation. Random paths remain
+ * explicitly unavailable until the reference RNG is ported. */
+static float oracle_camera_random_unavailable(void);
+#define random_float oracle_camera_random_unavailable
+#define set_camera_shake_from_hit oracle_camera_native_hit
 #include "excerpts/camera.c"
+#undef set_camera_shake_from_hit
+#undef random_float
 #include "engine/surface_load.h"
 
 int oracle_surface_index(struct Surface *surface);
 static struct Camera sComponentCamera;
 static u32 bits(f32 value) { u32 word; memcpy(&word, &value, sizeof(word)); return word; }
+static f32 oracle_camera_random_unavailable(void) { abort(); }
+#include "lakitu_state.inc.c"
+
+s32 oracle_camera_lakitu_word_count(void) { return LAKITU_STATE_WORDS; }
+void oracle_camera_lakitu_reset(const u32 *words) {
+    memset(&sComponentCamera, 0, sizeof(sComponentCamera));
+    memset(&gLakituState, 0, sizeof(gLakituState));
+    memset(&sModeTransition, 0, sizeof(sModeTransition));
+    memset(&sModeInfo, 0, sizeof(sModeInfo));
+    memset(&sFOVState, 0, sizeof(sFOVState));
+    sHandheldShakeTimer = 0.f;
+    load_lakitu_words(words);
+    gCamera = &sComponentCamera;
+}
+void oracle_camera_lakitu_goal(const f32 *mario, u32 action, const f32 *pos,
+                              const f32 *focus, s16 nextYaw, u8 mode, u8 defMode, u8 cutscene) {
+    vec3f_copy(sMarioCamState->pos, (f32 *)mario);
+    sMarioCamState->action = action;
+    vec3f_copy(sComponentCamera.pos, (f32 *)pos);
+    vec3f_copy(sComponentCamera.focus, (f32 *)focus);
+    sComponentCamera.nextYaw = nextYaw;
+    sComponentCamera.mode = mode;
+    sComponentCamera.defMode = defMode;
+    sComponentCamera.cutscene = cutscene;
+    gCamera = &sComponentCamera;
+}
+void oracle_camera_lakitu_control(s32 operation, s16 value, s16 frames) {
+    switch (operation) {
+        case 0: transition_next_state(gCamera, frames); break;
+        case 1: transition_to_camera_mode(gCamera, value, frames); break;
+        case 2:
+            if (value == SHAKE_SHOCK) abort();
+            oracle_camera_native_hit(value); break;
+        default: abort();
+    }
+}
+void oracle_camera_lakitu_snapshot(u32 *out) { store_lakitu_words(out); }
+void oracle_camera_lakitu_update(s16 forCamera, s16 intangible, u32 *out, u32 *flags) {
+    if (!(gCameraMovementFlags & CAM_MOVE_PAUSE_SCREEN) && sHandheldShakeMag != 0) abort();
+    gCheckingSurfaceCollisionsForCamera = forCamera;
+    gFindFloorIncludeSurfaceIntangible = intangible;
+    update_lakitu(gCamera);
+    store_lakitu_words(out);
+    flags[0] = gCheckingSurfaceCollisionsForCamera;
+    flags[1] = gFindFloorIncludeSurfaceIntangible;
+}
+/* update_camera, not update_lakitu, writes lastFrameAction. */
+void oracle_camera_lakitu_end_frame(void) { gLakituState.lastFrameAction = sMarioCamState->action; }
 
 /* Float selector order is mirrored by CameraFloat in src/camera.rs. */
 s32 oracle_camera_float(s32 which, f32 current, f32 target, f32 amount, s16 status, f32 *out) {

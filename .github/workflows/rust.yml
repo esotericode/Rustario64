@@ -15,6 +15,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
       - name: Format
         run: cargo fmt --all --check
+      - name: Camera record layout
+        run: python3 oracle/tools/lakitu_layout.py --check
       - name: Tests (authored fixtures only; no ROM)
         env:
           RUSTARIO64_REQUIRE_GPU: "1"
@@ -28,7 +30,7 @@ jobs:
       - name: Desktop packaging allowlist
         run: python3 tools/test_package_desktop.py
       - name: Optimized camera comparisons
-        run: cargo test --locked --release -p rustario64-oracle --test camera
+        run: cargo test --locked --release -p rustario64-oracle --test camera --test lakitu
   desktop:
     name: Desktop runtime (${{ matrix.target }})
     strategy:

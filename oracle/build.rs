@@ -70,6 +70,7 @@ fn main() {
         "c/excerpts",
         "c/runtime.h",
         "c/constants.inc.c",
+        "c/lakitu_state.inc.c",
     ] {
         println!("cargo:rerun-if-changed={dir}");
     }

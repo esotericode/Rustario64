@@ -504,8 +504,9 @@ with the original headers; an authored adapter holds the same process-wide
 lock as all other C comparisons. `RadialGoal` is an intermediate goal, not a
 complete camera tick. BOB's `sCamBOB` table is explicitly unused in the pinned
 source and is not activated here. The full mode dispatcher, radial/free-roam
-movement, transitions, obstruction rotation, zoom, initialization and Lakitu
-update still need independent state and complete per-tick comparisons. The
+movement, obstruction rotation, zoom and initialization still need independent
+state and complete per-tick comparisons. The persistent Lakitu/transition stage
+is now implemented and documented below. The
 viewer continues to use its labeled follow camera. No partial reference mode
 is advertised as faithful, and no graphics setting changes movement inputs.
 
@@ -538,3 +539,36 @@ gameplay modes must remain separate, named and included in replay metadata.
 Opening settings must pause ticks, clear elapsed backlog on resume, and release
 held/latching input so menu keys cannot cause gameplay actions. These behaviors
 need replay/pause regression checks before the UI ships.
+
+## Persistent Lakitu and transitions — 2026-10-09
+
+`simulation::camera::lakitu` owns the persistent camera/Lakitu/transition state.
+It translates `update_lakitu`, `next_lakitu_state`, level-oriented mode
+transitions, deterministic pitch/yaw/roll shakes, hit-shake requests and FOV
+shake setup from the same CC0 revision. Mode controllers supply goals before
+this stage; `last_frame_action` is written by the outer camera update afterward.
+These stages are separate because their ordering affects yaw, transitions and
+Mario's future inputs. No runtime dependency or frame-rate smoothing is added.
+
+Preserve the source's compound float-to-angle conversion (truncate the whole
+sum, then narrow), the special -0x8000 shake phase, pitch reconstruction when
+only yaw shakes, asymmetric phase ordering, collision-filter flags that remain
+set on corrected/missing floors, and final pitch clamp/mode copy even while
+paused. The 94-word comparison record includes every modeled value read/written
+by this stage and transition/hit setup, plus collision flags. Authored transport
+generation shares field names/layout only; C and Rust behavior remain independent.
+
+Active RNG-driven handheld shake and shock requests return `Unsupported` before
+state mutation. Decay of existing handheld angle offsets with no active random
+request is supported. The native adapter compiles full verbatim handheld/spline/
+random-vector excerpts but aborts if an unavailable RNG call is reached. Its hit
+function is renamed during preprocessing so the separate Mario tick harness
+continues recording camera requests without applying them. FOV setup is compared;
+the perspective node's FOV animation/rendering is not implemented here.
+
+Authored goals and Mario paths drive persistent comparisons. Owner-ROM tests use
+BOB collision, original trig tables and the imported spawn; they do not run the
+complete mode dispatcher or validate original camera-relative Mario play. The
+viewer is unchanged. Next: wall-avoidance/rotation, radial and free-roam mode
+controllers, course surface selection and initialization; then compare combined
+camera-and-Mario ticks before replacing the viewer's follow camera.

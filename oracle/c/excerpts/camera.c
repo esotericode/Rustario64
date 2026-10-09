@@ -40,6 +40,69 @@ s32 gCurrLevelArea = 0;
 /* src/game/camera.c: struct PlayerCameraState *sMarioCamState = &gPlayerCameraState[0] */
 struct PlayerCameraState *sMarioCamState = &gPlayerCameraState[0];
 
+/* src/game/camera.c: struct LakituState gLakituState */
+struct LakituState gLakituState;
+
+/* src/game/camera.c: struct CameraFOVStatus sFOVState */
+struct CameraFOVStatus sFOVState;
+
+/* src/game/camera.c: struct TransitionInfo sModeTransition */
+struct TransitionInfo sModeTransition;
+
+/* src/game/camera.c: struct ModeTransitionInfo sModeInfo */
+struct ModeTransitionInfo sModeInfo;
+
+/* src/game/camera.c: Vec3f sOldPosition */
+Vec3f sOldPosition;
+
+/* src/game/camera.c: Vec3f sOldFocus */
+Vec3f sOldFocus;
+
+/* src/game/camera.c: Vec3f sPlayer2FocusOffset */
+Vec3f sPlayer2FocusOffset;
+
+/* src/game/camera.c: s16 sYawSpeed = 0x400 */
+s16 sYawSpeed = 0x400;
+
+/* src/game/camera.c: s16 sCUpCameraPitch */
+s16 sCUpCameraPitch;
+
+/* src/game/camera.c: s16 sAreaYawChange */
+s16 sAreaYawChange;
+
+/* src/game/camera.c: f32 sPanDistance */
+f32 sPanDistance;
+
+/* src/game/camera.c: f32 sCannonYOffset */
+f32 sCannonYOffset;
+
+/* src/game/camera.c: s16 unusedSplinePitch */
+s16 unusedSplinePitch;
+
+/* src/game/camera.c: s16 unusedSplineYaw */
+s16 unusedSplineYaw;
+
+/* src/game/camera.c: struct HandheldShakePoint sHandheldShakeSpline[4] */
+struct HandheldShakePoint sHandheldShakeSpline[4];
+
+/* src/game/camera.c: s16 sHandheldShakeMag */
+s16 sHandheldShakeMag;
+
+/* src/game/camera.c: f32 sHandheldShakeTimer */
+f32 sHandheldShakeTimer;
+
+/* src/game/camera.c: f32 sHandheldShakeInc */
+f32 sHandheldShakeInc;
+
+/* src/game/camera.c: s16 sHandheldShakePitch */
+s16 sHandheldShakePitch;
+
+/* src/game/camera.c: s16 sHandheldShakeYaw */
+s16 sHandheldShakeYaw;
+
+/* src/game/camera.c: s16 sHandheldShakeRoll */
+s16 sHandheldShakeRoll;
+
 /* src/game/camera.c: find_c_buttons_pressed */
 s32 find_c_buttons_pressed(u16 currentState, u16 buttonsPressed, u16 buttonsDown) {
     buttonsPressed &= CBUTTON_MASK;
@@ -656,4 +719,506 @@ s32 update_radial_camera(struct Camera *c, Vec3f focus, Vec3f pos) {
     camYaw = find_in_bounds_yaw_wdw_bob_thi(pos, focus, camYaw);
 
     return camYaw;
+}
+
+/* src/game/camera.c: transition_next_state */
+void transition_next_state(UNUSED struct Camera *c, s16 frames) {
+    if (!(sStatusFlags & CAM_FLAG_FRAME_AFTER_CAM_INIT)) {
+        sStatusFlags |= (CAM_FLAG_START_TRANSITION | CAM_FLAG_TRANSITION_OUT_OF_C_UP);
+        sModeTransition.framesLeft = frames;
+    }
+}
+
+/* src/game/camera.c: transition_to_camera_mode */
+void transition_to_camera_mode(struct Camera *c, s16 newMode, s16 numFrames) {
+    if (c->mode != newMode) {
+        sModeInfo.newMode = (newMode != -1) ? newMode : sModeInfo.lastMode;
+        sModeInfo.lastMode = c->mode;
+        c->mode = sModeInfo.newMode;
+
+        // Clear movement flags that would affect the transition
+        gCameraMovementFlags &= (u16)~(CAM_MOVE_RESTRICT | CAM_MOVE_ROTATE);
+        if (!(sStatusFlags & CAM_FLAG_FRAME_AFTER_CAM_INIT)) {
+            transition_next_state(c, numFrames);
+            sCUpCameraPitch = 0;
+            sModeOffsetYaw = 0;
+            sLakituDist = 0;
+            sLakituPitch = 0;
+            sAreaYawChange = 0;
+            sPanDistance = 0.f;
+            sCannonYOffset = 0.f;
+        }
+    }
+}
+
+/* src/game/camera.c: next_lakitu_state */
+s16 next_lakitu_state(Vec3f newPos, Vec3f newFoc, Vec3f curPos, Vec3f curFoc,
+                      Vec3f oldPos, Vec3f oldFoc, s16 yaw) {
+    s16 yawVelocity;
+    s16 pitchVelocity;
+    f32 distVelocity;
+    f32 goalDist;
+    UNUSED u8 filler1[4];
+    s16 goalPitch;
+    s16 goalYaw;
+    UNUSED u8 filler2[4];
+    f32 distTimer = sModeTransition.framesLeft;
+    s16 angleTimer = sModeTransition.framesLeft;
+    UNUSED s16 inTransition = FALSE;
+    Vec3f nextPos;
+    Vec3f nextFoc;
+    Vec3f startPos;
+    Vec3f startFoc;
+    s32 i;
+    f32 floorHeight;
+    struct Surface *floor;
+
+    // If not transitioning, just use gCamera's current pos and foc
+    vec3f_copy(newPos, curPos);
+    vec3f_copy(newFoc, curFoc);
+
+    if (sStatusFlags & CAM_FLAG_START_TRANSITION) {
+        for (i = 0; i < 3; i++) {
+            // Add Mario's displacement from this frame to the last frame's pos and focus
+            // Makes the transition start from where the camera would have moved
+            startPos[i] = oldPos[i] + sMarioCamState->pos[i] - sModeTransition.marioPos[i];
+            startFoc[i] = oldFoc[i] + sMarioCamState->pos[i] - sModeTransition.marioPos[i];
+        }
+
+
+        vec3f_get_dist_and_angle(curFoc, startFoc, &sModeTransition.focDist, &sModeTransition.focPitch,
+                                 &sModeTransition.focYaw);
+        vec3f_get_dist_and_angle(curFoc, startPos, &sModeTransition.posDist, &sModeTransition.posPitch,
+                                 &sModeTransition.posYaw);
+        sStatusFlags &= ~CAM_FLAG_START_TRANSITION;
+    }
+
+    // Transition from the last mode to the current one
+    if (sModeTransition.framesLeft > 0) {
+        inTransition = TRUE;
+
+        vec3f_get_dist_and_angle(curFoc, curPos, &goalDist, &goalPitch, &goalYaw);
+        distVelocity = ABS(goalDist - sModeTransition.posDist) / distTimer;
+        pitchVelocity = ABS(goalPitch - sModeTransition.posPitch) / angleTimer;
+        yawVelocity = ABS(goalYaw - sModeTransition.posYaw) / angleTimer;
+
+        camera_approach_f32_symmetric_bool(&sModeTransition.posDist, goalDist, distVelocity);
+        camera_approach_s16_symmetric_bool(&sModeTransition.posYaw, goalYaw, yawVelocity);
+        camera_approach_s16_symmetric_bool(&sModeTransition.posPitch, goalPitch, pitchVelocity);
+        vec3f_set_dist_and_angle(curFoc, nextPos, sModeTransition.posDist, sModeTransition.posPitch,
+                                 sModeTransition.posYaw);
+
+        vec3f_get_dist_and_angle(curPos, curFoc, &goalDist, &goalPitch, &goalYaw);
+        pitchVelocity = sModeTransition.focPitch / (s16) sModeTransition.framesLeft;
+        yawVelocity = sModeTransition.focYaw / (s16) sModeTransition.framesLeft;
+        distVelocity = sModeTransition.focDist / sModeTransition.framesLeft;
+
+        camera_approach_s16_symmetric_bool(&sModeTransition.focPitch, goalPitch, pitchVelocity);
+        camera_approach_s16_symmetric_bool(&sModeTransition.focYaw, goalYaw, yawVelocity);
+        camera_approach_f32_symmetric_bool(&sModeTransition.focDist, 0, distVelocity);
+        vec3f_set_dist_and_angle(curFoc, nextFoc, sModeTransition.focDist, sModeTransition.focPitch,
+                                 sModeTransition.focYaw);
+
+        vec3f_copy(newFoc, nextFoc);
+        vec3f_copy(newPos, nextPos);
+
+        if (gCamera->cutscene != 0 || !(gCameraMovementFlags & CAM_MOVE_C_UP_MODE)) {
+            floorHeight = find_floor(newPos[0], newPos[1], newPos[2], &floor);
+            if (floorHeight != FLOOR_LOWER_LIMIT) {
+                if ((floorHeight += 125.f) > newPos[1]) {
+                    newPos[1] = floorHeight;
+                }
+            }
+            f32_find_wall_collision(&newPos[0], &newPos[1], &newPos[2], 0.f, 100.f);
+        }
+        sModeTransition.framesLeft--;
+        yaw = calculate_yaw(newFoc, newPos);
+    } else {
+        sModeTransition.posDist = 0.f;
+        sModeTransition.posPitch = 0;
+        sModeTransition.posYaw = 0;
+        sStatusFlags &= ~CAM_FLAG_TRANSITION_OUT_OF_C_UP;
+    }
+    vec3f_copy(sModeTransition.marioPos, sMarioCamState->pos);
+    return yaw;
+}
+
+/* src/game/camera.c: set_camera_pitch_shake */
+void set_camera_pitch_shake(s16 mag, s16 decay, s16 inc) {
+    if (gLakituState.shakeMagnitude[0] < mag) {
+        gLakituState.shakeMagnitude[0] = mag;
+        gLakituState.shakePitchDecay = decay;
+        gLakituState.shakePitchVel = inc;
+    }
+}
+
+/* src/game/camera.c: set_camera_yaw_shake */
+void set_camera_yaw_shake(s16 mag, s16 decay, s16 inc) {
+    if (ABS(mag) > ABS(gLakituState.shakeMagnitude[1])) {
+        gLakituState.shakeMagnitude[1] = mag;
+        gLakituState.shakeYawDecay = decay;
+        gLakituState.shakeYawVel = inc;
+    }
+}
+
+/* src/game/camera.c: set_camera_roll_shake */
+void set_camera_roll_shake(s16 mag, s16 decay, s16 inc) {
+    if (gLakituState.shakeMagnitude[2] < mag) {
+        gLakituState.shakeMagnitude[2] = mag;
+        gLakituState.shakeRollDecay = decay;
+        gLakituState.shakeRollVel = inc;
+    }
+}
+
+/* src/game/camera.c: increment_shake_offset */
+void increment_shake_offset(s16 *offset, s16 increment) {
+    if (increment == -0x8000) {
+        *offset = (*offset & 0x8000) + 0xC000;
+    } else {
+        *offset += increment;
+    }
+}
+
+/* src/game/camera.c: shake_camera_pitch */
+void shake_camera_pitch(Vec3f pos, Vec3f focus) {
+    f32 dist;
+    s16 pitch;
+    s16 yaw;
+
+    if (gLakituState.shakeMagnitude[0] | gLakituState.shakeMagnitude[1]) {
+        vec3f_get_dist_and_angle(pos, focus, &dist, &pitch, &yaw);
+        pitch += gLakituState.shakeMagnitude[0] * sins(gLakituState.shakePitchPhase);
+        vec3f_set_dist_and_angle(pos, focus, dist, pitch, yaw);
+        increment_shake_offset(&gLakituState.shakePitchPhase, gLakituState.shakePitchVel);
+        if (camera_approach_s16_symmetric_bool(&gLakituState.shakeMagnitude[0], 0,
+                                               gLakituState.shakePitchDecay) == 0) {
+            gLakituState.shakePitchPhase = 0;
+        }
+    }
+}
+
+/* src/game/camera.c: shake_camera_yaw */
+void shake_camera_yaw(Vec3f pos, Vec3f focus) {
+    f32 dist;
+    s16 pitch;
+    s16 yaw;
+
+    if (gLakituState.shakeMagnitude[1] != 0) {
+        vec3f_get_dist_and_angle(pos, focus, &dist, &pitch, &yaw);
+        yaw += gLakituState.shakeMagnitude[1] * sins(gLakituState.shakeYawPhase);
+        vec3f_set_dist_and_angle(pos, focus, dist, pitch, yaw);
+        increment_shake_offset(&gLakituState.shakeYawPhase, gLakituState.shakeYawVel);
+        if (camera_approach_s16_symmetric_bool(&gLakituState.shakeMagnitude[1], 0,
+                                               gLakituState.shakeYawDecay) == 0) {
+            gLakituState.shakeYawPhase = 0;
+        }
+    }
+}
+
+/* src/game/camera.c: shake_camera_roll */
+void shake_camera_roll(s16 *roll) {
+    UNUSED u8 filler[8];
+
+    if (gLakituState.shakeMagnitude[2] != 0) {
+        increment_shake_offset(&gLakituState.shakeRollPhase, gLakituState.shakeRollVel);
+        *roll += gLakituState.shakeMagnitude[2] * sins(gLakituState.shakeRollPhase);
+        if (camera_approach_s16_symmetric_bool(&gLakituState.shakeMagnitude[2], 0,
+                                               gLakituState.shakeRollDecay) == 0) {
+            gLakituState.shakeRollPhase = 0;
+        }
+    }
+}
+
+/* src/game/camera.c: set_fov_shake */
+void set_fov_shake(s16 amplitude, s16 decay, s16 shakeSpeed) {
+    if (amplitude > sFOVState.shakeAmplitude) {
+        sFOVState.shakeAmplitude = amplitude;
+        sFOVState.decay = decay;
+        sFOVState.shakeSpeed = shakeSpeed;
+    }
+}
+
+/* src/game/camera.c: set_camera_shake_from_hit */
+void set_camera_shake_from_hit(s16 shake) {
+    switch (shake) {
+        // Makes the camera stop for a bit
+        case SHAKE_ATTACK:
+            gLakituState.focHSpeed = 0;
+            gLakituState.posHSpeed = 0;
+            break;
+
+        case SHAKE_FALL_DAMAGE:
+            set_camera_pitch_shake(0x60, 0x3, 0x8000);
+            set_camera_roll_shake(0x60, 0x3, 0x8000);
+            break;
+
+        case SHAKE_GROUND_POUND:
+            set_camera_pitch_shake(0x60, 0xC, 0x8000);
+            break;
+
+        case SHAKE_SMALL_DAMAGE:
+            if (sMarioCamState->action & (ACT_FLAG_SWIMMING | ACT_FLAG_METAL_WATER)) {
+                set_camera_yaw_shake(0x200, 0x10, 0x1000);
+                set_camera_roll_shake(0x400, 0x20, 0x1000);
+                set_fov_shake(0x100, 0x30, 0x8000);
+            } else {
+                set_camera_yaw_shake(0x80, 0x8, 0x4000);
+                set_camera_roll_shake(0x80, 0x8, 0x4000);
+                set_fov_shake(0x100, 0x30, 0x8000);
+            }
+
+            gLakituState.focHSpeed = 0;
+            gLakituState.posHSpeed = 0;
+            break;
+
+        case SHAKE_MED_DAMAGE:
+            if (sMarioCamState->action & (ACT_FLAG_SWIMMING | ACT_FLAG_METAL_WATER)) {
+                set_camera_yaw_shake(0x400, 0x20, 0x1000);
+                set_camera_roll_shake(0x600, 0x30, 0x1000);
+                set_fov_shake(0x180, 0x40, 0x8000);
+            } else {
+                set_camera_yaw_shake(0x100, 0x10, 0x4000);
+                set_camera_roll_shake(0x100, 0x10, 0x4000);
+                set_fov_shake(0x180, 0x40, 0x8000);
+            }
+
+            gLakituState.focHSpeed = 0;
+            gLakituState.posHSpeed = 0;
+            break;
+
+        case SHAKE_LARGE_DAMAGE:
+            if (sMarioCamState->action & (ACT_FLAG_SWIMMING | ACT_FLAG_METAL_WATER)) {
+                set_camera_yaw_shake(0x600, 0x30, 0x1000);
+                set_camera_roll_shake(0x800, 0x40, 0x1000);
+                set_fov_shake(0x200, 0x50, 0x8000);
+            } else {
+                set_camera_yaw_shake(0x180, 0x20, 0x4000);
+                set_camera_roll_shake(0x200, 0x20, 0x4000);
+                set_fov_shake(0x200, 0x50, 0x8000);
+            }
+
+            gLakituState.focHSpeed = 0;
+            gLakituState.posHSpeed = 0;
+            break;
+
+        case SHAKE_HIT_FROM_BELOW:
+            gLakituState.focHSpeed = 0.07;
+            gLakituState.posHSpeed = 0.07;
+            break;
+
+        case SHAKE_SHOCK:
+            set_camera_pitch_shake(random_float() * 64.f, 0x8, 0x8000);
+            set_camera_yaw_shake(random_float() * 64.f, 0x8, 0x8000);
+            break;
+    }
+}
+
+/* src/game/camera.c: evaluate_cubic_spline */
+void evaluate_cubic_spline(f32 u, Vec3f Q, Vec3f a0, Vec3f a1, Vec3f a2, Vec3f a3) {
+    f32 B[4];
+    f32 x;
+    f32 y;
+    f32 z;
+    UNUSED u8 filler[16];
+
+    if (u > 1.f) {
+        u = 1.f;
+    }
+
+    B[0] = (1.f - u) * (1.f - u) * (1.f - u) / 6.f;
+    B[1] = u * u * u / 2.f - u * u + 0.6666667f;
+    B[2] = -u * u * u / 2.f + u * u / 2.f + u / 2.f + 0.16666667f;
+    B[3] = u * u * u / 6.f;
+
+    Q[0] = B[0] * a0[0] + B[1] * a1[0] + B[2] * a2[0] + B[3] * a3[0];
+    Q[1] = B[0] * a0[1] + B[1] * a1[1] + B[2] * a2[1] + B[3] * a3[1];
+    Q[2] = B[0] * a0[2] + B[1] * a1[2] + B[2] * a2[2] + B[3] * a3[2];
+
+    // Unused code
+    B[0] = -0.5f * u * u + u - 0.33333333f;
+    B[1] = 1.5f * u * u - 2.f * u - 0.5f;
+    B[2] = -1.5f * u * u + u + 1.f;
+    B[3] = 0.5f * u * u - 0.16666667f;
+
+    x = B[0] * a0[0] + B[1] * a1[0] + B[2] * a2[0] + B[3] * a3[0];
+    y = B[0] * a0[1] + B[1] * a1[1] + B[2] * a2[1] + B[3] * a3[1];
+    z = B[0] * a0[2] + B[1] * a1[2] + B[2] * a2[2] + B[3] * a3[2];
+
+    unusedSplinePitch = atan2s(sqrtf(x * x + z * z), y);
+    unusedSplineYaw = atan2s(z, x);
+}
+
+/* src/game/camera.c: random_vec3s */
+void random_vec3s(Vec3s dst, s16 xRange, s16 yRange, s16 zRange) {
+    f32 randomFloat;
+    UNUSED u8 filler[4];
+    f32 tempXRange;
+    f32 tempYRange;
+    f32 tempZRange;
+
+    randomFloat = random_float();
+    tempXRange = xRange;
+    dst[0] = randomFloat * tempXRange - tempXRange / 2;
+
+    randomFloat = random_float();
+    tempYRange = yRange;
+    dst[1] = randomFloat * tempYRange - tempYRange / 2;
+
+    randomFloat = random_float();
+    tempZRange = zRange;
+    dst[2] = randomFloat * tempZRange - tempZRange / 2;
+}
+
+/* src/game/camera.c: shake_camera_handheld */
+void shake_camera_handheld(Vec3f pos, Vec3f focus) {
+    s32 i;
+    Vec3f shakeOffset;
+    Vec3f shakeSpline[4];
+    f32 dist;
+    s16 pitch;
+    s16 yaw;
+    UNUSED u8 filler[8];
+
+    if (sHandheldShakeMag == 0) {
+        vec3f_set(shakeOffset, 0.f, 0.f, 0.f);
+    } else {
+        for (i = 0; i < 4; i++) {
+            shakeSpline[i][0] = sHandheldShakeSpline[i].point[0];
+            shakeSpline[i][1] = sHandheldShakeSpline[i].point[1];
+            shakeSpline[i][2] = sHandheldShakeSpline[i].point[2];
+        }
+        evaluate_cubic_spline(sHandheldShakeTimer, shakeOffset, shakeSpline[0],
+                              shakeSpline[1], shakeSpline[2], shakeSpline[3]);
+        if (1.f <= (sHandheldShakeTimer += sHandheldShakeInc)) {
+            // The first 3 control points are always (0,0,0), so the random spline is always just a
+            // straight line
+            for (i = 0; i < 3; i++) {
+                vec3s_copy(sHandheldShakeSpline[i].point, sHandheldShakeSpline[i + 1].point);
+            }
+            random_vec3s(sHandheldShakeSpline[3].point, sHandheldShakeMag, sHandheldShakeMag, sHandheldShakeMag / 2);
+            sHandheldShakeTimer -= 1.f;
+
+            // Code dead, this is set to be 0 before it is used.
+            sHandheldShakeInc = random_float() * 0.5f;
+            if (sHandheldShakeInc < 0.02f) {
+                sHandheldShakeInc = 0.02f;
+            }
+        }
+    }
+
+    approach_s16_asymptotic_bool(&sHandheldShakePitch, shakeOffset[0], 0x08);
+    approach_s16_asymptotic_bool(&sHandheldShakeYaw, shakeOffset[1], 0x08);
+    approach_s16_asymptotic_bool(&sHandheldShakeRoll, shakeOffset[2], 0x08);
+
+    if (sHandheldShakePitch | sHandheldShakeYaw) {
+        vec3f_get_dist_and_angle(pos, focus, &dist, &pitch, &yaw);
+        pitch += sHandheldShakePitch;
+        yaw += sHandheldShakeYaw;
+        vec3f_set_dist_and_angle(pos, focus, dist, pitch, yaw);
+    }
+
+    // Unless called every frame, the effect will stop after the first time.
+    sHandheldShakeMag = 0;
+    sHandheldShakeInc = 0.f;
+}
+
+/* src/game/camera.c: update_lakitu */
+void update_lakitu(struct Camera *c) {
+    struct Surface *floor = NULL;
+    Vec3f newPos;
+    Vec3f newFoc;
+    UNUSED u8 filler1[12];
+    f32 distToFloor;
+    s16 newYaw;
+    UNUSED u8 filler2[8];
+
+    if (gCameraMovementFlags & CAM_MOVE_PAUSE_SCREEN) {
+    } else {
+        if (c->cutscene) {
+        }
+        if (TRUE) {
+            newYaw = next_lakitu_state(newPos, newFoc, c->pos, c->focus, sOldPosition, sOldFocus,
+                                       c->nextYaw);
+            set_or_approach_s16_symmetric(&c->yaw, newYaw, sYawSpeed);
+            sStatusFlags &= ~CAM_FLAG_UNUSED_CUTSCENE_ACTIVE;
+        } else {
+            //! dead code, moved to next_lakitu_state()
+            vec3f_copy(newPos, c->pos);
+            vec3f_copy(newFoc, c->focus);
+        }
+
+        // Update old state
+        vec3f_copy(sOldPosition, newPos);
+        vec3f_copy(sOldFocus, newFoc);
+
+        gLakituState.yaw = c->yaw;
+        gLakituState.nextYaw = c->nextYaw;
+        vec3f_copy(gLakituState.goalPos, c->pos);
+        vec3f_copy(gLakituState.goalFocus, c->focus);
+
+        // Simulate Lakitu flying to the new position and turning towards the new focus
+        set_or_approach_vec3f_asymptotic(gLakituState.curPos, newPos,
+                                         gLakituState.posHSpeed, gLakituState.posVSpeed,
+                                         gLakituState.posHSpeed);
+        set_or_approach_vec3f_asymptotic(gLakituState.curFocus, newFoc,
+                                         gLakituState.focHSpeed, gLakituState.focVSpeed,
+                                         gLakituState.focHSpeed);
+        // Adjust Lakitu's speed back to normal
+        set_or_approach_f32_asymptotic(&gLakituState.focHSpeed, 0.8f, 0.05f);
+        set_or_approach_f32_asymptotic(&gLakituState.focVSpeed, 0.3f, 0.05f);
+        set_or_approach_f32_asymptotic(&gLakituState.posHSpeed, 0.3f, 0.05f);
+        set_or_approach_f32_asymptotic(&gLakituState.posVSpeed, 0.3f, 0.05f);
+
+        // Turn on smooth movement when it hasn't been blocked for 2 frames
+        if (sStatusFlags & CAM_FLAG_BLOCK_SMOOTH_MOVEMENT) {
+            sStatusFlags &= ~CAM_FLAG_BLOCK_SMOOTH_MOVEMENT;
+        } else {
+            sStatusFlags |= CAM_FLAG_SMOOTH_MOVEMENT;
+        }
+
+        vec3f_copy(gLakituState.pos, gLakituState.curPos);
+        vec3f_copy(gLakituState.focus, gLakituState.curFocus);
+
+        if (c->cutscene) {
+            vec3f_add(gLakituState.focus, sPlayer2FocusOffset);
+            vec3f_set(sPlayer2FocusOffset, 0, 0, 0);
+        }
+
+        vec3f_get_dist_and_angle(gLakituState.pos, gLakituState.focus, &gLakituState.focusDistance,
+                                 &gLakituState.oldPitch, &gLakituState.oldYaw);
+
+        gLakituState.roll = 0;
+
+        // Apply camera shakes
+        shake_camera_pitch(gLakituState.pos, gLakituState.focus);
+        shake_camera_yaw(gLakituState.pos, gLakituState.focus);
+        shake_camera_roll(&gLakituState.roll);
+        shake_camera_handheld(gLakituState.pos, gLakituState.focus);
+
+        if (sMarioCamState->action == ACT_DIVE && gLakituState.lastFrameAction != ACT_DIVE) {
+            set_camera_shake_from_hit(SHAKE_HIT_FROM_BELOW);
+        }
+
+        gLakituState.roll += sHandheldShakeRoll;
+        gLakituState.roll += gLakituState.keyDanceRoll;
+
+        if (c->mode != CAMERA_MODE_C_UP && c->cutscene == 0) {
+            gCheckingSurfaceCollisionsForCamera = TRUE;
+            distToFloor = find_floor(gLakituState.pos[0],
+                                     gLakituState.pos[1] + 20.0f,
+                                     gLakituState.pos[2], &floor);
+            if (distToFloor != FLOOR_LOWER_LIMIT) {
+                if (gLakituState.pos[1] < (distToFloor += 100.0f)) {
+                    gLakituState.pos[1] = distToFloor;
+                } else {
+                    gCheckingSurfaceCollisionsForCamera = FALSE;
+                }
+            }
+        }
+
+        vec3f_copy(sModeTransition.marioPos, sMarioCamState->pos);
+    }
+    clamp_pitch(gLakituState.pos, gLakituState.focus, 0x3E00, -0x3E00);
+    gLakituState.mode = c->mode;
+    gLakituState.defMode = c->defMode;
 }

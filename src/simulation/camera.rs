@@ -1,7 +1,8 @@
 //! Reference-camera components translated from pinned CC0 SM64 camera.c.
 //! See PROVENANCE.md. These are simulation operations, never frame-rate
-//! smoothing. The complete mode dispatcher and Lakitu update are not ported;
-//! the viewer still uses its explicitly labeled follow camera.
+//! smoothing. `lakitu` contains the persistent transition/Lakitu stage. The
+//! complete mode dispatcher is not ported; the viewer still uses its labeled
+//! follow camera.
 #![allow(clippy::manual_clamp, clippy::too_many_arguments)]
 
 use super::{
@@ -12,6 +13,8 @@ use super::{
     mario::constants as c,
     math::TrigTables,
 };
+
+pub mod lakitu;
 
 pub const U_CBUTTONS: u16 = 0x0008;
 pub const D_CBUTTONS: u16 = 0x0004;
