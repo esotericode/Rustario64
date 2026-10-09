@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.99"
 publish = false
 license = "MIT"
-description = "Development-only differential oracle: pinned CC0 decomp collision C compiled natively. Never linked into the game runtime."
+description = "Development-only differential oracle: pinned CC0 decomp C compiled natively. Never linked into the game runtime."
 build = "build.rs"
 
 [dependencies]
