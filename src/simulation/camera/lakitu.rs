@@ -112,6 +112,41 @@ fn get_dist_angle(from: [f32; 3], to: [f32; 3], trig: &TrigTables) -> (f32, i16,
 }
 
 impl Rig {
+    /// Original focus pan, applied once per simulation tick by a mode
+    /// controller. Keep both rotations: a simplified sine changes float bits.
+    pub fn pan_ahead_of_player(
+        &mut self,
+        mario: [f32; 3],
+        action: u32,
+        face_yaw: i16,
+        trig: &TrigTables,
+    ) {
+        let dist = calc_abs_dist(self.camera.pos, mario);
+        let mut yaw = calculate_yaw(self.camera.pos, mario, trig);
+        let mut pan = [0.0, 0.0, trig.sins(0xc00) * dist];
+        pan = rotate_in_xz(pan, face_yaw, trig);
+        yaw = yaw.wrapping_neg();
+        pan = rotate_in_xz(pan, yaw, trig);
+        pan[2] = 0.0;
+        if action == c::ACT_LONG_JUMP
+            || (action != c::ACT_TOP_OF_POLE && action & c::ACT_FLAG_ON_POLE != 0)
+        {
+            pan[0] = -pan[0];
+        }
+        let target = if self.status & c::CAM_FLAG_SLEEPING != 0 {
+            0.0
+        } else {
+            pan[0]
+        };
+        approach_f32_asymptotic_bool(&mut self.pan_distance, target, 0.025);
+        pan[0] = self.pan_distance;
+        yaw = yaw.wrapping_neg();
+        pan = rotate_in_xz(pan, yaw, trig);
+        for (focus, offset) in self.camera.focus.iter_mut().zip(pan) {
+            *focus += offset;
+        }
+    }
+
     pub fn transition_next_state(&mut self, frames: i16) {
         if self.status & c::CAM_FLAG_FRAME_AFTER_CAM_INIT == 0 {
             self.status |= c::CAM_FLAG_START_TRANSITION | c::CAM_FLAG_TRANSITION_OUT_OF_C_UP;

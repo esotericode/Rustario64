@@ -16,4 +16,5 @@ s32 is_surf_within_bounding_box(struct Surface *surface, f32 x, f32 y, f32 z);
 s32 is_mario_behind_surface(struct Camera *camera, struct Surface *surface);
 void radial_camera_move(struct Camera *camera);
 void lakitu_zoom(f32 rangeDist, s16 rangePitch);
+void pan_ahead_of_player(struct Camera *camera);
 #endif

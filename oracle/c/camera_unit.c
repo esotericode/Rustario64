@@ -103,6 +103,13 @@ void oracle_camera_radial_goal_stage(const f32 *mario, u32 action, f32 floorHeig
 }
 
 s32 oracle_camera_lakitu_word_count(void) { return LAKITU_STATE_WORDS; }
+void oracle_camera_pan(const f32 *mario, u32 action, s16 faceYaw, u32 *out) {
+    vec3f_copy(sMarioCamState->pos, (f32 *)mario);
+    sMarioCamState->action = action;
+    sMarioCamState->faceAngle[1] = faceYaw;
+    pan_ahead_of_player(gCamera);
+    store_lakitu_words(out);
+}
 void oracle_camera_lakitu_reset(const u32 *words) {
     memset(&sComponentCamera, 0, sizeof(sComponentCamera));
     memset(&gLakituState, 0, sizeof(gLakituState));

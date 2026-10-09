@@ -88,6 +88,12 @@ reference revision or the simulation cadence.
 
 ## Reference comparison status
 
+Look-ahead pan additionally translates pinned camera.c `pan_ahead_of_player`
+into `simulation/camera/lakitu.rs`; the original two rotations, fixed tick
+approach, sleeping decay and long-jump/pole exceptions are preserved. Its
+verbatim generated native excerpt and 94-word comparisons live in the existing
+camera oracle/radial suite. CC0 notice retained. No new assets or dependencies.
+
 Initial target: pinned unmodified US n64decomp/original ROM execution. No oracle
 binary/exporter for original execution is available yet. Collision loading and
 queries, the math utilities, and Mario's physics steps are compared with the

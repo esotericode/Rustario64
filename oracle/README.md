@@ -376,3 +376,4 @@ to camera.c at the pinned revision. Only include lines and adapters are authored
 | `offset_yaw_outward_radial` | `1eaf2ae4a42260f4f99caa6d10c54452219b4fef` |
 | `radial_camera_move` | `6da010f8e767b7a9d4f30c984a44ffe80a93eec9` |
 | `lakitu_zoom` | `6d1606928bacaf3089030374328d07b21be14d8e` |
+| `pan_ahead_of_player` | `b606ce12c46fa8075a52619874d6a46db237ec7f` |

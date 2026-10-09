@@ -232,7 +232,7 @@ Every handoff should report the working result, commands actually run, missing f
 | Bob-omb Battlefield | Imported level: 1,101 visible area triangles (24 batches, 18 textures) from eight script-named dependent segments, plus the gate/seesaw/grate geo models; collision (570 vertices, 1,060 triangles), 17 specials, 30 script placements, 88 macros, seven warps. Every visible triangle and texture matches independent decomp-derived references. Renders in the viewer with collision and placement overlays. Collision loads into the ported original partition and answers queries identically to the decomp. Mario's complete ticks run identically to the decomp on it with the ROM's animations (64,158 compared ticks). Mario can be moved around it in the viewer with his ROM model and animations and a follow camera; recorded runs replay exactly. No skybox, objects, Mario shadow, original camera, warps or missions |
 | Fidelity coverage | Component checks against the natively compiled decomp, all bitwise-identical. Collision: loader and floor/ceiling/wall/water/gas queries (857k authored comparisons in CI; 4.08M on BOB). Math: ROM trig tables, sins/coss/atan2s/atan2f/approach (3.99M). Mario steps: ground/air/stationary steps, ledge grabs, gravity, wind, moving sand, bonk, velocity helpers from generated states (124k authored in CI; 1.18M on BOB with ROM tables). Exact trace comparator tested; 300 synthetic counter/input ticks identical at 30/60/120/144 Hz. Input stage: 196,608 controller/intent cases on authored and again on ROM tables; 10,009 authored and 20,000 BOB geometry cases; 1,200 chained ticks at multiple presentation rates. **Complete Mario ticks** (Mario's object only, against the native decomp): 28,158 authored ticks (69 actions) and 64,158 BOB ticks with ROM animations (60 actions), all identical, also at 15–144 Hz presentation. **Played sessions:** 3,600 CI ticks of held-control sessions replay identically in the decomp; two recorded BOB viewer runs (233 ticks) replay identically. Camera helpers/radial goals and persistent Lakitu/transition updates have exact authored and owner-ROM native comparisons; no full camera dispatcher, object, cutscene/submerged or original-N64 coverage |
 | Optional enhancements | Graphics-only options: higher resolution, 4x MSAA, culling and fog toggles, interpolation toggle, free inspection camera. Mario's skinned model interpolates between ticks at any frame rate. No enhanced lighting/shadows |
-| Immediate next task | M2: finish BOB radial mode input/height/pan, free-roam control, surface-mode selection and initialization; obstruction, radial rotation/zoom and composed radial/Lakitu stages now have exact comparisons. Compare combined Mario/camera ticks before viewer integration. Then shadow and objects. D0 native Windows/Linux build/CI bundles passed at 0a62784; D1/D2 ROM launcher and settings remain early playtesting priorities. BOB's named trigger table is unused in the reference. |
+| Immediate next task | M2: finish BOB radial mode input/height, free-roam control, surface-mode selection and initialization; obstruction, radial rotation/zoom, look-ahead pan and composed radial/Lakitu stages now have exact comparisons. Compare combined Mario/camera ticks before viewer integration. Then shadow and objects. D0 native Windows/Linux build/CI bundles passed at 1d5030b; D1/D2 ROM launcher and settings remain early playtesting priorities. BOB's named trigger table is unused in the reference. |
 
 ### Implementation session 1 — 2026-10-08 (M0 and early M1)
 
@@ -524,6 +524,27 @@ Every handoff should report the working result, commands actually run, missing f
 - **Next:** Finish the remaining BOB mode logic and init, compare combined ticks
   before viewer integration. D1 ROM-picker and D2 pause/settings remain early
   priorities before wider human playtesting; then shadow and first-mission actors.
+
+### Implementation session 11 — 2026-10-09 (small look-ahead pan increment)
+
+- **Base:** Continued latest remote camera branch at `1d5030b`, keeping this
+  session limited to one original function: `pan_ahead_of_player`.
+- **Result:** Rig owns the original persistent focus-pan update. Preserve the
+  two rotations and operation order, long-jump/pole reversal (except the top),
+  sleeping decay and the fixed 0.025 approach per tick, including snap mode.
+  Camera eye and authoritative yaw remain unchanged. No new dependency.
+- **Comparison:** Verbatim pinned CC0 native excerpt; 40,000 authored cases
+  and 40,000 with ROM trig tables. Coincident/vertical eyes, signed angles,
+  signed-zero inputs and smooth/snap/sleeping combinations are covered. Pan
+  is now compared between radial goals and Lakitu in the existing 18,000-tick
+  stage compositions per terrain at 15–144 Hz with interpolation off/on.
+- **Checks:** Optimized radial/Lakitu suites including owner-ROM checks,
+  debug authored pan, warnings-denied workspace lint, formatting and generated
+  excerpt/layout checks. ROM and assets remain private.
+- **Not done / next:** Viewer still uses its approximate follow camera. Next
+  small camera step: original height adjustment; then mode input, free roam,
+  initialization and combined Mario/camera comparisons before integration.
+  ROM-picker/settings GUI remain early usability priorities.
 
 ### Bob-omb Battlefield acceptance tracker
 

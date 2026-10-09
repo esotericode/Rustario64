@@ -1,5 +1,5 @@
 //! Native-C comparisons of obstruction/radial stages. Persistent compositions
-//! below deliberately omit full mode input, camera height/pan and dispatch.
+//! below deliberately omit full mode input, camera height and dispatch.
 use rustario64::simulation::{
     FixedClock,
     camera::{
@@ -66,6 +66,68 @@ fn seed() -> Rig {
         old_focus: focus,
         ..Rig::default()
     }
+}
+
+fn pan_cases(trig: &TrigTables, count: usize) {
+    let oracle = CameraOracle::new(&terrain(), trig);
+    let mut rng = Rng(7351);
+    let actions = [
+        c::ACT_WALKING,
+        c::ACT_LONG_JUMP,
+        c::ACT_HOLDING_POLE,
+        c::ACT_TOP_OF_POLE,
+        c::ACT_TOP_OF_POLE_TRANSITION,
+        c::ACT_FREEFALL,
+    ];
+    for i in 0..count {
+        let mario = rng.vec(8000.0);
+        let action = actions[i % actions.len()];
+        let face_yaw = [i16::MIN, i16::MAX, 0, -1, rng.next() as i16][i % 5];
+        let mut initial = seed();
+        initial.camera.pos = match i % 5 {
+            0 => mario,
+            1 => [mario[0], mario[1] + 500.0, mario[2]],
+            _ => rng.vec(8000.0),
+        };
+        initial.camera.focus = if i.is_multiple_of(11) {
+            [-0.0; 3]
+        } else {
+            rng.vec(8000.0)
+        };
+        initial.pan_distance = if i.is_multiple_of(13) {
+            -0.0
+        } else {
+            rng.f(2000.0)
+        };
+        for status in [
+            0,
+            c::CAM_FLAG_SLEEPING,
+            c::CAM_FLAG_SMOOTH_MOVEMENT,
+            c::CAM_FLAG_SLEEPING | c::CAM_FLAG_SMOOTH_MOVEMENT,
+        ] {
+            let mut rig = initial;
+            rig.status = status;
+            oracle.reset_lakitu(rig);
+            rig.pan_ahead_of_player(mario, action, face_yaw, trig);
+            compare(
+                &rig,
+                &oracle.pan_ahead(mario, action, face_yaw),
+                &format!("pan case {i} status {status}"),
+            );
+            // Pan must not change camera-relative movement yaw or eye position.
+            assert_eq!(rig.camera.yaw, initial.camera.yaw);
+            assert_eq!(rig.camera.next_yaw, initial.camera.next_yaw);
+            assert_eq!(
+                rig.camera.pos.map(f32::to_bits),
+                initial.camera.pos.map(f32::to_bits)
+            );
+        }
+    }
+}
+
+#[test]
+fn look_ahead_pan_matches_actions_sleeping_and_float_order() {
+    pan_cases(&tables(), 10000);
 }
 
 #[test]
@@ -612,6 +674,13 @@ fn persistent_stages(stream: &[i16], trig: &TrigTables) {
                         ]
                     );
                     prev_display = rig.lakitu.pos;
+                    let face_yaw = yaw.wrapping_add(0x2222);
+                    rig.pan_ahead_of_player(mario, action, face_yaw, trig);
+                    compare(
+                        &rig,
+                        &oracle.pan_ahead(mario, action, face_yaw),
+                        "persistent pan",
+                    );
                     let incoming_flags = flags;
                     rig.update(mario, action, &world, &mut flags, trig).unwrap();
                     let (native, native_flags) = oracle.lakitu_update(incoming_flags);
@@ -674,4 +743,5 @@ fn bob_radial_and_obstruction_stages_match_with_rom_tables() {
     obstruction_cases(&stream, &trig, 20000);
     random_movement(&stream, &trig, 40000);
     persistent_stages(&stream, &trig);
+    pan_cases(&trig, 10000);
 }

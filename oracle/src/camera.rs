@@ -59,6 +59,7 @@ struct RadialSetup {
 }
 
 unsafe extern "C" {
+    fn oracle_camera_pan(mario: *const f32, action: u32, face_yaw: i16, out: *mut u32);
     fn oracle_camera_avoid_yaw(yaw: i16, wall_yaw: i16) -> i32;
     fn oracle_camera_surface(
         vertices: *const i16,
@@ -177,6 +178,14 @@ pub struct CameraOracle {
 }
 
 impl CameraOracle {
+    pub fn pan_ahead(&self, mario: [f32; 3], action: u32, face_yaw: i16) -> [u32; STATE_WORDS] {
+        let mut out = [0; STATE_WORDS];
+        // SAFETY: fixed arrays, initialized Rig and existing global lock.
+        unsafe {
+            oracle_camera_pan(mario.as_ptr(), action, face_yaw, out.as_mut_ptr());
+        }
+        out
+    }
     pub fn avoid_yaw(&self, yaw: i16, wall_yaw: i16) -> i16 {
         // SAFETY: scalar inputs; existing global lock held.
         unsafe { oracle_camera_avoid_yaw(yaw, wall_yaw) as i16 }

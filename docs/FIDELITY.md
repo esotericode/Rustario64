@@ -418,3 +418,16 @@ cargo test --locked -p rustario64-oracle --test radial -- --nocapture
 cargo test --locked --release -p rustario64-oracle --test radial -- --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test radial -- --include-ignored --nocapture
 ```
+
+### Look-ahead pan (small follow-up, 2026-10-09)
+
+Rig's `pan_ahead_of_player` preserves the original two rotations and float
+operation order; replacing these with a single sine expression changes bits.
+The fixed 0.025 approach runs once per tick, even with smooth movement disabled.
+Long jumps and non-top pole actions reverse pan; sleeping approaches zero.
+40,000 authored comparisons and 40,000 with ROM trig tables cover these paths,
+signed angles/zero and coincident/vertical eyes. All 94 shared words compare,
+with independent assertions that yaw/eye do not change. The existing persistent
+radial-goal/Lakitu compositions now include pan before Lakitu (18,000 ticks per
+terrain at five render rates and both interpolation settings). Run the same
+`--test radial` commands above. No complete camera or viewer fidelity is claimed.

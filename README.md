@@ -36,8 +36,8 @@ What works now:
   on the CPU and interpolated between ticks at any frame rate. Six switch
   configurations match triangle digests rebuilt from the pinned decomp source.
 - Reference-camera helpers, camera collision/geometry and obstruction scans,
-  radial rotation/zoom and goals, and the persistent Lakitu/transition stage
-  with exact native comparisons on authored
+  radial rotation/zoom and goals, look-ahead pan, and the persistent
+  Lakitu/transition stage with exact native comparisons on authored
   fixtures and BOB's ROM data. Full mode dispatch is pending; the viewer keeps
   its labeled follow camera.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
@@ -279,7 +279,7 @@ holds the owner-ROM evidence.
 ## Next increment
 
 Connect the compared reference-camera helpers and persistent Lakitu/transition
-stage to full BOB radial and free-roam mode controllers (input, height/pan,
+stage to full BOB radial and free-roam mode controllers (input, height,
 surface-mode selection and initialization), with per-tick comparisons
 so camera yaw and mode stop being inputs (the source's named BOB trigger table
 is unused); draw Mario's shadow; then begin objects for the first
