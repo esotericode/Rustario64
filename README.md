@@ -313,6 +313,11 @@ rendering decisions; [PROVENANCE.md](PROVENANCE.md) lists exact upstream sources
 reuse, and dependency terms; [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md)
 holds the owner-ROM evidence.
 
+Object-list setup is available in `simulation::object`: original IDs and update
+order, plus `import::behavior::object_list` for bounded behavior-header decoding.
+It prepares the object processor; spawning, behavior execution and coins are
+still unimplemented. The viewer's playable behavior is unchanged.
+
 ## Next increment
 
 Physical-GPU Windows/Linux playtesting continues. Implement object-list

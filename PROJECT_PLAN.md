@@ -698,6 +698,25 @@ Every handoff should report the working result, commands actually run, missing f
   comparisons, then BOB's first-mission actors/cutscenes. Skybox, water actions,
   warps, missions, original pause behavior and audio/save remain gaps.
 
+### Session 16 — behavior headers and object-list setup (2026-10-09)
+
+- **Small next step:** Added typed original object-list IDs (including unused
+  slots), the original list update order, and a bounded big-endian behavior-header
+  decoder. BEGIN selects its encoded list; every other opcode selects DEFAULT.
+  Invalid BEGIN list indices and truncated headers return errors.
+- **Reference:** Pinned CC0 `spawn_object.c:create_object`, the ObjectList enum
+  in `object_list_processor.h`, and `sObjectListUpdateOrder` in
+  `object_list_processor.c`. No object allocation, list mutation, behavior
+  execution, spawning or coin interaction is implemented by this increment.
+- **Checks:** Unit fixtures cover all 256 opcodes × 256 list bytes at three
+  low-word values, original IDs/order, invalid indices and truncated/big-endian
+  headers. Original-source classification and order were also checked with a
+  small standalone native C harness. Full Rust validation is performed by CI;
+  the previous local checkout/toolchain/ROM are unavailable in this workspace.
+- **Next:** Allocate/link object instances in the original insertion order,
+  then implement the list processor and first BOB coin behavior with native
+  per-tick comparisons. Current playable behavior is unchanged.
+
 ### Bob-omb Battlefield acceptance tracker
 
 | Capability / act | Actual state |

@@ -5,6 +5,7 @@ pub mod controller;
 pub mod game;
 pub mod mario;
 pub mod math;
+pub mod object;
 pub mod rng;
 
 use serde::{Deserialize, Serialize};
