@@ -9,7 +9,8 @@ use serde_json::Value;
 use std::{collections::BTreeMap, fmt};
 
 pub const TRACE_SCHEMA: u32 = 1;
-pub const INPUT_LOG_SCHEMA: u32 = 1;
+/// Input logs: schema 2 adds `camera`; schema 1 logs recorded the yaw.
+pub const INPUT_LOG_SCHEMA: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -77,6 +78,18 @@ pub struct Trace {
     pub frames: Vec<Frame>,
 }
 
+/// Where each tick's camera yaw came from in an input log.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CameraInput {
+    /// The yaw was an input (sessions before the reference camera).
+    #[default]
+    RecordedYaw,
+    /// The reference camera ran; each yaw is the one it produced for Mario,
+    /// kept so a replay can check it reaches the same yaws.
+    Reference,
+}
+
 /// One play session's tick inputs from a named level entry, for replaying
 /// the session against the reference. The inputs are the player's, not ROM
 /// data; the ROM identity is kept so a replay can check it uses the same
@@ -90,6 +103,8 @@ pub struct InputLog {
     /// The level entry the first input follows, such as `bob-script-start`.
     pub entry: String,
     pub tick_rate: u32,
+    #[serde(default)]
+    pub camera: CameraInput,
     pub inputs: Vec<TickInput>,
 }
 
@@ -97,8 +112,10 @@ impl InputLog {
     /// Parse a log and check its schema and tick rate.
     pub fn from_json(bytes: &[u8]) -> Result<Self, String> {
         let log: Self = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
-        if log.schema != INPUT_LOG_SCHEMA {
-            return Err(format!("unsupported input log schema {}", log.schema));
+        match (log.schema, log.camera) {
+            (1, CameraInput::RecordedYaw) | (INPUT_LOG_SCHEMA, _) => {}
+            (1, _) => return Err("schema 1 input logs record the camera yaw".into()),
+            (schema, _) => return Err(format!("unsupported input log schema {schema}")),
         }
         if log.tick_rate != TICKS_PER_SECOND {
             return Err(format!(

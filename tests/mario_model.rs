@@ -10,7 +10,8 @@ use rustario64::{
     presentation::mario::{MarioDrawer, MarioPose},
     simulation::{
         collision::CollisionWorld,
-        mario::{MarioBodyState, constants as c, tick::LevelEntry},
+        game::GameEntry,
+        mario::{MarioBodyState, constants as c},
     },
 };
 
@@ -104,6 +105,8 @@ fn configuration(name: &str) -> (MarioPose, i16) {
         animation: None,
         body,
         area_update_counter: counter,
+        camera_c_up: false,
+        head_rotation: [0; 3],
     };
     (pose, lod)
 }
@@ -155,8 +158,8 @@ fn local_us_rom_mario_model() {
     // every tick poses a model whose bones stay near Mario.
     let imported = bob::import(&rom).unwrap();
     let world = CollisionWorld::load_area_terrain(&imported.collision).unwrap();
-    let camera_mode = imported.visual.as_ref().unwrap().camera.unwrap().mode;
-    let entry = LevelEntry::script_start(&imported.level, camera_mode).unwrap();
+    let camera = imported.visual.as_ref().unwrap().camera.unwrap();
+    let entry = GameEntry::script_start(&imported.level, &camera).unwrap();
     let mut session = Session::new(&world, &trig, &anims, entry);
     drawer.update(&session.mario_pose(), None).unwrap();
     assert!(

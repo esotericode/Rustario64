@@ -1,7 +1,8 @@
 //! Development viewer for imported levels. `screenshot` renders offscreen to PNG
 //! (no window needed); `view` opens a window with a free inspection camera or,
-//! in Mario mode, Mario driven by the tick compared with the decomp. Both are
-//! development entry points straight into Bob-omb Battlefield.
+//! in Mario mode, Mario and the original camera driven by the frame compared
+//! with the decomp. Both are development entry points straight into
+//! Bob-omb Battlefield.
 use rustario64::{
     content::{
         animation::MarioAnimations,
@@ -14,9 +15,7 @@ use rustario64::{
     },
     play::{self, BOB_SCRIPT_START, Pad, Session},
     presentation::{GraphicsOptions, mario::MarioDrawer},
-    simulation::{
-        FixedClock, collision::CollisionWorld, mario::tick::LevelEntry, math::TrigTables,
-    },
+    simulation::{FixedClock, collision::CollisionWorld, game::GameEntry, math::TrigTables},
 };
 use rustario64_render::{
     RenderOptions, Renderer, camera, camera::FlyCamera, overlay, play as present,
@@ -45,13 +44,14 @@ const HELP: &str = "Rustario64 development viewer (Bob-omb Battlefield, area 1)\
   View controls: WASD move, Q/E down/up, Shift faster, hold right mouse or arrow keys to look,\n\
   1-4 select presets, C collision overlay, P placement markers, F fog, M Mario mode, Esc quits.\n\
   The camera is a presentation-only inspection camera, not the original camera.\n\n\
-  Mario mode (--mario or M): WASD stick (hold Shift to walk), Space A, J B, K Z, Left/Right\n\
-  arrows turn the follow camera, R re-enters the level, M returns to the free camera (Mario\n\
-  pauses). Mario runs the tick compared with the decomp from the level script's start. The\n\
-  follow camera is not the original camera; its yaw is the camera input Mario reads. Mario's\n\
-  model and animations come from the ROM (a placeholder box if they cannot be imported). Play\n\
-  stops at paths the port does not support and at warps (falling off the course); R re-enters.\n\
-  --mario-ticks N renders Mario after N ticks of holding the stick up, from the follow camera.\n\
+  Mario mode (--mario or M): WASD stick (hold Shift to walk), Space A, J B, K Z, arrow keys\n\
+  the C buttons (Up/Down zoom and first person, Left/Right rotate), E the R button (Lakitu or\n\
+  Mario camera), R re-enters the level, M returns to the free camera (Mario pauses). Mario and\n\
+  the original camera run the frame compared with the decomp from the level script's start;\n\
+  the window draws from the camera's view. Mario's model and animations come from the ROM (a\n\
+  placeholder box if they cannot be imported). Play stops at paths the port does not support\n\
+  and at warps (falling off the course); R re-enters.\n\
+  --mario-ticks N renders Mario after N frames of holding the stick up, from the original camera.\n\
   --record writes each run's tick inputs to a new directory for exact replay against the decomp:\n\
   cargo run -p rustario64-oracle --example tick_trace -- ROM NEW_DIR --inputs RUN.inputs.json\n";
 
@@ -144,7 +144,7 @@ struct Level {
     world: &'static CollisionWorld,
     trig: &'static TrigTables,
     anims: &'static MarioAnimations,
-    entry: LevelEntry,
+    entry: GameEntry,
     rom_sha1: &'static str,
     /// Mario's model, or None when it could not be imported.
     mario_model: Option<&'static MarioModelSource>,
@@ -215,9 +215,9 @@ fn load(rom_path: &Path) -> AppResult<Level> {
     let rom = Rom::open(rom_path)?;
     let imported = bob::import(&rom)?;
     let visual = imported.visual.ok_or("no visible geometry imported")?;
-    // create_camera takes Mario's camera mode from the area's GEO_CAMERA node.
-    let camera_mode = visual.camera.ok_or("the area has no camera node")?.mode;
-    let entry = LevelEntry::script_start(&imported.level, camera_mode)?;
+    // The area's GEO_CAMERA node creates the camera (create_camera).
+    let camera = visual.camera.ok_or("the area has no camera node")?;
+    let entry = GameEntry::script_start(&imported.level, &camera)?;
     let world = CollisionWorld::load_area_terrain(&imported.collision)?;
     let mario_model = match mario_model::import(&rom) {
         Ok(source) => Some(&*Box::leak(Box::new(source))),
@@ -274,12 +274,13 @@ fn graphics_options(options: &Options) -> GraphicsOptions {
 fn describe(session: &Session<'_>) -> String {
     let m = session.mario();
     format!(
-        "{} at ({:.0}, {:.0}, {:.0}) facing {:#06x}, tick {}",
+        "{} at ({:.0}, {:.0}, {:.0}) facing {:#06x}, {}, tick {}",
         play::action_name(m.action),
         m.pos[0],
         m.pos[1],
         m.pos[2],
         m.face_angle[1] as u16,
+        play::camera_mode_name(session.game().camera.rig.camera.mode),
         session.inputs().len()
     )
 }
@@ -306,9 +307,10 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
         Some(ticks) => {
             let mut session = level.session();
             let follow = |session: &Session<'_>| {
-                let position = session.pose(1.0, graphics).position;
-                let camera =
-                    present::follow_view(session.camera(), position, 1.0, level.visual.camera);
+                let camera = present::reference_view(
+                    session.camera_view(1.0, graphics),
+                    level.visual.camera,
+                );
                 match &options.view {
                     Some(name) => preset(name, &level),
                     None => Ok(camera),
@@ -350,7 +352,7 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
     let pixels = renderer.capture(w, h, &camera)?;
     rustario64_render::write_png(Path::new(out), w, h, &pixels)?;
     let from = match (&options.view, mario) {
-        (None, true) => "the follow camera".to_owned(),
+        (None, true) => "the original camera".to_owned(),
         _ => format!("view '{view}'"),
     };
     println!(
@@ -447,7 +449,7 @@ struct Play {
     /// Buttons pressed since the last tick. A tap released before the next
     /// tick still reaches that tick, as a press longer than a frame would.
     taps: Pad,
-    /// Keys drive Mario and the follow camera; otherwise the free camera
+    /// Keys drive Mario and the original camera; otherwise the free camera
     /// moves and Mario pauses.
     active: bool,
     graphics: GraphicsOptions,
@@ -458,12 +460,7 @@ struct Play {
 impl Play {
     /// The controls for the next tick: held keys plus unconsumed taps.
     fn next_pad(&mut self) -> Pad {
-        let pad = Pad {
-            a: self.pad.a || self.taps.a,
-            b: self.pad.b || self.taps.b,
-            z: self.pad.z || self.taps.z,
-            ..self.pad
-        };
+        let pad = self.pad.with_taps(&self.taps);
         self.taps = Pad::default();
         pad
     }
@@ -568,7 +565,13 @@ impl App {
                 if play.session.step(&pad)
                     && let Some(mario) = self.mario.as_mut()
                 {
-                    mario.tick(&play.session, &self.camera);
+                    // The render pass picks the level of detail from the
+                    // camera of the frame it draws.
+                    let camera = present::reference_view(
+                        play.session.camera_view(1.0, play.graphics),
+                        self.level.visual.camera,
+                    );
+                    mario.tick(&play.session, &camera);
                 }
             }
         }
@@ -589,10 +592,8 @@ impl App {
         };
         let pose = play.session.pose(alpha, play.graphics);
         if play.active {
-            self.camera = present::follow_view(
-                play.session.camera(),
-                pose.position,
-                alpha,
+            self.camera = present::reference_view(
+                play.session.camera_view(alpha, play.graphics),
                 self.level.visual.camera,
             );
         } else {
@@ -671,8 +672,11 @@ impl App {
             KeyCode::Space => (pad.a, taps.a) = (down, taps.a || down),
             KeyCode::KeyJ => (pad.b, taps.b) = (down, taps.b || down),
             KeyCode::KeyK => (pad.z, taps.z) = (down, taps.z || down),
-            KeyCode::ArrowLeft => pad.camera_left = down,
-            KeyCode::ArrowRight => pad.camera_right = down,
+            KeyCode::KeyE => (pad.r, taps.r) = (down, taps.r || down),
+            KeyCode::ArrowUp => (pad.c_up, taps.c_up) = (down, taps.c_up || down),
+            KeyCode::ArrowDown => (pad.c_down, taps.c_down) = (down, taps.c_down || down),
+            KeyCode::ArrowLeft => (pad.c_left, taps.c_left) = (down, taps.c_left || down),
+            KeyCode::ArrowRight => (pad.c_right, taps.c_right) = (down, taps.c_right || down),
             KeyCode::KeyR => {
                 if down && !repeat {
                     if let Err(e) = self.play.end_run(self.level.rom_sha1) {

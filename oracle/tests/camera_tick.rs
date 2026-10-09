@@ -20,9 +20,13 @@ use rustario64::{
         math::TrigTables,
     },
 };
+use rustario64::{
+    play::{Pad, Session, Stop},
+    trace::{CameraInput, InputLog},
+};
 use rustario64_oracle::{
     Oracle,
-    camera_trace::{GameScenario, RustStop, first_difference},
+    camera_trace::{GameScenario, RustStop, capture_game, first_difference},
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -621,33 +625,121 @@ fn camera_frames_are_identical_at_every_presentation_rate() {
     }
 }
 
+/// Held controls as a player gives them: segments of held directions,
+/// buttons, C buttons and R, with single-tick taps and releases between.
+fn held_controls(seed: u64, ticks: usize) -> Vec<Pad> {
+    let mut rng = Lcg(seed ^ 0x9AD);
+    let mut pad = Pad::default();
+    (0..ticks)
+        .map(|i| {
+            if i % 12 == 0 {
+                pad = Pad {
+                    up: rng.chance(2),
+                    down: rng.chance(6),
+                    left: rng.chance(4),
+                    right: rng.chance(4),
+                    walk: rng.chance(5),
+                    a: rng.chance(4),
+                    b: rng.chance(6),
+                    z: rng.chance(6),
+                    r: rng.chance(12),
+                    c_up: rng.chance(10),
+                    c_down: rng.chance(10),
+                    c_left: rng.chance(6),
+                    c_right: rng.chance(6),
+                };
+            } else if rng.chance(6) {
+                match rng.next() % 5 {
+                    0 => pad.a ^= true,
+                    1 => pad.b ^= true,
+                    2 => pad.z ^= true,
+                    3 => pad.c_left ^= true,
+                    _ => pad.c_right ^= true,
+                }
+            }
+            pad
+        })
+        .collect()
+}
+
+/// The viewer's play path: a `play::Session` driven by held controls logs
+/// its inputs (with the camera yaws Mario read); the decomp replaying that
+/// log with its own camera reports the session's words after every frame.
+/// Re-entering the level and playing the same controls gives the same words.
 #[test]
-#[ignore = "debugging aid"]
-fn dump_scenario() {
-    let name = std::env::var("SCENARIO").unwrap();
+fn played_sessions_with_the_camera_replay_exactly_in_the_decomp() {
     let stream = playground();
     let world = world(&stream);
     let trig = computed_tables();
-    let anims = authored_animations(0x5EED_0002);
-    let (_, yaw, pos, inputs) = scripted().into_iter().find(|s| s.0 == name).unwrap();
-    let s = scenario(&world, &trig, &anims, yaw, pos, 0);
-    let (rust, stop) = s.rust(&inputs);
-    let names = mode_names();
-    for (i, w) in rust.iter().enumerate() {
-        println!(
-            "{i:4} act {:#x} mode {} pos ({:.0},{:.0},{:.0}) floorType {} mag {} timer {:.3} spline3 {}",
-            w["m.action"],
-            names.get(&w["camera.c.mode"]).unwrap_or(&"?"),
-            f32::from_bits(w["m.pos[0]"]),
-            f32::from_bits(w["m.pos[1]"]),
-            f32::from_bits(w["m.pos[2]"]),
-            w["camera.geometry.currFloorType"] as i32,
-            w["camera.handheld.mag"] as i32,
-            f32::from_bits(w["camera.handheld.timer"]),
-            w["camera.handheld.spline[3].point[0]"] as i32,
+    let anims = authored_animations(0x5EED_0004);
+    let oracle = Oracle::load(&stream);
+    oracle.set_trig(trig.sine_table(), trig.arctan_table());
+    oracle.set_mario_animations(&anims);
+    let starts = [
+        (0, [0, 0, -1500]),
+        (90, [-2500, 0, 1000]),
+        (45, [1500, 0, -3000]),
+        (-90, [3500, 0, -1500]),
+        (180, [-4000, 0, 2000]),
+        (30, [0, 0, 1000]),
+    ];
+    let (mut frames, mut yaws, mut modes) = (0, BTreeSet::new(), BTreeSet::new());
+    for (seed, (yaw, pos)) in starts.into_iter().enumerate() {
+        let s = scenario(&world, &trig, &anims, yaw, pos, seed as u16);
+        let mut session = Session::new(&world, &trig, &anims, s.entry);
+        let initial = capture_game(session.game());
+        let controls = held_controls(seed as u64, 600);
+        let mut words = vec![initial];
+        for pad in &controls {
+            if !session.step(pad) {
+                break;
+            }
+            if matches!(session.stopped(), Some(Stop::Panic(_))) {
+                break;
+            }
+            words.push(capture_game(session.game()));
+        }
+        let log = session.input_log("test", "synthetic", "playground");
+        let log = InputLog::from_json(&log.to_json_pretty()).unwrap();
+        assert_eq!(log.camera, CameraInput::Reference);
+        let replayed = &log.inputs[..words.len() - 1];
+        let (rust, _) = s.rust(replayed);
+        assert!(
+            rust[..words.len()] == words[..],
+            "a replay of the log reaches the same states"
         );
+        // The yaw each logged frame records is the one the replay's Mario
+        // read: the camera's yaw after the previous frame.
+        for (i, input) in replayed.iter().enumerate() {
+            assert_eq!(
+                rust[i]["world.camera.yaw"] as i32 as i16,
+                input.camera_yaw,
+                "frame {} read a different camera yaw",
+                i + 1
+            );
+        }
+        let native = s.native(&oracle, replayed);
+        for (i, (expected, actual)) in native.iter().zip(&words).enumerate() {
+            if let Some(d) = first_difference(expected, actual) {
+                panic!("played session {seed}: frame {i}: {d}");
+            }
+            modes.insert(actual["camera.c.mode"]);
+        }
+        session.reset();
+        for (pad, expected) in controls.iter().zip(&words[1..]) {
+            assert!(session.step(pad));
+            assert!(&capture_game(session.game()) == expected);
+        }
+        frames += words.len() - 1;
+        yaws.extend(log.inputs.iter().map(|i| i.camera_yaw));
     }
-    println!("{stop:?}");
+    println!(
+        "played sessions with the camera: {frames} frames identical, {} camera yaws, modes {:?}",
+        yaws.len(),
+        modes
+    );
+    assert!(frames > 1500, "sessions stopped early: {frames} frames");
+    assert!(yaws.len() > 100, "the camera barely turned");
 }
 
 #[test]

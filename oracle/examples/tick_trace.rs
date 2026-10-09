@@ -1,23 +1,32 @@
-//! Owner-ROM native/Rust comparison of complete Mario ticks on BOB: the level
+//! Owner-ROM native/Rust comparison of complete frames on BOB: the level
 //! script's start, BOB's collision, the ROM's trig tables and Mario's
-//! animations. The inputs are a built-in 60-second program or a viewer
-//! recording (`--inputs`). Writes both traces to a new private directory.
+//! animations. The inputs are a built-in 60-second program (Mario's object
+//! with a recorded camera yaw, or with `--camera` the original camera too) or
+//! a viewer recording (`--inputs`; recordings with the reference camera
+//! replay with the camera linked). Writes both traces to a new private
+//! directory.
 use rustario64::{
     import::{animation, bob, collision, engine, mio0, rom::Rom, version},
     play::BOB_SCRIPT_START,
     presentation::GraphicsOptions,
     simulation::{
         TickInput,
+        camera::{D_CBUTTONS, L_CBUTTONS, R_CBUTTONS, U_CBUTTONS},
         collision::CollisionWorld,
-        controller::{A_BUTTON, B_BUTTON, Z_TRIG},
-        mario::tick::LevelEntry,
+        controller::{A_BUTTON, B_BUTTON, R_TRIG, Z_TRIG},
+        game::GameEntry,
     },
-    trace::{self, InputLog},
+    trace::{self, CameraInput, InputLog, Trace},
 };
-use rustario64_oracle::{Oracle, TickSetup, input_trace::world_digest, tick_trace::TickScenario};
+use rustario64_oracle::{
+    Oracle, TickSetup,
+    camera_trace::{GameScenario, RustStop, game_trace},
+    input_trace::world_digest,
+    tick_trace::TickScenario,
+};
 use std::{error::Error, fs, io::Write, path::Path};
 
-const USAGE: &str = "usage: cargo run -p rustario64-oracle --example tick_trace -- ROM NEW_PRIVATE_OUTPUT_DIR [--inputs RUN.inputs.json]";
+const USAGE: &str = "usage: cargo run -p rustario64-oracle --example tick_trace -- ROM NEW_PRIVATE_OUTPUT_DIR [--inputs RUN.inputs.json | --camera]";
 
 /// Sixty seconds cycling through idle, walking, jump chains, punches,
 /// crouch moves, a turning stick and slide kicks under a rotating camera yaw.
@@ -56,11 +65,39 @@ fn program() -> Vec<TickInput> {
         .collect()
 }
 
+/// The built-in program with the camera's buttons: C-Left/Right turns,
+/// C-Down zooms, C-Up first person (left with A), and the R camera.
+fn camera_program() -> Vec<TickInput> {
+    program()
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut input)| {
+            input.camera_yaw = 0;
+            input.buttons |= match i % 300 {
+                40 | 46 => L_CBUTTONS,
+                90 => R_CBUTTONS,
+                130 | 135 => D_CBUTTONS,
+                160 => U_CBUTTONS,
+                200 => U_CBUTTONS,
+                250 => A_BUTTON,
+                _ if (600..660).contains(&i) => R_TRIG,
+                _ => 0,
+            };
+            input
+        })
+        .collect()
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    let recording = match args.as_slice() {
-        [_, _] => None,
-        [_, _, flag, log] if flag == "--inputs" => Some(InputLog::from_json(&fs::read(log)?)?),
+    let (recording, camera) = match args.as_slice() {
+        [_, _] => (None, false),
+        [_, _, flag] if flag == "--camera" => (None, true),
+        [_, _, flag, log] if flag == "--inputs" => {
+            let log = InputLog::from_json(&fs::read(log)?)?;
+            let camera = log.camera == CameraInput::Reference;
+            (Some(log), camera)
+        }
         _ => return Err(USAGE.into()),
     };
     let rom = Rom::open(Path::new(&args[0]))?;
@@ -87,15 +124,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let oracle = Oracle::load(&stream);
     oracle.set_trig(trig.sine_table(), trig.arctan_table());
     oracle.set_mario_animations(&anims);
-    // The viewer's entry: BOB's script start, with the area camera's mode
-    // from its GEO_CAMERA node (radial).
-    let camera_mode = imported
+    // The viewer's entry: BOB's script start, with the area's camera node.
+    let node = imported
         .visual
         .as_ref()
         .and_then(|v| v.camera)
-        .ok_or("BOB's area has no camera node")?
-        .mode;
-    let entry = LevelEntry::script_start(&imported.level, camera_mode)?;
+        .ok_or("BOB's area has no camera node")?;
+    let game_entry = GameEntry::script_start(&imported.level, &node)?;
+    let entry = game_entry.mario;
     let (inputs, name) = match &recording {
         Some(log) => {
             if log.rom_sha1 != rom.fingerprint() {
@@ -110,8 +146,27 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             (log.inputs.clone(), "bob-script-start-recording")
         }
+        None if camera => (camera_program(), "bob-script-start-camera-60s"),
         None => (program(), "bob-script-start-full-tick-60s"),
     };
+    let out = Path::new(&args[1]);
+    if camera {
+        return compare_with_camera(
+            &oracle,
+            GameScenario {
+                collision: &world,
+                trig: &trig,
+                anims: &anims,
+                entry: game_entry,
+            },
+            &inputs,
+            recording.is_some(),
+            name,
+            rom.fingerprint(),
+            &world_digest(&stream, &trig),
+            out,
+        );
+    }
     let scenario = TickScenario {
         collision: &world,
         trig: &trig,
@@ -132,21 +187,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let reference = scenario.native(&oracle, inputs);
     let candidate = scenario.rust(inputs, 144, GraphicsOptions::default())?;
     trace::compare(&reference, &candidate)?;
-    let out = Path::new(&args[1]);
-    if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
-        fs::create_dir_all(parent)?;
-    }
-    fs::create_dir(out)?; // refuse existing directories, including symlinks
-    for (name, trace) in [
-        ("native-tick.trace.json", &reference),
-        ("rust-tick.trace.json", &candidate),
-    ] {
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(out.join(name))?;
-        file.write_all(&serde_json::to_vec_pretty(trace)?)?;
-    }
+    write_traces(out, &reference, &candidate)?;
     let source = if recording.is_some() {
         "recorded"
     } else {
@@ -168,6 +209,102 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
     println!(
         "Mario's object only: no other objects, reference camera, warps or particles. Comparisons are against the natively compiled decomp, not N64 execution."
+    );
+    Ok(())
+}
+
+fn write_traces(out: &Path, native: &Trace, rust: &Trace) -> Result<(), Box<dyn Error>> {
+    if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
+    }
+    fs::create_dir(out)?; // refuse existing directories, including symlinks
+    for (name, trace) in [
+        ("native-tick.trace.json", native),
+        ("rust-tick.trace.json", rust),
+    ] {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(out.join(name))?;
+        file.write_all(&serde_json::to_vec_pretty(trace)?)?;
+    }
+    Ok(())
+}
+
+/// Frames with the original camera linked on both sides. A recording's
+/// camera yaws must be the ones the replay's Mario reads.
+#[allow(clippy::too_many_arguments)]
+fn compare_with_camera(
+    oracle: &Oracle,
+    scenario: GameScenario<'_>,
+    inputs: &[TickInput],
+    recorded: bool,
+    name: &str,
+    rom_sha1: &str,
+    digest: &str,
+    out: &Path,
+) -> Result<(), Box<dyn Error>> {
+    let (rust, stop) = scenario.rust(inputs);
+    let frames = rust.len() - 1;
+    // A panicking frame has no words; a camera stop's frame completed.
+    let inputs = &inputs[..frames];
+    if inputs.is_empty() {
+        return Err("no complete frame to compare".into());
+    }
+    if recorded {
+        for (i, input) in inputs.iter().enumerate() {
+            let read = rust[i]["world.camera.yaw"] as i32 as i16;
+            if read != input.camera_yaw {
+                return Err(format!(
+                    "frame {}: the recording's camera yaw {} differs from the replay's {read}",
+                    i + 1,
+                    input.camera_yaw
+                )
+                .into());
+            }
+        }
+    }
+    let native = scenario.native(oracle, inputs);
+    let native = game_trace(
+        "native-decomp frame with camera",
+        rom_sha1,
+        digest,
+        name,
+        &scenario.entry,
+        inputs,
+        &native,
+    );
+    let candidate = game_trace(
+        "Rust frame with camera",
+        rom_sha1,
+        digest,
+        name,
+        &scenario.entry,
+        inputs,
+        &rust,
+    );
+    trace::compare(&native, &candidate)?;
+    write_traces(out, &native, &candidate)?;
+    let source = if recorded { "recorded" } else { "scripted" };
+    println!(
+        "{frames} {source} BOB frames with the original camera compare exactly (Mario and every camera word)."
+    );
+    match stop {
+        Some(RustStop::Panic(message)) => println!(
+            "The port stopped at frame {} on a path it does not support: {message}",
+            frames + 1
+        ),
+        Some(RustStop::Camera(message)) => {
+            println!("The camera reached a path it does not support at frame {frames}: {message}")
+        }
+        None => {}
+    }
+    println!(
+        "Wrote {}. Private ROM-derived traces; keep them out of Git.",
+        out.display()
+    );
+    println!(
+        "Mario's object and the area camera only: no other objects, cutscenes, warps or particles. Comparisons are against the natively compiled decomp, not N64 execution."
     );
     Ok(())
 }

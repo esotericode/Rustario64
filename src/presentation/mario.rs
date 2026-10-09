@@ -48,6 +48,10 @@ pub struct MarioPose {
     pub animation: Option<AnimationPose>,
     pub body: MarioBodyState,
     pub area_update_counter: u16,
+    /// The area camera is in C-Up mode, and the head rotation the camera
+    /// gives Mario there (gPlayerCameraState's headRotation).
+    pub camera_c_up: bool,
+    pub head_rotation: [i16; 3],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,6 +83,8 @@ impl MarioPose {
                 }),
             body: m.body,
             area_update_counter: w.area_update_counter,
+            camera_c_up: i16::from(w.camera.mode) == CAMERA_MODE_C_UP,
+            head_rotation: m.camera_status.head_rotation,
         }
     }
 }
@@ -307,14 +313,19 @@ impl Walk<'_> {
                 Some(Pending::Rotation([t[1], t[2], t[0]]))
             }
             MarioCallback::HeadRotation => {
-                // The C-up camera mode's head rotation needs the reference
-                // camera; outside it the head follows the body state.
-                let h = if body.action & ACT_FLAG_WATER_OR_TEXT != 0 {
-                    body.head_angle
+                // In C-Up the head follows the camera's look. The original
+                // leaves the node's middle angle as last written there; it is
+                // drawn as zero, what the other branches leave it before C-Up.
+                let rotation = if self.pose.camera_c_up {
+                    let h = self.pose.head_rotation;
+                    [h[1], 0, h[0]]
+                } else if body.action & ACT_FLAG_WATER_OR_TEXT != 0 {
+                    let h = body.head_angle;
+                    [h[1], h[2], h[0]]
                 } else {
                     [0; 3]
                 };
-                Some(Pending::Rotation([h[1], h[2], h[0]]))
+                Some(Pending::Rotation(rotation))
             }
             MarioCallback::RotateWingCapWings => {
                 let counter = i32::from(self.pose.area_update_counter);
@@ -919,6 +930,8 @@ mod tests {
                 ..MarioBodyState::default()
             },
             area_update_counter: 0,
+            camera_c_up: false,
+            head_rotation: [0; 3],
         }
     }
 

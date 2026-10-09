@@ -360,7 +360,7 @@ pub fn capture(m: &MarioState, w: &StepWorld<'_>) -> BTreeMap<String, u32> {
 /// The trace state for one frame's words. The schema's fixed fields repeat
 /// the words they name; `rng` is unused (the ported code draws no random
 /// numbers; audio variants read gAudioRandom, a recorded input).
-fn tick_state(fields: BTreeMap<String, u32>) -> TickState {
+pub(crate) fn tick_state(fields: BTreeMap<String, u32>) -> TickState {
     let word = |name: &str| {
         *fields
             .get(name)

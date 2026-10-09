@@ -6,10 +6,11 @@
 //! is copied between the sides after the level entry.
 use crate::{
     Oracle, TickSetup,
-    tick_trace::{Words, capture},
+    tick_trace::{Words, capture, tick_state},
 };
 use rustario64::{
     content::animation::MarioAnimations,
+    import::version,
     simulation::{
         FixedClock, TickInput,
         camera::system::CameraSystem,
@@ -17,6 +18,7 @@ use rustario64::{
         game::{Game, GameEntry},
         math::TrigTables,
     },
+    trace::{Frame, Metadata, TRACE_SCHEMA, Trace},
 };
 use std::{collections::BTreeMap, time::Duration};
 
@@ -427,4 +429,49 @@ pub fn first_difference(
         .keys()
         .find(|name| !expected.contains_key(*name))
         .map(|name| format!("{name}: missing from the native words"))
+}
+
+/// A schema-1 trace of linked frames: `words[0]` is the entry, `words[i]`
+/// follows `inputs[i - 1]`.
+pub fn game_trace(
+    producer: &str,
+    rom_sha1: &str,
+    world_digest: &str,
+    scenario: &str,
+    entry: &GameEntry,
+    inputs: &[TickInput],
+    words: &[BTreeMap<String, u32>],
+) -> Trace {
+    assert_eq!(words.len(), inputs.len() + 1);
+    Trace {
+        schema: TRACE_SCHEMA,
+        producer: producer.into(),
+        metadata: Metadata {
+            rom_sha1: rom_sha1.into(),
+            reference_revision: version::REFERENCE_REVISION.into(),
+            reference_configuration: "full-frame-camera-v1; native C IEEE/fwrapv/no-FMA/AVOID_UB; \
+                Mario's object and the area camera (update_camera, no triggers); level entry \
+                without warp from a fresh boot; camera yaw produced by the camera; sound, warp \
+                and particle calls recorded as events; debug pages off"
+                .into(),
+            scenario: scenario.into(),
+            tick_rate: 30,
+            course: 1,
+            area: entry.mario.spawn.area_index as u8,
+            act: entry.act_num as u8,
+            initial_world_digest: world_digest.into(),
+            gameplay_options: BTreeMap::new(),
+            initial_state: tick_state(words[0].clone()),
+        },
+        frames: inputs
+            .iter()
+            .zip(&words[1..])
+            .enumerate()
+            .map(|(i, (input, words))| Frame {
+                tick: i as u64 + 1,
+                input: *input,
+                state: tick_state(words.clone()),
+            })
+            .collect(),
+    }
 }

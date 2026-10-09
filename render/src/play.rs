@@ -1,52 +1,41 @@
-//! Presentation for the core's play session (`rustario64::play`): where the
-//! follow camera's eye goes, Mario's posed model in the renderer, and a
+//! Presentation for the core's play session (`rustario64::play`): the view
+//! the original camera computed, Mario's posed model in the renderer, and a
 //! placeholder for when his model is unavailable. Nothing here reaches the
-//! simulation; the camera yaw the tick reads comes from the session's
-//! `FollowCamera`, which turns only once per tick.
+//! simulation; the camera itself runs in the session's frames.
 use crate::{Renderer, camera::FlyCamera};
 use rustario64::{
     content::visual::{
         BlendMode, CombinerCycle, DrawBatch, GeoCamera, LAYER_OPAQUE, Material, VisualModel,
         VisualVertex,
     },
-    play::FollowCamera,
+    play::CameraView,
     presentation::mario::MarioFrame,
 };
 use std::{collections::HashMap, f32::consts::PI};
-
-/// How far behind and above Mario the follow camera's eye sits.
-pub const FOLLOW_DISTANCE: f32 = 1000.0;
-pub const FOLLOW_HEIGHT: f32 = 400.0;
-/// The camera looks at this height above Mario's feet.
-pub const FOLLOW_FOCUS_HEIGHT: f32 = 120.0;
 
 /// Original angle units to radians.
 pub fn radians(angle: i16) -> f32 {
     f32::from(angle) * PI / 32768.0
 }
 
-/// A presentation camera behind `focus` (Mario's interpolated position) at
-/// the follow camera's interpolated yaw, with the area camera's frustum.
-pub fn follow_view(
-    camera: &FollowCamera,
-    focus: [f32; 3],
-    alpha: f32,
-    frustum: Option<GeoCamera>,
-) -> FlyCamera {
-    let yaw = radians(camera.presentation_yaw(alpha));
-    let eye = [
-        focus[0] + yaw.sin() * FOLLOW_DISTANCE,
-        focus[1] + FOLLOW_HEIGHT,
-        focus[2] + yaw.cos() * FOLLOW_DISTANCE,
-    ];
-    let target = [focus[0], focus[1] + FOLLOW_FOCUS_HEIGHT, focus[2]];
-    let mut view = FlyCamera::looking_at(eye, target);
+/// The renderer camera for the original camera's view: Lakitu's position
+/// looking at his focus, the perspective node's field of view, the area
+/// frustum's near and far planes, and the screen roll. Before the first
+/// frame's render pass sets it, the perspective node holds the geo layout's
+/// field of view.
+pub fn reference_view(view: CameraView, frustum: Option<GeoCamera>) -> FlyCamera {
+    let mut camera = FlyCamera::looking_at(view.pos, view.focus);
+    camera.fov_y_degrees = if view.fov > 0.0 {
+        view.fov
+    } else {
+        frustum.map_or(45.0, |f| f32::from(f.fov_degrees))
+    };
+    camera.roll = radians(view.roll);
     if let Some(original) = frustum {
-        view.fov_y_degrees = f32::from(original.fov_degrees);
-        view.near = f32::from(original.near);
-        view.far = f32::from(original.far);
+        camera.near = f32::from(original.near);
+        camera.far = f32::from(original.far);
     }
-    view
+    camera
 }
 
 /// geo_process_level_of_detail's distance: the depth of Mario's origin in
@@ -162,23 +151,15 @@ pub fn marker() -> VisualModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustario64::play::Pad;
 
     #[test]
-    fn follow_view_sits_behind_mario_and_interpolates_its_yaw() {
-        // Behind a Mario facing +X is toward -X.
-        let mut camera = FollowCamera::behind(0x4000);
-        let view = follow_view(&camera, [0.0; 3], 1.0, None);
-        assert!(view.position[0] < -900.0 && view.position[2].abs() < 1.0);
-        assert!(view.position[1] > 0.0 && view.forward()[0] > 0.9);
-        camera.advance(&Pad {
-            camera_left: true,
-            ..Pad::default()
-        });
-        // Halfway between ticks the presentation yaw is halfway.
-        let half = follow_view(&camera, [0.0; 3], 0.5, None).position[2];
-        let full = follow_view(&camera, [0.0; 3], 1.0, None).position[2];
-        assert!(half > 0.0 && half < full);
+    fn reference_view_looks_from_lakitu_at_the_focus_with_the_frustum() {
+        let view = CameraView {
+            pos: [0.0, 500.0, 1000.0],
+            focus: [0.0, 500.0, 0.0],
+            roll: 0x4000,
+            fov: 30.0,
+        };
         let frustum = GeoCamera {
             mode: 1,
             position: [0; 3],
@@ -189,10 +170,23 @@ mod tests {
             callback: 0,
             perspective_callback: None,
         };
+        let camera = reference_view(view, Some(frustum));
+        assert_eq!(camera.position, view.pos);
+        assert!((camera.forward()[2] + 1.0).abs() < 1e-6);
         assert_eq!(
-            follow_view(&camera, [0.0; 3], 1.0, Some(frustum)).far,
-            12800.0
+            (camera.fov_y_degrees, camera.near, camera.far),
+            (30.0, 100.0, 12800.0)
         );
+        assert!((camera.roll - PI / 2.0).abs() < 1e-6);
+        // A quarter-turn roll maps view-space right onto up.
+        let m = camera.view();
+        let right = camera.right();
+        let y: f32 = (0..3).map(|k| m[k][1] * right[k]).sum();
+        assert!((y - 1.0).abs() < 1e-5, "{y}");
+        // Before the first render pass, the frustum's field of view.
+        let entry = CameraView { fov: 0.0, ..view };
+        assert_eq!(reference_view(entry, Some(frustum)).fov_y_degrees, 45.0);
+        assert_eq!(reference_view(entry, None).fov_y_degrees, 45.0);
     }
 
     #[test]

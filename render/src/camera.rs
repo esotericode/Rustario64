@@ -1,6 +1,7 @@
-//! Development viewing cameras. These are presentation-only free cameras for
-//! inspecting imported levels; they are not the original Lakitu/Mario camera and
-//! never feed movement input or any authoritative state.
+//! Viewing cameras for the renderer. `FlyCamera` is either a presentation-only
+//! free camera for inspecting imported levels, or the view the original camera
+//! computed (`play::reference_view`); either way it is only drawn from and
+//! never feeds movement input or any authoritative state.
 use crate::math::{self, Mat4};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -13,6 +14,9 @@ pub struct FlyCamera {
     pub fov_y_degrees: f32,
     pub near: f32,
     pub far: f32,
+    /// Screen roll in radians, counterclockwise on screen (the original
+    /// camera's rollScreen).
+    pub roll: f32,
 }
 
 impl FlyCamera {
@@ -26,6 +30,7 @@ impl FlyCamera {
             fov_y_degrees: 45.0,
             near: 100.0,
             far: 30000.0,
+            roll: 0.0,
         }
     }
 
@@ -47,7 +52,20 @@ impl FlyCamera {
             self.position[1] + f[1],
             self.position[2] + f[2],
         ];
-        math::look_at(self.position, target, [0.0, 1.0, 0.0])
+        let view = math::look_at(self.position, target, [0.0, 1.0, 0.0]);
+        if self.roll == 0.0 {
+            return view;
+        }
+        // Rotate eye space about the view axis, as the original's screen
+        // roll matrix does ahead of the projection.
+        let (s, c) = self.roll.sin_cos();
+        let roll = [
+            [c, s, 0.0, 0.0],
+            [-s, c, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        math::mul(&roll, &view)
     }
 
     pub fn projection(&self, aspect: f32) -> Mat4 {
