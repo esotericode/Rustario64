@@ -100,7 +100,10 @@ mod tests {
 
     #[test]
     fn original_update_order_preserves_ids_and_omits_unused_lists() {
-        assert_eq!(UPDATE_ORDER.map(|list| list as u8), [11, 9, 10, 0, 5, 4, 2, 6, 8, 12]);
+        assert_eq!(
+            UPDATE_ORDER.map(|list| list as u8),
+            [11, 9, 10, 0, 5, 4, 2, 6, 8, 12]
+        );
         for (index, list) in UPDATE_ORDER.iter().enumerate() {
             assert!(!UPDATE_ORDER[..index].contains(list));
         }
