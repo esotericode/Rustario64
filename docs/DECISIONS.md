@@ -478,3 +478,126 @@ controls; the viewer maps keys and draws.
   the initial case). The decoder's field is now `num_cases`, and the static
   model builder draws case 0 for switches it cannot run; BOB's models have no
   switches, so its import is unchanged.
+
+## Reference camera foundation — 2026-10-09
+
+`simulation::camera` ports 33 functions from the same pinned CC0 camera.c:
+scalar/vector approaches, C-button precedence, angle/distance/rotation helpers,
+strict rotated trigger bounds, area clamps, camera wall/vertical corrections,
+Mario's camera geometry queries, slope pitch, floor/water height offsets,
+focus placement and radial goal construction. No new runtime dependency.
+Globals are explicit parameters or `RadialState`; collision flags are passed
+by mutable reference where the original changes them. The core stays GPU-free.
+
+Important source behaviors are preserved: integer promotions before division,
+s16 stores and wraparound (including MIN increments/divisors), pointer and
+value float-approach forms differing on multipliers above 1, camera-filtered
+surface types but gameplay-filtered heights, last-wall reuse in
+`collide_with_walls`, and the repeated water query. An intangible floor with
+no lower contact retains a height in the original collision query; camera.c
+then dereferences NULL. Rust panics with an explicit message on that boundary,
+rather than supplying a made-up surface type. Pole height offsets require
+objects and panic before dispatch.
+
+The development oracle compiles generated verbatim excerpts of those functions
+with the original headers; an authored adapter holds the same process-wide
+lock as all other C comparisons. `RadialGoal` is an intermediate goal, not a
+complete camera tick. BOB's `sCamBOB` table is explicitly unused in the pinned
+source and is not activated here. The full mode dispatcher, radial/free-roam
+movement, obstruction rotation, zoom and initialization still need independent
+state and complete per-tick comparisons. The persistent Lakitu/transition stage
+is now implemented and documented below. The
+viewer continues to use its labeled follow camera. No partial reference mode
+is advertised as faithful, and no graphics setting changes movement inputs.
+
+## Desktop playtesting and GUI — 2026-10-09
+
+Windows x86_64 and Linux x86_64 are early distribution targets. CI builds the
+two runtime binaries natively on Windows Server 2025 and Ubuntu 24.04, without
+building the C oracle; native core tests run on both. The Linux headless job
+still owns the native-C/GPU comparison suite. Windows native oracle fidelity
+is not implied by a successful Windows runtime build.
+
+`tools/package_desktop.py` uses an explicit file allowlist: runtime binaries,
+playtest instructions, project/upstream licenses and provenance. It collects
+third-party notices from Cargo's target-filtered runtime dependency graph
+(excluding dev dependencies and the oracle), fails if license files are absent,
+and includes the notices in the ZIP. It never recursively packages a checkout,
+target directory, ROM, cache or trace. ZIPs are CI artifacts for review/testing,
+not public release announcements. Physical GPU/driver and desktop OS smoke tests
+remain separate from compile and authored-fixture evidence.
+
+Before broader human movement testing, add a small launcher and pause/settings
+UI in the application/render crate. The launch flow selects a local ROM,
+validates its existing fingerprint adapter, shows useful errors and starts BOB;
+remembering the local path must be opt-in. Keep settings/saves outside asset
+caches. Use the existing winit/wgpu window and select a permissively licensed UI
+and native-dialog library only after verifying compatibility with the pinned
+wgpu release; no extra engine/framework dependency is added speculatively.
+Graphics controls read/write presentation options only. Camera, input and future
+gameplay modes must remain separate, named and included in replay metadata.
+Opening settings must pause ticks, clear elapsed backlog on resume, and release
+held/latching input so menu keys cannot cause gameplay actions. These behaviors
+need replay/pause regression checks before the UI ships.
+
+## Persistent Lakitu and transitions — 2026-10-09
+
+`simulation::camera::lakitu` owns the persistent camera/Lakitu/transition state.
+It translates `update_lakitu`, `next_lakitu_state`, level-oriented mode
+transitions, deterministic pitch/yaw/roll shakes, hit-shake requests and FOV
+shake setup from the same CC0 revision. Mode controllers supply goals before
+this stage; `last_frame_action` is written by the outer camera update afterward.
+These stages are separate because their ordering affects yaw, transitions and
+Mario's future inputs. No runtime dependency or frame-rate smoothing is added.
+
+Preserve the source's compound float-to-angle conversion (truncate the whole
+sum, then narrow), the special -0x8000 shake phase, pitch reconstruction when
+only yaw shakes, asymmetric phase ordering, collision-filter flags that remain
+set on corrected/missing floors, and final pitch clamp/mode copy even while
+paused. The 94-word comparison record includes every modeled value read/written
+by this stage and transition/hit setup, plus collision flags. Authored transport
+generation shares field names/layout only; C and Rust behavior remain independent.
+
+Active RNG-driven handheld shake and shock requests return `Unsupported` before
+state mutation. Decay of existing handheld angle offsets with no active random
+request is supported. The native adapter compiles full verbatim handheld/spline/
+random-vector excerpts but aborts if an unavailable RNG call is reached. Its hit
+function is renamed during preprocessing so the separate Mario tick harness
+continues recording camera requests without applying them. FOV setup is compared;
+the perspective node's FOV animation/rendering is not implemented here.
+
+Authored goals and Mario paths drive persistent comparisons. Owner-ROM tests use
+BOB collision, original trig tables and the imported spawn; they do not run the
+complete mode dispatcher or validate original camera-relative Mario play. The
+viewer is unchanged. Wall-avoidance/rotation and radial movement/zoom now have
+the compared stage described below. Next: full radial and free-roam mode
+controllers, course surface selection and initialization; then compare combined
+camera-and-Mario ticks before replacing the viewer's follow camera.
+
+## Camera obstruction and radial movement — 2026-10-09
+
+`simulation::camera::obstruction` owns camera.c's vertex-based surface tests and
+eight-probe wall scan. It calls the existing original collision query, preserving
+the capped coarse radius, fine-radius growth only after a coarse hit, repeated
+queries from the original probe, last-wall selection, near-wall flag clearing
+and low-wall exclusion. Recompute the unnormalized integer cross product for
+behind-surface tests; cached normalized plane tests change boundary rounding.
+Integer products wrap under the native oracle's existing `-fwrapv` contract.
+
+`simulation::camera::radial::RadialMovement` holds the area center and second
+rotation flags. Shared movement/status/zoom/offset fields stay in `Rig`, so
+controllers and Lakitu stages use one authoritative copy. Rotation surface entry,
+return-to-middle, first/second rotation limits, obstruction limits, stationary
+camera behavior, outward offsets and zoom follow the source, including conflicting
+rotation flags and promoted (not prematurely narrowed) angle comparisons.
+Other areas' outward-offset branches are retained and component-tested; this
+does not enable those courses.
+
+Native comparisons initialize each side once, then independently compose radial
+movement, zoom, existing radial goals and Lakitu updates. An authored zoom event
+toggles each side's own flags; no Rust result repairs native state between stages.
+Record all 94 shared words plus second-rotation flags, area yaw and collision
+flags. This composition deliberately omits mode input, camera height/pan, free
+roam, surface-mode selection, initialization and outer dispatch. Those need their
+own comparisons before this replaces the viewer camera. The runtime remains
+entirely Rust; generated C excerpts are development-only, with pinned hashes.

@@ -234,3 +234,29 @@ test poses 90 played BOB ticks (idle, running, jumping onto the cannon mound),
 with every vertex within 500 units of Mario. Offscreen screenshots and Xvfb
 window captures of idle, running and jumping Mario were inspected; they are
 visual checks, not fidelity evidence.
+
+## Attached-ROM recheck and Lakitu stage — 2026-10-09
+
+The newly attached ROM again validates as supported US v1.0 (the normalized
+SHA-1 above). The release workspace/all-target suite with `--include-ignored`
+and `RUSTARIO64_REQUIRE_GPU=1` passes all 121 tests, with zero failures/ignored.
+This reruns import/model/animation digests, collision, math, Mario input/step/
+full-tick comparisons, played-session replay, and camera components. Both source
+rebuild tools for Mario animations/model pass again. Fresh offscreen 0/90-tick
+screenshots render on llvmpipe; the 90-tick image was inspected. No new windowed
+or physical-GPU test is claimed.
+
+The camera component check passes 20,000 BOB positions x four incoming collision
+flag combinations. The new persistent Lakitu stage passes 20,000 randomized
+states x four flag combinations (94 exact modeled state words plus flags),
+and 3,600-step sequences at five presentation rates with interpolation on/off
+(36,000 compared ticks). All use BOB collision and original ROM trig tables;
+the sequence origin comes from the imported level start. Mode goals and Mario
+paths in this test are authored inputs, not the full original camera dispatcher.
+This does not validate original camera-relative movement; the viewer retains
+its approximate follow camera. See [FIDELITY.md](FIDELITY.md).
+
+ROM, decoded assets, images and state records remain local and untracked. Native
+host C is still the comparison implementation; original-execution traces are
+unavailable. Windows/Linux build/package jobs at `be65225` both pass; human
+GPU/driver/controller checks and the ROM-picker/settings GUI remain pending.

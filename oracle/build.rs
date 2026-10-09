@@ -5,6 +5,7 @@ fn main() {
     let files = [
         "c/oracle.c",
         "c/tick.c",
+        "c/camera_unit.c",
         "c/constants.c",
         "c/runtime_glue.c",
         "c/interaction_unit.c",
@@ -69,6 +70,7 @@ fn main() {
         "c/excerpts",
         "c/runtime.h",
         "c/constants.inc.c",
+        "c/lakitu_state.inc.c",
     ] {
         println!("cargo:rerun-if-changed={dir}");
     }

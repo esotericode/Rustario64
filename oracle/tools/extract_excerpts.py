@@ -22,6 +22,50 @@ OUT = Path(__file__).resolve().parent.parent / "c" / "excerpts"
 # (excerpt file, upstream path, authored includes, items). An item is
 # ("function", name), ("line", exact text), or ("range", first line, last line).
 EXCERPTS = [
+    ("camera.c", "src/game/camera.c",
+     ['"sm64.h"', '"engine/math_util.h"', '"engine/surface_collision.h"',
+      '"game/object_list_processor.h"', '"game/level_update.h"',
+      '"game/camera.h"', '"camera_boundary.h"'],
+     [("line", "#define CBUTTON_MASK (U_CBUTTONS | D_CBUTTONS | L_CBUTTONS | R_CBUTTONS)"),
+      ("line", "struct PlayerGeometry sMarioGeometry;"),
+      ("line", "struct Camera *gCamera;"),
+      ("line", "s16 sStatusFlags;"), ("line", "s16 sAreaYaw;"),
+      ("line", "s16 sLakituDist;"), ("line", "s16 sLakituPitch;"),
+      ("line", "s16 sModeOffsetYaw;"), ("line", "s32 gCurrLevelArea = 0;"),
+      ("line", "struct PlayerCameraState *sMarioCamState = &gPlayerCameraState[0];"),
+      *[("line", line) for line in [
+          "struct LakituState gLakituState;", "struct CameraFOVStatus sFOVState;",
+          "struct TransitionInfo sModeTransition;", "struct ModeTransitionInfo sModeInfo;",
+          "Vec3f sOldPosition;", "Vec3f sOldFocus;", "Vec3f sPlayer2FocusOffset;",
+          "s16 sYawSpeed = 0x400;", "s16 sCUpCameraPitch;", "s16 sAreaYawChange;",
+          "f32 sPanDistance;", "f32 sCannonYOffset;", "s16 unusedSplinePitch;",
+          "s16 unusedSplineYaw;", "struct HandheldShakePoint sHandheldShakeSpline[4];",
+          "s16 sHandheldShakeMag;", "f32 sHandheldShakeTimer;", "f32 sHandheldShakeInc;",
+          "s16 sHandheldShakePitch;", "s16 sHandheldShakeYaw;", "s16 sHandheldShakeRoll;",
+          "s16 s2ndRotateFlags;",
+      ]],
+      *[("function", name) for name in [
+          "find_c_buttons_pressed", "approach_f32_asymptotic_bool", "approach_f32_asymptotic",
+          "set_or_approach_f32_asymptotic", "approach_s16_asymptotic_bool",
+          "approach_s16_asymptotic", "approach_vec3f_asymptotic", "approach_vec3s_asymptotic",
+          "set_or_approach_vec3f_asymptotic", "camera_approach_s16_symmetric_bool",
+          "camera_approach_s16_symmetric", "set_or_approach_s16_symmetric",
+          "camera_approach_f32_symmetric_bool", "camera_approach_f32_symmetric",
+          "calculate_pitch", "calculate_yaw", "calculate_angles", "calc_abs_dist",
+          "calc_hor_dist", "rotate_in_xz", "rotate_in_yz", "scale_along_line",
+          "clamp_pitch", "is_pos_in_bounds", "clamp_positions_and_find_yaw",
+          "find_in_bounds_yaw_wdw_bob_thi", "collide_with_walls",
+          "resolve_geometry_collisions", "find_mario_floor_and_ceil", "look_down_slopes",
+          "calc_y_to_curr_floor", "focus_on_mario", "update_radial_camera",
+          "transition_next_state", "transition_to_camera_mode", "next_lakitu_state",
+          "set_camera_pitch_shake", "set_camera_yaw_shake", "set_camera_roll_shake",
+          "increment_shake_offset", "shake_camera_pitch", "shake_camera_yaw", "shake_camera_roll",
+          "set_fov_shake", "set_camera_shake_from_hit", "evaluate_cubic_spline",
+          "random_vec3s", "shake_camera_handheld", "update_lakitu",
+          "calc_avoid_yaw", "is_surf_within_bounding_box", "is_behind_surface",
+          "is_range_behind_surface", "is_mario_behind_surface", "rotate_camera_around_walls",
+          "offset_yaw_outward_radial", "radial_camera_move", "lakitu_zoom",
+          "pan_ahead_of_player"]]]),
     ("game_init.c", "src/game/game_init.c",
      ['"sm64.h"', '"game/game_init.h"'],
      [("function", "adjust_analog_stick")]),
@@ -109,7 +153,8 @@ def extract(lines, item, path):
         end = next(i for i in range(start[0], len(lines)) if lines[i] == item[2])
         return "\n".join(lines[start[0]:end + 1]) + "\n"
     name = item[1]
-    pattern = re.compile(r"^[A-Za-z_][\w \*]*\b" + re.escape(name) + r"\(")
+    # Return-type macros such as BAD_RETURN(f32) occur in camera.c.
+    pattern = re.compile(r"^[A-Za-z_][\w \*()]*\b" + re.escape(name) + r"\(")
     starts = []
     for i, line in enumerate(lines):
         if pattern.match(line):

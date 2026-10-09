@@ -48,6 +48,8 @@ GROUPS = [
     (r"LEVEL_\w+", "i16"),
     (r"CAMERA_MODE_\w+", "i16"),
     (r"CAM_MOVE_\w+", "u16"),
+    (r"CAM_FLAG_\w+", "i16"),
+    (r"AREA_\w+", "i32"),
     (r"CAM_EVENT_\w+", "i16"),
     (r"SHAKE_\w+", "i16"),
     (r"INT_STATUS_\w+", "u32"),

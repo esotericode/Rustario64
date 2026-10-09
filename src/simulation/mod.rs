@@ -1,4 +1,5 @@
 //! Fixed cadence, input edges, and original collision. No approximate Mario equations.
+pub mod camera;
 pub mod collision;
 pub mod controller;
 pub mod mario;

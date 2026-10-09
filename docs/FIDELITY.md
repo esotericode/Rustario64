@@ -4,10 +4,12 @@ Mario's movement now has **per-tick coverage against the natively compiled
 decomp**: complete frames of Mario alone (input stage, every non-object action
 group, Mario's object update and the animation frame advance) match bit for bit
 on an authored playground and on Bob-omb Battlefield with the owner ROM's data.
-That is not yet coverage against original N64 execution, and the camera,
+That is not yet coverage against original N64 execution, and the complete camera update,
 objects, interactions with objects, cutscene/submerged actions and RNG-driven
 behaviors have **zero validated coverage**. Collision, math, physics steps and
-pre-action inputs also keep their component suites. The viewer's Mario mode
+pre-action inputs also keep their component suites. Camera helpers and radial
+goal construction have native component checks; the persistent Lakitu/transition
+stage also has per-tick native comparisons (Camera sections below). The viewer's Mario mode
 runs the same tick, and its recorded runs replay exactly in the decomp (Played
 sessions below). Mario's drawn model is presentation: it reads completed ticks
 and is checked as imported content (ROM_VALIDATION.md), not compared per tick;
@@ -291,3 +293,141 @@ stops at the same boundaries as the suites (unsupported paths and warps).
    libsm64 remains excluded as a fidelity oracle because it changes collision
    ordering. A finite exact suite covers its cases and platforms, not all
    behavior.
+
+## Camera components (2026-10-09)
+
+`simulation::camera` is a direct translation of 33 camera.c helpers, including
+radial goal construction. The native oracle compiles verbatim excerpts generated
+by `oracle/tools/extract_excerpts.py`; item hashes are in oracle/README.md.
+All equality checks use original integer widths and exact float bits.
+
+The authored suite covers every initial s16 value with ten signed increments/
+divisors, two smooth/snap states and five approach operations; signed extremes
+exercise C promotions. Float cases include signed zero, subnormals, extreme
+finite values, negative increments and multipliers above one. All 4,096
+C-button history/pressed/held combinations also run with unrelated high bits.
+Vector/angle/distance, in-place rotation, pitch reconstruction, strict trigger
+faces and all four area clamps compare independently against native C.
+An authored terrain covers overlapping walls, camera-only/ignored surfaces,
+slopes, tight floor/ceiling gaps, water and missing contacts. Camera geometry,
+wall correction, vertical resolution and radial goals compare for four incoming
+collision-flag combinations. The retained-height NULL-floor boundary panics;
+the C side is not invoked on the original crashing path.
+
+A persistent 3,600-step helper sequence runs at 15/30/60/120/144 Hz with
+presentation interpolation on and off, comparing its position, yaw and C-button
+state after each step. This is an authored component sequence, **not**
+`update_camera`, `mode_radial_camera` or `update_lakitu`, and does not validate
+original camera-relative Mario movement. The viewer's follow camera is unchanged.
+
+```sh
+cargo test --locked -p rustario64-oracle --test camera -- --nocapture
+cargo test --locked --release -p rustario64-oracle --test camera -- --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test camera bob_camera_components -- --ignored --nocapture
+```
+
+The owner-ROM camera check imports BOB's raw collision and original trig tables.
+The ROM attached on 2026-10-09 validates as supported US v1.0 and passes all
+20,000 positions x four collision-flag combinations. The complete reference
+camera and original-N64 execution remain unvalidated.
+
+Fresh authored checks pass in debug and release (eight tests, one owner-ROM
+test ignored). Deliberately changing strict trigger bounds to inclusive bounds
+or last-wall reuse to first-wall reuse fails the intended native comparison.
+Both mutations are reverted; the restored suite passes.
+
+## Persistent Lakitu stage (2026-10-09)
+
+`simulation::camera::lakitu` translates `update_lakitu`, `next_lakitu_state`,
+level-oriented transition setup, deterministic pitch/yaw/roll shakes, damage
+shake priority and FOV shake setup. Its mode goals are explicit inputs. The
+native adapter compiles verbatim originals; after initialization, native and
+Rust state persist independently. Exact comparison covers 94 modeled words
+(camera goals/yaw, current/render Lakitu state, speeds, shakes, transitions,
+mode/status fields and helper globals) and the two collision flags after every
+tick. The shared generated layout only transports fields; it contains no camera
+algorithm or expected state.
+
+Checks pass for 10,000 randomized states x four collision-flag combinations on
+authored terrain and 20,000 x four on BOB's real collision/original ROM tables.
+Each terrain also runs a 3,600-tick persistent sequence at 15/30/60/120/144 Hz,
+with interpolation on and off (36,000 compared ticks per terrain). Authored
+mode goals and Mario paths exercise moving transition origins, mode changes,
+dive edges, interrupted/repeated transitions, signed shake phases and speed
+recovery. Mode-change tests cover init-frame suppression, mode restoration,
+flag clearing and damage-shake priority. A separate assertion covers retained
+camera-filter flags when the rendered camera is floor-corrected or finds no
+floor. Random requests are rejected before state changes.
+
+```sh
+cargo test --locked -p rustario64-oracle --test lakitu -- --nocapture
+cargo test --locked --release -p rustario64-oracle --test lakitu -- --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test lakitu -- --include-ignored --nocapture
+python3 oracle/tools/lakitu_layout.py --check
+```
+
+This is **not** `update_camera` coverage: initialization, surface-based mode
+selection, complete radial/free-roam mode controllers,
+C-Up/R-trigger handling, cutscene dispatch and the original RNG remain missing.
+Active handheld/random shock requests are explicit unsupported boundaries;
+existing handheld angle offsets decay when no random request is active.
+FOV setup is compared, not the perspective node's FOV animation or rendering.
+The outer update must write `last_frame_action` after this stage; tests compare
+that assignment separately. Original camera-relative Mario movement is not
+validated, and the viewer continues using its approximate follow camera.
+
+Deliberately truncating a float shake increment before adding it to the angle
+fails the native comparison; unconditionally clearing the camera-floor flag
+fails the independent flag assertion. Both changes are reverted, and the
+restored authored/owner-ROM stage suites pass.
+
+## Camera obstruction and radial stages (2026-10-09)
+
+The Rust obstruction and radial modules translate nine additional original
+functions (the Mario-behind-surface wrapper is inlined). Verbatim excerpts from
+the same pinned revision provide the native behavior. Helpers use original
+integer products, strict extent checks, surface exclusions and signed sectors.
+The wall scan preserves eight probes, coarse/fine query ordering, last-wall
+selection and the source radius clamp. Radial movement preserves surface-entry
+flags, conflicting rotations, first/second turn limits, stationary behavior,
+promoted angle comparisons, outward offsets and zoom narrowing.
+
+| Comparison | Authored fixtures | Owner ROM |
+| --- | --- | --- |
+| Avoid yaw | Every s16 starting yaw with ten relative boundary angles (655,360 cases) | Existing helper uses original integer angles; no ROM needed |
+| Vertex/sector tests | Loaded authored surfaces, exact-plane/reversed winding, 149/150/151-unit walls and 20,000 randomized vertex/bounds cases, including full s16 coordinates | Real BOB walls exercised through obstruction scans |
+| Obstruction scan | 10,000 generated pairs × four query-flag combinations (40,000); all three outcomes occur; targeted low/ignored/near/clear walls | 20,000 × four (80,000), original BOB collision and ROM tables |
+| Radial rotation, outward offsets and zoom | 20,000 states; floor transitions, both modes, first/second flags, signed extremes and fractional distance bounds; persistent surface turns reach source limits | 40,000 states |
+| Persistent movement → zoom → radial goals → Lakitu | 1,800 ticks at 15/30/60/120/144 Hz with interpolation off/on (18,000 ticks); all shared words compared after each stage | Same 18,000 composed ticks on BOB with original tables |
+
+Both sides retain independent persistent state. The 94-word shared record and
+controller second-rotation flags, area yaw and collision flags compare exactly.
+No Rust post-tick value is loaded into native state. Authored Mario paths and
+floor inputs make this a **stage-composition check**, not combined Mario/camera
+gameplay or complete mode_radial_camera. Input, height/pan, free roam, mode
+selection, initialization and full update_camera remain pending. The viewer
+still uses its approximate follow camera, and original-N64 traces remain missing.
+
+Selecting the first wall instead of the last, making the low-wall cutoff
+inclusive, or narrowing the radial condition before its comparison each causes
+a native divergence. All three deliberate mutations are reverted; restored
+authored and owner-ROM comparisons pass.
+
+```sh
+cargo test --locked -p rustario64-oracle --test radial -- --nocapture
+cargo test --locked --release -p rustario64-oracle --test radial -- --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test radial -- --include-ignored --nocapture
+```
+
+### Look-ahead pan (small follow-up, 2026-10-09)
+
+Rig's `pan_ahead_of_player` preserves the original two rotations and float
+operation order; replacing these with a single sine expression changes bits.
+The fixed 0.025 approach runs once per tick, even with smooth movement disabled.
+Long jumps and non-top pole actions reverse pan; sleeping approaches zero.
+40,000 authored comparisons and 40,000 with ROM trig tables cover these paths,
+signed angles/zero and coincident/vertical eyes. All 94 shared words compare,
+with independent assertions that yaw/eye do not change. The existing persistent
+radial-goal/Lakitu compositions now include pan before Lakitu (18,000 ticks per
+terrain at five render rates and both interpolation settings). Run the same
+`--test radial` commands above. No complete camera or viewer fidelity is claimed.

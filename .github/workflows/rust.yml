@@ -15,6 +15,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
       - name: Format
         run: cargo fmt --all --check
+      - name: Camera record layout
+        run: python3 oracle/tools/lakitu_layout.py --check
       - name: Tests (authored fixtures only; no ROM)
         env:
           RUSTARIO64_REQUIRE_GPU: "1"
@@ -25,3 +27,33 @@ jobs:
         run: cargo build --locked --workspace --release
       - name: Runnable foundation
         run: cargo run --locked -- demo
+      - name: Desktop packaging allowlist
+        run: python3 tools/test_package_desktop.py
+      - name: Optimized camera comparisons
+        run: cargo test --locked --release -p rustario64-oracle --test camera --test lakitu --test radial
+  desktop:
+    name: Desktop runtime (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: linux-x86_64
+          - os: windows-2025
+            target: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust
+        run: rustup show active-toolchain
+      - name: GPU-free runtime tests
+        run: cargo test --locked -p rustario64 --all-targets
+      - name: Build runtime binaries (no C oracle)
+        run: cargo build --locked --release -p rustario64 -p rustario64-render --bins
+      - name: Package runtime and notices (no ROM or assets)
+        run: python tools/package_desktop.py --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rustario64-${{ matrix.target }}
+          path: dist/*.zip
+          if-no-files-found: error
