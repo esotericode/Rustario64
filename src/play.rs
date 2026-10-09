@@ -8,14 +8,14 @@
 //! snapshots only.
 use crate::{
     content::animation::MarioAnimations,
-    presentation::{self, GraphicsOptions, Pose, Snapshot},
+    presentation::{self, GraphicsOptions, Pose, Snapshot, mario::MarioPose},
     simulation::{
         TICKS_PER_SECOND, TickInput,
         collision::CollisionWorld,
         controller::{A_BUTTON, B_BUTTON, Z_TRIG},
         mario::{
             Event, MarioState, StepWorld, Unsupported, constants,
-            tick::{LevelEntry, enter_level, tick},
+            tick::{LevelEntry, RenderedFrame, enter_level, tick},
         },
         math::TrigTables,
     },
@@ -204,6 +204,7 @@ pub struct Session<'a> {
     camera: FollowCamera,
     inputs: Vec<TickInput>,
     stopped: Option<Stop>,
+    rendered: RenderedFrame,
     epoch: u64,
     previous: Option<Snapshot>,
     current: Snapshot,
@@ -229,6 +230,9 @@ impl<'a> Session<'a> {
             camera,
             inputs: vec![],
             stopped: None,
+            // The level's first frame renders after Mario's first update, so
+            // the entry state is never drawn.
+            rendered: RenderedFrame::default(),
             epoch: 0,
             previous: None,
             current,
@@ -243,6 +247,7 @@ impl<'a> Session<'a> {
         self.camera = FollowCamera::behind(self.mario.face_angle[1]);
         self.inputs.clear();
         self.stopped = None;
+        self.rendered = RenderedFrame::default();
         self.epoch += 1;
         self.previous = None;
         self.current = snapshot(&self.mario, self.epoch);
@@ -261,12 +266,15 @@ impl<'a> Session<'a> {
         let (mario, world) = (&mut self.mario, &mut self.world);
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             world.events.clear();
-            tick(mario, world, input);
+            tick(mario, world, input)
         }));
-        if let Err(payload) = result {
-            // The state is partly updated; it is shown but never ticked again.
-            self.stopped = Some(Stop::Panic(panic_message(payload)));
-            return true;
+        match result {
+            Ok(rendered) => self.rendered = rendered,
+            Err(payload) => {
+                // The state is partly updated; it is shown but never ticked again.
+                self.stopped = Some(Stop::Panic(panic_message(payload)));
+                return true;
+            }
         }
         self.stopped = self.world.events.iter().find_map(|event| match *event {
             Event::Unsupported(what) => Some(Stop::Unsupported(what)),
@@ -277,6 +285,11 @@ impl<'a> Session<'a> {
         self.previous = Some(self.current);
         self.current = snapshot(&self.mario, self.epoch);
         true
+    }
+
+    /// What drawing Mario's model reads from the latest completed tick.
+    pub fn mario_pose(&self) -> MarioPose {
+        MarioPose::capture(&self.mario, &self.world, self.rendered)
     }
 
     /// Mario's presentation pose between the last two completed ticks.

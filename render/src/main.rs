@@ -7,9 +7,13 @@ use rustario64::{
         animation::MarioAnimations,
         visual::{AreaVisual, VisualModel},
     },
-    import::{animation, bob, engine, rom::Rom},
+    import::{
+        animation, bob, engine,
+        mario::{self as mario_model, MarioModelSource},
+        rom::Rom,
+    },
     play::{self, BOB_SCRIPT_START, Pad, Session},
-    presentation::GraphicsOptions,
+    presentation::{GraphicsOptions, mario::MarioDrawer},
     simulation::{
         FixedClock, collision::CollisionWorld, mario::tick::LevelEntry, math::TrigTables,
     },
@@ -44,9 +48,9 @@ const HELP: &str = "Rustario64 development viewer (Bob-omb Battlefield, area 1)\
   Mario mode (--mario or M): WASD stick (hold Shift to walk), Space A, J B, K Z, Left/Right\n\
   arrows turn the follow camera, R re-enters the level, M returns to the free camera (Mario\n\
   pauses). Mario runs the tick compared with the decomp from the level script's start. The\n\
-  follow camera is not the original camera; its yaw is the camera input Mario reads. Mario is\n\
-  a placeholder box until his model is imported. Play stops at paths the port does not support\n\
-  and at warps (falling off the course); R re-enters.\n\
+  follow camera is not the original camera; its yaw is the camera input Mario reads. Mario's\n\
+  model and animations come from the ROM (a placeholder box if they cannot be imported). Play\n\
+  stops at paths the port does not support and at warps (falling off the course); R re-enters.\n\
   --mario-ticks N renders Mario after N ticks of holding the stick up, from the follow camera.\n\
   --record writes each run's tick inputs to a new directory for exact replay against the decomp:\n\
   cargo run -p rustario64-oracle --example tick_trace -- ROM NEW_DIR --inputs RUN.inputs.json\n";
@@ -142,11 +146,50 @@ struct Level {
     anims: &'static MarioAnimations,
     entry: LevelEntry,
     rom_sha1: &'static str,
+    /// Mario's model, or None when it could not be imported.
+    mario_model: Option<&'static MarioModelSource>,
 }
 
 impl Level {
     fn session(&self) -> Session<'static> {
         Session::new(self.world, self.trig, self.anims, self.entry)
+    }
+}
+
+/// Mario's imported model, posed from each completed tick.
+struct MarioModel {
+    drawer: MarioDrawer<'static>,
+    view: present::MarioModelView,
+}
+
+impl MarioModel {
+    fn new(level: &Level, session: &Session<'_>, camera: &FlyCamera) -> Option<Self> {
+        let mut model = Self {
+            drawer: MarioDrawer::new(level.mario_model?, level.trig, level.anims),
+            view: present::MarioModelView::default(),
+        };
+        model.tick(session, camera);
+        Some(model)
+    }
+
+    /// Pose the latest tick; the level of detail uses the current camera.
+    fn tick(&mut self, session: &Session<'_>, camera: &FlyCamera) {
+        let pose = session.mario_pose();
+        let lod = present::lod_distance(camera, pose.position);
+        if let Err(error) = self.drawer.update(&pose, Some(lod)) {
+            eprintln!("warning: Mario's model could not be built: {error}");
+        }
+    }
+
+    /// A new level entry: snap, then pose the entry state.
+    fn reset(&mut self, session: &Session<'_>, camera: &FlyCamera) {
+        self.drawer.reset();
+        self.tick(session, camera);
+    }
+
+    fn show(&mut self, renderer: &mut Renderer, alpha: f32, graphics: GraphicsOptions) {
+        self.view
+            .show(renderer, self.drawer.frame(alpha, graphics.interpolation));
     }
 }
 
@@ -176,6 +219,13 @@ fn load(rom_path: &Path) -> AppResult<Level> {
     let camera_mode = visual.camera.ok_or("the area has no camera node")?.mode;
     let entry = LevelEntry::script_start(&imported.level, camera_mode)?;
     let world = CollisionWorld::load_area_terrain(&imported.collision)?;
+    let mario_model = match mario_model::import(&rom) {
+        Ok(source) => Some(&*Box::leak(Box::new(source))),
+        Err(error) => {
+            eprintln!("warning: Mario's model was not imported ({error}); drawing a placeholder");
+            None
+        }
+    };
     Ok(Level {
         collision: overlay::collision(&imported.collision),
         placements: overlay::placements(&imported.level, &imported.collision),
@@ -186,6 +236,7 @@ fn load(rom_path: &Path) -> AppResult<Level> {
         anims: Box::leak(Box::new(animation::mario_animations(&rom)?)),
         entry,
         rom_sha1: rom.fingerprint(),
+        mario_model,
     })
 }
 
@@ -246,12 +297,24 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
         &level,
         options.collision,
         options.placements,
-        mario,
+        mario && level.mario_model.is_none(),
     );
     let view = options.view.as_deref().unwrap_or("start");
+    let graphics = graphics_options(options);
+    let mut model_builds = None;
     let camera = match options.mario_ticks {
         Some(ticks) => {
             let mut session = level.session();
+            let follow = |session: &Session<'_>| {
+                let position = session.pose(1.0, graphics).position;
+                let camera =
+                    present::follow_view(session.camera(), position, 1.0, level.visual.camera);
+                match &options.view {
+                    Some(name) => preset(name, &level),
+                    None => Ok(camera),
+                }
+            };
+            let mut model = MarioModel::new(&level, &session, &follow(&session)?);
             let hold_up = Pad {
                 up: true,
                 ..Pad::default()
@@ -260,19 +323,26 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
                 if !session.step(&hold_up) {
                     break;
                 }
+                if let Some(model) = model.as_mut() {
+                    model.tick(&session, &follow(&session)?);
+                }
             }
-            let pose = session.pose(1.0, graphics_options(options));
+            let pose = session.pose(1.0, graphics);
             renderer.set_transform(MARIO, pose.position, present::radians(pose.yaw));
+            if let Some(model) = model.as_mut() {
+                model.show(&mut renderer, 1.0, graphics);
+                model_builds = Some(
+                    model
+                        .drawer
+                        .frame(1.0, false)
+                        .map(|_| model.drawer.builds()),
+                );
+            }
             println!("Mario: {}", describe(&session));
             if let Some(stop) = session.stopped() {
                 println!("Play stopped: {stop}");
             }
-            match &options.view {
-                Some(name) => preset(name, &level)?,
-                None => {
-                    present::follow_view(session.camera(), pose.position, 1.0, level.visual.camera)
-                }
-            }
+            follow(&session)?
         }
         None => preset(view, &level)?,
     };
@@ -301,8 +371,15 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
             "Placement markers: Mario start red, script objects orange, macro objects yellow, specials cyan."
         );
     }
-    if mario {
-        println!("Mario is a placeholder box (red, blue front) until his model is imported.");
+    match (mario, model_builds) {
+        (true, Some(Some(builds))) => println!(
+            "Mario's model from the ROM, posed by the tick's animation ({builds} draw lists built); no shadow yet."
+        ),
+        (true, Some(None)) => println!(
+            "Mario is drawn from his first tick on, as the original renders after his first update."
+        ),
+        (true, None) => println!("Mario is a placeholder box (red, blue front)."),
+        _ => {}
     }
     println!("Skybox and objects are not drawn yet; the sky is a placeholder clear color.");
     Ok(())
@@ -417,6 +494,8 @@ struct App {
     frames: u64,
     max_frames: Option<u64>,
     play: Play,
+    /// Mario's imported model; None draws the placeholder box instead.
+    mario: Option<MarioModel>,
     error: Option<String>,
 }
 
@@ -454,7 +533,13 @@ impl App {
             config,
             renderer,
         };
-        upload(&mut gpu.renderer, &self.level, false, false, true);
+        upload(
+            &mut gpu.renderer,
+            &self.level,
+            false,
+            false,
+            self.mario.is_none(),
+        );
         resize_targets(&mut gpu);
         println!(
             "Viewer on {} ({:?}), surface {:?}",
@@ -480,7 +565,11 @@ impl App {
         if play.active {
             for _ in 0..drained {
                 let pad = play.next_pad();
-                play.session.step(&pad);
+                if play.session.step(&pad)
+                    && let Some(mario) = self.mario.as_mut()
+                {
+                    mario.tick(&play.session, &self.camera);
+                }
             }
         }
         if let Some(stop) = play.session.stopped()
@@ -523,8 +612,12 @@ impl App {
         let Some(gpu) = self.gpu.as_mut() else {
             return;
         };
-        gpu.renderer
-            .set_transform(MARIO, pose.position, present::radians(pose.yaw));
+        match self.mario.as_mut() {
+            Some(mario) => mario.show(&mut gpu.renderer, alpha, play.graphics),
+            None => gpu
+                .renderer
+                .set_transform(MARIO, pose.position, present::radians(pose.yaw)),
+        }
         let frame = match gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
@@ -588,6 +681,9 @@ impl App {
                     self.play.session.reset();
                     self.play.taps = Pad::default();
                     self.play.reported_stop = false;
+                    if let Some(mario) = self.mario.as_mut() {
+                        mario.reset(&self.play.session, &self.camera);
+                    }
                 }
             }
             _ => return false,
@@ -779,6 +875,7 @@ fn view(rom_path: &Path, options: &Options) -> AppResult<()> {
         recorder,
         reported_stop: false,
     };
+    let mario = MarioModel::new(&level, &play.session, &camera);
     let mut app = App {
         level,
         options: render_options(options),
@@ -792,6 +889,7 @@ fn view(rom_path: &Path, options: &Options) -> AppResult<()> {
         frames: 0,
         max_frames: options.frames,
         play,
+        mario,
         error: None,
     };
     let event_loop = EventLoop::new()?;

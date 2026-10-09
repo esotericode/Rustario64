@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-09
 
-Status: M0 complete. M1 imported level works: BOB's original terrain and textures import from the ROM and render through an optional wgpu viewer with collision/placement overlays. M2 in progress: Mario's complete tick (inputs, non-object actions, his object update and animation frame advance, with the ROM's animations) matches the natively compiled decomp per tick, and the viewer's Mario mode drives that tick from the keyboard with a follow camera supplying the camera yaw; recorded runs replay exactly against the decomp. Mario's model, the reference camera, objects, cutscene/water actions, warps and missions remain missing.
+Status: M0 complete. M1 imported level works: BOB's original terrain and textures import from the ROM and render through an optional wgpu viewer with collision/placement overlays. M2 in progress: Mario's complete tick (inputs, non-object actions, his object update and animation frame advance, with the ROM's animations) matches the natively compiled decomp per tick, and the viewer's Mario mode drives that tick from the keyboard with a follow camera supplying the camera yaw; recorded runs replay exactly against the decomp. Mario's model and display lists import from the ROM and are posed from each tick as the original render pass does. The reference camera, Mario's shadow, objects, cutscene/water actions, warps and missions remain missing.
 Initial content target: Bob-omb Battlefield from a supported Super Mario 64 ROM.  
 Long-term intent: Support the complete original game through the same engine.
 
@@ -207,14 +207,14 @@ Every handoff should report the working result, commands actually run, missing f
 
 | Item | Status |
 | --- | --- |
-| Implementation | Headless core (ROM inspection, BOB static + visual import/export, Mario's animation table, original collision loader and queries, math utilities, Mario's physics steps, inputs, core update, non-object actions and per-frame tick, the play session that drives it from held controls with input logs, synthetic diagnostics, exact trace comparison), an optional wgpu renderer crate (offscreen PNGs, windowed inspection viewer, collision/placement overlays, Mario mode with a follow camera and a placeholder model), and a development-only native decomp oracle (collision, math, Mario components, complete Mario ticks and recorded-run replay) |
+| Implementation | Headless core (ROM inspection, BOB static + visual import/export, Mario's animation table, original collision loader and queries, math utilities, Mario's physics steps, inputs, core update, non-object actions and per-frame tick, the play session that drives it from held controls with input logs, Mario's model import and render-pass posing, synthetic diagnostics, exact trace comparison), an optional wgpu renderer crate (offscreen PNGs, windowed inspection viewer, collision/placement overlays, Mario mode with a follow camera and his skinned model), and a development-only native decomp oracle (collision, math, Mario components, complete Mario ticks and recorded-run replay) |
 | Initial platform and Rust stack | Linux x86_64; Rust 1.99.0 / edition 2024; Cargo workspace: `rustario64` (GPU-free core; sha1 0.11.0, serde 1.0.229, serde_json 1.0.151), `rustario64-render` (wgpu 30.0.1, winit 0.30.13, pollster 1.0.1, png 0.18.1), and `rustario64-oracle` (dev-only; cc 1.6.0 builds vendored CC0 C). Current stable direct dependencies, compatible SemVer requirements, committed Cargo.lock; CI reads the toolchain file |
 | Supported ROM revision | US v1.0, exactly 8 MiB, normalized SHA-1 `9bef1128717f958171a4afac3ed78ee2bb4e86ce`; Z64/V64/N64 normalization; supplied Z64 positive path passes |
 | Comparison implementation | Target: pinned unmodified US n64decomp/original ROM execution at `9921382a68bb0c865e5e45eb594d9c64db59b1af`; no original-execution per-tick exporter yet. Native oracle: the same decomp's collision, math_util, mario.c, mario_step.c and the five non-cutscene action files (whole files) plus verbatim excerpts, compiled natively; `oracle/c/tick.c` runs complete frames of Mario's object |
-| Bob-omb Battlefield | Imported level: 1,101 visible area triangles (24 batches, 18 textures) from eight script-named dependent segments, plus the gate/seesaw/grate geo models; collision (570 vertices, 1,060 triangles), 17 specials, 30 script placements, 88 macros, seven warps. Every visible triangle and texture matches independent decomp-derived references. Renders in the viewer with collision and placement overlays. Collision loads into the ported original partition and answers queries identically to the decomp. Mario's complete ticks run identically to the decomp on it with the ROM's animations (64,158 compared ticks). Mario can be moved around it in the viewer (placeholder model, follow camera); recorded runs replay exactly. No skybox, objects, Mario model, original camera, warps or missions |
+| Bob-omb Battlefield | Imported level: 1,101 visible area triangles (24 batches, 18 textures) from eight script-named dependent segments, plus the gate/seesaw/grate geo models; collision (570 vertices, 1,060 triangles), 17 specials, 30 script placements, 88 macros, seven warps. Every visible triangle and texture matches independent decomp-derived references. Renders in the viewer with collision and placement overlays. Collision loads into the ported original partition and answers queries identically to the decomp. Mario's complete ticks run identically to the decomp on it with the ROM's animations (64,158 compared ticks). Mario can be moved around it in the viewer with his ROM model and animations and a follow camera; recorded runs replay exactly. No skybox, objects, Mario shadow, original camera, warps or missions |
 | Fidelity coverage | Component checks against the natively compiled decomp, all bitwise-identical. Collision: loader and floor/ceiling/wall/water/gas queries (857k authored comparisons in CI; 4.08M on BOB). Math: ROM trig tables, sins/coss/atan2s/atan2f/approach (3.99M). Mario steps: ground/air/stationary steps, ledge grabs, gravity, wind, moving sand, bonk, velocity helpers from generated states (124k authored in CI; 1.18M on BOB with ROM tables). Exact trace comparator tested; 300 synthetic counter/input ticks identical at 30/60/120/144 Hz. Input stage: 196,608 controller/intent cases on authored and again on ROM tables; 10,009 authored and 20,000 BOB geometry cases; 1,200 chained ticks at multiple presentation rates. **Complete Mario ticks** (Mario's object only, against the native decomp): 28,158 authored ticks (69 actions) and 64,158 BOB ticks with ROM animations (60 actions), all identical, also at 15–144 Hz presentation. **Played sessions:** 3,600 CI ticks of held-control sessions replay identically in the decomp; two recorded BOB viewer runs (233 ticks) replay identically. No camera, object, cutscene/submerged or original-N64 coverage |
-| Optional enhancements | Graphics-only options: higher resolution, 4x MSAA, culling and fog toggles, interpolation toggle, free inspection camera. Mario's pose interpolates between ticks at any frame rate. No enhanced lighting/shadows |
-| Immediate next task | M2: import Mario's model (geo layout, display lists) and pose it from the imported animations in the viewer, replacing the placeholder; then port the reference camera with per-tick comparisons; then objects for the first mission. M1 polish: skybox and placement models |
+| Optional enhancements | Graphics-only options: higher resolution, 4x MSAA, culling and fog toggles, interpolation toggle, free inspection camera. Mario's skinned model interpolates between ticks at any frame rate. No enhanced lighting/shadows |
+| Immediate next task | M2: port the reference camera (BOB's radial/free-roam modes and camera triggers) with per-tick comparisons so camera yaw and mode stop being inputs; Mario's shadow; then objects for the first mission. M1 polish: skybox and placement models |
 
 ### Implementation session 1 — 2026-10-08 (M0 and early M1)
 
@@ -357,11 +357,32 @@ Every handoff should report the working result, commands actually run, missing f
   the built-in 1,800-tick `tick_trace` program.
 - **Environment:** `libxkbcommon-x11-0` and `xdotool` were installed locally for
   the windowed check (not engine dependencies).
-- **Not done / gaps:** Mario's model and visible animation, the original
-  camera, objects (the cannon lid is an object, so its hole is open), cutscene
-  and water actions, warps (play stops at them), gamepad input, sound.
-- **Next:** Import Mario's model and pose it from the animation table; then the
-  reference camera.
+- **Mario's model (same session):** `import::mario` reads the main level
+  scripts' group0 loads and MODEL_MARIO's layout from the ROM (ranges checked
+  against sm64tools) and resolves Mario's 13 native geo callbacks through
+  addresses that tools/check_mario_model_reference.py locates by walking
+  `mario_geo` alongside the pinned geo.inc.c (2,322 commands, 122 display lists
+  at their commented addresses). `presentation::mario` follows the render pass:
+  object placement (or the floor-alignment matrix the tick's render stage now
+  reports), animated parts from the tick's animation, Mario's switch, rotation
+  and scale callbacks from his body state (without their body-state writes),
+  and the original's levels of detail. Display lists are built once per
+  distinct draw list with each vertex's bone, skinned per tick and
+  interpolated per frame; the viewer and `screenshot --mario-ticks` draw it.
+  The geo decoder's switch parameter is now named `num_cases` (it is stored as
+  numCases; switches start at case 0), and the static model builder draws case
+  0 accordingly; BOB's import digests are unchanged.
+- **Model checks:** six configurations (all four bodies, three levels of
+  detail, eyes, hands, cap, wings) match triangle counts and vertex digests the
+  checker rebuilds from the pinned source; authored-skeleton CI tests check
+  selection, animation translation modes, matrix order, normals and
+  interpolation; a 90-tick played session poses bounded models; screenshots and
+  Xvfb window captures (idle, run, jump) were inspected.
+- **Not done / gaps:** the original camera, Mario's shadow, objects (the cannon
+  lid is an object, so its hole is open), cutscene and water actions, warps
+  (play stops at them), gamepad input, sound; the callbacks' render-pass writes
+  into the body state are approximated in presentation (DECISIONS.md).
+- **Next:** Port the reference camera with per-tick comparisons; Mario's shadow.
 
 ### Bob-omb Battlefield acceptance tracker
 
@@ -369,7 +390,7 @@ Every handoff should report the working result, commands actually run, missing f
 | --- | --- |
 | M0 bounded ROM foundation | Complete: authored fixtures and positive owner-ROM integration pass |
 | M1 imported original visible level | Met for terrain: original terrain and textures import and render from the ROM (independently validated); collision inspectable in the viewer overlay and as OBJ; placements inspectable. Skybox and object models are presentation gaps |
-| M2 playable exploration | Partly met: Mario's complete tick (inputs, non-object actions, object update, animations from the ROM) matches the native decomp per tick on BOB, and Mario runs, jumps and climbs through the original level in the viewer with a follow camera; recorded runs replay exactly. Not yet: Mario's model with visible imported animations (a placeholder box is drawn), the reference camera, objects, cutscene/water actions |
+| M2 playable exploration | Partly met: Mario's complete tick (inputs, non-object actions, object update, animations from the ROM) matches the native decomp per tick on BOB, and Mario runs, jumps and climbs through the original level in the viewer with a follow camera; recorded runs replay exactly. Mario is drawn with his ROM model and animations, posed as the original render pass does. Not yet: the reference camera, Mario's shadow, objects, cutscene/water actions |
 | Act 1 — King Bob-omb | Not implemented |
 | Act 2 — Koopa the Quick | Not implemented |
 | Act 3 — Shoot to the Island | Not implemented |
@@ -401,5 +422,6 @@ Every handoff should report the working result, commands actually run, missing f
 - 2026-10-08: libsm64 rejected as a fidelity oracle (changed collision ordering); the Mario oracle compiles unmodified decomp Mario sources natively.
 - 2026-10-08: Mario's physics steps are a direct translation of mario_step.c. `MarioState` holds only fields verified so far (superseded 2026-10-09: it now mirrors the whole struct); globals live in `StepWorld`; original NULL dereferences and out-of-table reads panic rather than invent values. See [docs/DECISIONS.md](docs/DECISIONS.md).
 - 2026-10-08: Importer schema 4 preserves area terrain/dialog/music metadata. Exports stage all writes before publishing with error cleanup and concurrent-export locking. Collision/macro content expectations use canonical JSON keys and a reproducible pinned-source checker rather than struct serialization order.
+- 2026-10-09: Mario's model is imported from the main scripts' group0 segments and drawn by a presentation translation of the render pass and his geo callbacks: builds per draw list, CPU skinning per tick, interpolation per frame; callbacks resolve through a version-adapter address table located by a reproducible checker. See [docs/DECISIONS.md](docs/DECISIONS.md).
 - 2026-10-09: The viewer drives Mario through the core's `play` session: same level entry and tick as the oracle, a follow camera's yaw as a logged tick input, taps latched to the next tick, play stopping at unsupported paths and warps, and runs recorded as input logs that replay against the decomp. See [docs/DECISIONS.md](docs/DECISIONS.md).
 - 2026-10-09: Mario's animations load from the ROM; the oracle compiles the real decomp headers and whole Mario sources; Mario's update, non-object actions and per-frame tick are translated with globals in `StepWorld`, outside calls as recorded events, and object paths panicking; the render pass's animation frame advance is a simulation stage. Complete ticks compare against the native decomp by named words. See [docs/DECISIONS.md](docs/DECISIONS.md).

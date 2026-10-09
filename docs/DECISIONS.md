@@ -437,3 +437,44 @@ controls; the viewer maps keys and draws.
 - **Lifetime.** The viewer keeps one level for the life of the process and
   leaks its collision, trig tables and animations once, so sessions borrow them
   for `'static` without self-referential state.
+
+## Mario's model — 2026-10-09
+
+- **Import.** `import::mario` scans `level_main_scripts_entry` (segment 0x15)
+  for group0's loads and MODEL_MARIO's layout instead of assuming addresses, and
+  requires the ranges to equal sm64tools' config. The generic geo decoder
+  decodes `mario_geo`. Native callbacks resolve by address through
+  `version::MARIO_GEO_CALLBACKS`, located by tools/check_mario_model_reference.py
+  (a parallel walk of the ROM's layout and the pinned source); an unknown
+  address fails the import rather than being skipped.
+- **Builds per draw list.** Which display lists Mario draws depends on his
+  switches (body variant, level of detail, eyes, hands, cap, wings), and the
+  RSP/RDP state and vertex cache carry from one list to the next in layer order.
+  So a traversal yields a draw list, and each distinct draw list is built once
+  with the existing Fast3D builder, which now tags each vertex with the matrix
+  node current when it was loaded. The segments stay in memory for these builds
+  and are never exported.
+- **Posing.** `presentation::mario` follows rendering_graph_node.c: the object
+  matrix (position and angles, or the floor-alignment matrix the tick's render
+  stage now reports), the animation type from geo_set_animation_globals,
+  animated parts consuming attributes in traversal order, and Mario's callbacks
+  from his body state. Matrices use the ROM's trig tables; the CPU skins
+  positions and lit normals once per tick, and frames interpolate between the
+  last two ticks of the same build (otherwise they snap).
+- **Read-only callbacks.** The original callbacks also write the body state
+  while drawing: they zero the torso and head angles outside the actions that
+  use them, and count the punch scale down once per frame. Presentation never
+  writes simulation state, so it draws the zeroed angles and keeps the punch
+  countdown itself, restarting when a tick sets a new punch state (a repeated
+  identical punch state does not restart it). The tick does not model these
+  writes either, on both sides of the oracle; only drawing reads them.
+- **Entry and level of detail.** The original renders a level's first frame
+  after Mario's first update, so the entry state (no animation yet) is not
+  drawn. The level-of-detail distance is the depth of Mario's origin in front
+  of the presentation camera, which is the follow camera rather than the
+  original camera, so the distances (not the thresholds) differ from the game's.
+- **Switch parameter.** geo_layout.c stores GEO_SWITCH_CASE's parameter as
+  `numCases` and starts every switch at case 0 (its comment calls the parameter
+  the initial case). The decoder's field is now `num_cases`, and the static
+  model builder draws case 0 for switches it cannot run; BOB's models have no
+  switches, so its import is unchanged.

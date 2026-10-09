@@ -1,16 +1,18 @@
 //! Presentation for the core's play session (`rustario64::play`): where the
-//! follow camera's eye goes and a placeholder model for Mario. Nothing here
-//! reaches the simulation; the camera yaw the tick reads comes from the
-//! session's `FollowCamera`, which turns only once per tick.
-use crate::camera::FlyCamera;
+//! follow camera's eye goes, Mario's posed model in the renderer, and a
+//! placeholder for when his model is unavailable. Nothing here reaches the
+//! simulation; the camera yaw the tick reads comes from the session's
+//! `FollowCamera`, which turns only once per tick.
+use crate::{Renderer, camera::FlyCamera};
 use rustario64::{
     content::visual::{
         BlendMode, CombinerCycle, DrawBatch, GeoCamera, LAYER_OPAQUE, Material, VisualModel,
         VisualVertex,
     },
     play::FollowCamera,
+    presentation::mario::MarioFrame,
 };
-use std::f32::consts::PI;
+use std::{collections::HashMap, f32::consts::PI};
 
 /// How far behind and above Mario the follow camera's eye sits.
 pub const FOLLOW_DISTANCE: f32 = 1000.0;
@@ -45,6 +47,51 @@ pub fn follow_view(
         view.far = f32::from(original.far);
     }
     view
+}
+
+/// geo_process_level_of_detail's distance: the depth of Mario's origin in
+/// front of the camera, as the integer part of the view-space z it reads.
+pub fn lod_distance(camera: &FlyCamera, position: [f32; 3]) -> i16 {
+    let f = camera.forward();
+    let depth: f32 = (0..3)
+        .map(|i| (position[i] - camera.position[i]) * f[i])
+        .sum();
+    // -GET_HIGH_S16_OF_32(z) with z = -depth in 16.16 fixed point.
+    depth.ceil().clamp(f32::from(i16::MIN), f32::from(i16::MAX)) as i16
+}
+
+/// Mario's model in a renderer: one uploaded model per build (draw list),
+/// rewritten in place each frame, with only the drawn build visible.
+#[derive(Debug, Default)]
+pub struct MarioModelView {
+    uploaded: HashMap<usize, usize>,
+    shown: Option<usize>,
+}
+
+impl MarioModelView {
+    /// Show `frame`, or hide Mario when it is None.
+    pub fn show(&mut self, renderer: &mut Renderer, frame: Option<MarioFrame<'_>>) {
+        let next = frame.map(|frame| {
+            let index = *self
+                .uploaded
+                .entry(frame.build)
+                .or_insert_with(|| renderer.add_model(frame.template));
+            renderer.update_vertices(index, &frame.vertices);
+            index
+        });
+        if let Some(old) = self.shown.filter(|&old| Some(old) != next) {
+            renderer.set_visible(old, false);
+        }
+        if let Some(index) = next {
+            renderer.set_visible(index, true);
+        }
+        self.shown = next;
+    }
+
+    /// The number of builds uploaded so far.
+    pub fn uploaded(&self) -> usize {
+        self.uploaded.len()
+    }
 }
 
 /// A placeholder for Mario until his model is imported: a box the size of his
@@ -144,6 +191,14 @@ mod tests {
             follow_view(&camera, [0.0; 3], 1.0, Some(frustum)).far,
             12800.0
         );
+    }
+
+    #[test]
+    fn lod_distance_is_the_depth_in_front_of_the_camera() {
+        let camera = FlyCamera::looking_at([0.0, 0.0, 1000.0], [0.0, 0.0, 0.0]);
+        assert_eq!(lod_distance(&camera, [0.0, 0.0, 0.0]), 1000);
+        assert_eq!(lod_distance(&camera, [300.0, 0.0, 0.5]), 1000);
+        assert_eq!(lod_distance(&camera, [0.0, 0.0, 1100.0]), -100);
     }
 
     #[test]

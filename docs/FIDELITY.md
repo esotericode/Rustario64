@@ -9,7 +9,10 @@ objects, interactions with objects, cutscene/submerged actions and RNG-driven
 behaviors have **zero validated coverage**. Collision, math, physics steps and
 pre-action inputs also keep their component suites. The viewer's Mario mode
 runs the same tick, and its recorded runs replay exactly in the decomp (Played
-sessions below); its placeholder box shows Mario's pose, not his model. The
+sessions below). Mario's drawn model is presentation: it reads completed ticks
+and is checked as imported content (ROM_VALIDATION.md), not compared per tick;
+the render pass's own writes into Mario's body state (torso/head angle resets,
+the punch-scale countdown) are not simulated on either side. The
 `demo` command's diagnostic marker visualizes a tick counter; it is not a Mario
 approximation.
 

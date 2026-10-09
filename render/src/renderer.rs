@@ -2,7 +2,7 @@
 //! content and a presentation camera; it holds no gameplay state and writes none.
 use crate::camera::FlyCamera;
 use rustario64::content::visual::{
-    BlendMode, LAYER_COUNT, Material, TextureFilter, VisualModel, WrapMode,
+    BlendMode, LAYER_COUNT, Material, TextureFilter, VisualModel, VisualVertex, WrapMode,
 };
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
@@ -46,6 +46,8 @@ struct PipelineKey {
 }
 
 struct GpuBatch {
+    /// The model batch this was uploaded from.
+    source: usize,
     layer: u8,
     key: PipelineKey,
     vertices: wgpu::Buffer,
@@ -77,6 +79,17 @@ fn push_f32s(out: &mut Vec<u8>, values: &[f32]) {
     for v in values {
         out.extend_from_slice(&v.to_le_bytes());
     }
+}
+
+/// Vertex buffer contents: position, uv, then the color bytes.
+fn pack_vertices(vertices: &[VisualVertex]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(vertices.len() * VERTEX_STRIDE as usize);
+    for v in vertices {
+        push_f32s(&mut bytes, &v.position);
+        push_f32s(&mut bytes, &v.uv);
+        bytes.extend_from_slice(&v.color);
+    }
+    bytes
 }
 
 fn push_u32s(out: &mut Vec<u8>, values: &[u32]) {
@@ -276,6 +289,23 @@ impl Renderer {
         }
     }
 
+    /// Rewrite an uploaded model's vertices in place, batch by batch, for a
+    /// model posed anew each frame. Each list must keep its batch's vertex
+    /// count from upload; other lists are ignored.
+    pub fn update_vertices(&mut self, model: usize, vertices: &[Vec<VisualVertex>]) {
+        let Some((_, batches)) = self.models.get(model) else {
+            return;
+        };
+        for batch in batches {
+            if let Some(list) = vertices.get(batch.source)
+                && list.len() == batch.count as usize
+            {
+                self.queue
+                    .write_buffer(&batch.vertices, 0, &pack_vertices(list));
+            }
+        }
+    }
+
     /// Upload a model's textures and batches; returns its index (initially visible).
     pub fn add_model(&mut self, model: &VisualModel) -> usize {
         let views: Vec<_> = model
@@ -328,7 +358,7 @@ impl Renderer {
         let mut samplers: HashMap<(WrapMode, WrapMode, TextureFilter), wgpu::Sampler> =
             HashMap::new();
         let mut batches = vec![];
-        for batch in &model.batches {
+        for (index, batch) in model.batches.iter().enumerate() {
             let m = &batch.material;
             let (wrap, filter) = m.texture.map_or(
                 (
@@ -377,18 +407,12 @@ impl Renderer {
                     },
                 ],
             });
-            let mut bytes = Vec::with_capacity(batch.vertices.len() * VERTEX_STRIDE as usize);
-            for v in &batch.vertices {
-                push_f32s(&mut bytes, &v.position);
-                push_f32s(&mut bytes, &v.uv);
-                bytes.extend_from_slice(&v.color);
-            }
             let vertices = self
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("batch vertices"),
-                    contents: &bytes,
-                    usage: wgpu::BufferUsages::VERTEX,
+                    contents: &pack_vertices(&batch.vertices),
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 });
             let cull = if !self.options.cull_faces {
                 None
@@ -403,6 +427,7 @@ impl Renderer {
                 None
             };
             batches.push(GpuBatch {
+                source: index,
                 layer: m.layer,
                 key: PipelineKey {
                     blend: m.blend,

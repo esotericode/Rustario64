@@ -2,8 +2,8 @@
 
 A new Rust engine that imports Super Mario 64 content from a user-supplied ROM.
 Bob-omb Battlefield is the first playable **target**; today it is an imported,
-viewable level where Mario can be moved around by the compared simulation (as a
-placeholder box), not yet a playable course. Read
+viewable level where Mario, with his model and animations from your ROM, can be
+moved around by the compared simulation; it is not yet a playable course. Read
 [PROJECT_PLAN.md](PROJECT_PLAN.md) for scope, milestones, and the live status.
 
 What works now:
@@ -28,16 +28,20 @@ What works now:
   28,158 ticks on an authored playground (CI) and 64,158 on Bob-omb Battlefield
   with your ROM's collision, tables and animations, at several presentation rates.
 - **Mario mode in the viewer**: the keyboard drives that same tick at 30 Hz with
-  a simple follow camera supplying the camera yaw, presentation interpolates his
-  pose at any frame rate, and every run can be recorded and replayed exactly
-  against the decomp.
+  a simple follow camera supplying the camera yaw, and every run can be recorded
+  and replayed exactly against the decomp.
+- **Mario's model from your ROM**: his geo layout and display lists, posed each
+  tick from the animation the tick advanced and his body state (eyes, hands,
+  cap, torso tilt, level of detail) as the original render pass does, skinned
+  on the CPU and interpolated between ticks at any frame rate. Six switch
+  configurations match triangle digests rebuilt from the pinned decomp source.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
   **full-tick** and input-stage trace pairs.
 
-This is level exploration with Mario's movement, not mission support: Mario is a
-red placeholder box (his model is not imported yet), the follow camera is not
-the original camera, and there are no objects (coins, enemies, trees, the
-cannon lid), cutscene or water actions, warps, deaths, or missions. Play stops
+This is level exploration with Mario's movement, not mission support: the
+follow camera is not the original camera, Mario has no shadow yet, and there
+are no objects (coins, enemies, trees, the cannon lid), cutscene or water
+actions, warps, deaths, or missions. Play stops
 where the port stops (unsupported paths, falling off the course); R re-enters.
 The comparisons are against the natively compiled decomp, not N64 execution.
 The imported level is independently validated against the pinned
@@ -101,6 +105,7 @@ RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked -p rustario64-oracle --test
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test mario_step bob_steps -- --ignored --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test mario_input bob_input -- --ignored --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --test animation local_us_rom_mario_animations -- --ignored --exact
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release --test mario_model -- --ignored --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test mario_tick bob_ticks -- --ignored --nocapture
 ```
 
@@ -154,6 +159,15 @@ two ticks counts as held for the next tick. Play stops on paths the port does
 not support and on warps (falling off the course); the window title and terminal
 say why, and R re-enters. `--record DIR` writes `run-NNN.inputs.json` for each
 run (see Trace comparison to replay one against the decomp).
+
+Mario is drawn with his model from the ROM, posed from each completed tick (he
+appears from his first tick on, as in the original, whose first frame renders
+after his first update). The original's levels of detail apply: moving Mario
+switches to the medium and low-detail bodies with his distance from the camera.
+If his model cannot be imported, a red placeholder box is drawn instead. With
+a clean pinned decomp checkout, `python3 -I tools/check_mario_model_reference.py
+--rom /path/to/sm64.z64 --reference /path/to/sm64` re-derives the geo
+callbacks' addresses and the configuration digests that the ROM test pins.
 
 ### Import export
 
@@ -236,9 +250,8 @@ holds the owner-ROM evidence.
 
 ## Next increment
 
-Import Mario's model (his geo layout and display lists) and pose it from the
-imported animation table, replacing the placeholder box, so the viewer shows
-Mario as the simulation animates him. Then port the reference camera with its
-own per-tick comparisons, and begin objects for the first mission.
-Original-execution traces remain the eventual authority. Skybox and placement
-models remain M1 work.
+Port the reference camera (camera.c: BOB's radial and free-roam modes and its
+camera triggers) with its own per-tick comparisons, so the camera yaw and mode
+stop being inputs; draw Mario's shadow; then begin objects for the first
+mission. Original-execution traces remain the eventual authority. Skybox and
+placement models remain M1 work.

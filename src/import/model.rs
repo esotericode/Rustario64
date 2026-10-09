@@ -189,19 +189,12 @@ impl Walker<'_, '_> {
                     ),
                 );
             }
-            GeoNodeKind::SwitchCase {
-                initial_case,
-                callback,
-            } => {
-                let selected = usize::try_from(initial_case)
-                    .ok()
-                    .and_then(|i| children.get(i).copied());
-                children = selected.into_iter().collect();
+            GeoNodeKind::SwitchCase { callback, .. } => {
+                // init_graph_node_switch_case starts every switch at case 0.
+                children = children.first().copied().into_iter().collect();
                 self.issue(
                     address,
-                    format!(
-                        "switch callback 0x{callback:08X} not executed; initial case {initial_case} drawn"
-                    ),
+                    format!("switch callback 0x{callback:08X} not executed; case 0 drawn"),
                 );
             }
             GeoNodeKind::Background {

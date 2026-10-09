@@ -44,8 +44,11 @@ pub enum GeoNodeKind {
         min_distance: i16,
         max_distance: i16,
     },
+    /// The command's parameter is stored as `numCases`, which callbacks read
+    /// as a parameter (Mario's select a body state or a hand); the selected
+    /// case starts at 0 and only a callback changes it.
     SwitchCase {
-        initial_case: i16,
+        num_cases: i16,
         callback: u32,
     },
     Camera {
@@ -386,7 +389,7 @@ pub fn decode(segments: &Segments, entry: u32) -> Result<GeoLayout> {
             }
             0x0E => {
                 let kind = GeoNodeKind::SwitchCase {
-                    initial_case: r.i16(2)?,
+                    num_cases: r.i16(2)?,
                     callback: r.u32(4)?,
                 };
                 Some(register(&mut layout, kind, 8)?)

@@ -136,6 +136,8 @@ struct TlutLoad {
 #[derive(Debug, Clone, Copy)]
 struct Slot {
     position: [f32; 3],
+    /// The builder's bone when the vertex was loaded (see `Builder::set_bone`).
+    bone: u16,
     /// Texture coordinates after the RSP scale, in 1/32 texel units.
     st: [f32; 2],
     color: [u8; 4],
@@ -243,6 +245,9 @@ pub struct Builder<'a> {
     segments: &'a Segments,
     state: State,
     model: VisualModel,
+    /// Each batch vertex's bone, parallel to `model.batches`.
+    bones: Vec<Vec<u16>>,
+    bone: u16,
     textures: HashMap<TextureKey, usize>,
     issues: BTreeSet<(u32, String)>,
     commands: usize,
@@ -254,6 +259,8 @@ impl<'a> Builder<'a> {
             segments,
             state: State::default(),
             model: VisualModel::default(),
+            bones: vec![],
+            bone: 0,
             textures: HashMap::new(),
             issues: BTreeSet::new(),
             commands: 0,
@@ -262,6 +269,18 @@ impl<'a> Builder<'a> {
 
     fn issue(&mut self, address: u32, feature: impl Into<String>) {
         self.issues.insert((address, feature.into()));
+    }
+
+    /// Tag vertices loaded from now on with `bone`: on the RSP a vertex is
+    /// transformed by the matrix current when it is loaded, so a skinned model
+    /// keeps each vertex in that matrix's space (run with the identity).
+    pub fn set_bone(&mut self, bone: u16) {
+        self.bone = bone;
+    }
+
+    /// G_SETENVCOLOR from a generated display list (a geo callback's output).
+    pub fn set_env_color(&mut self, color: [u8; 4]) {
+        self.state.env_color = color;
     }
 
     /// Run one master-list entry: the layer's render mode, then the display list.
@@ -501,6 +520,7 @@ impl<'a> Builder<'a> {
             let st = [f32::from(r.i16(at + 8)?), f32::from(r.i16(at + 10)?)];
             self.state.slots[first + i] = Some(Slot {
                 position: transform(matrix, position),
+                bone: self.bone,
                 st: [st[0] * scale_s, st[1] * scale_t],
                 color: [
                     r.u8(at + 12)?,
@@ -817,23 +837,45 @@ impl<'a> Builder<'a> {
                 color: slot.color,
             }
         });
+        let bones = slots.map(|slot| slot.bone);
         match self.model.batches.last_mut() {
-            Some(batch) if batch.material == material => batch.vertices.extend(vertices),
-            _ => self.model.batches.push(DrawBatch {
-                material,
-                vertices: vertices.to_vec(),
-                source: address,
-            }),
+            Some(batch) if batch.material == material => {
+                batch.vertices.extend(vertices);
+                self.bones
+                    .last_mut()
+                    .expect("one bone list per batch")
+                    .extend(bones);
+            }
+            _ => {
+                self.model.batches.push(DrawBatch {
+                    material,
+                    vertices: vertices.to_vec(),
+                    source: address,
+                });
+                self.bones.push(bones.to_vec());
+            }
         }
         Ok(())
     }
 
     pub fn finish(self) -> (VisualModel, Vec<ImportIssue>) {
+        let (skinned, issues) = self.finish_skinned();
+        (skinned.model, issues)
+    }
+
+    /// The model with each vertex's bone (see `set_bone`).
+    pub fn finish_skinned(self) -> (SkinnedModel, Vec<ImportIssue>) {
         let issues = self
             .issues
             .into_iter()
             .map(|(address, feature)| ImportIssue { address, feature })
             .collect();
-        (self.model, issues)
+        (
+            SkinnedModel {
+                model: self.model,
+                bones: self.bones,
+            },
+            issues,
+        )
     }
 }

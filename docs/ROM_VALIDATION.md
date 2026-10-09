@@ -205,3 +205,32 @@ exactly in the native decomp with `tick_trace --inputs`, and the CLI comparator
 agreed. The ignored `bob_ticks` test passes again (64,158 ticks) and now checks
 that the viewer's entry equals the script-start scenarios'. The recordings and
 traces stayed in `private/`.
+
+## Mario's model — 2026-10-09
+
+With the same ROM and a clean checkout at the pinned revision,
+`python3 -I tools/check_mario_model_reference.py --rom ROM --reference CHECKOUT`
+finds `mario_geo` at 0x17002DD4 through level_main_scripts_entry, and all 2,322
+commands of its expansion (every branch followed) match the source, including
+122 distinct display lists at the source's commented addresses. It locates the
+13 native callbacks (0x802770A4 through 0x802B1BB0, each name at one address);
+five agree with sm64tools' unnamed GeoSwitchCase labels. It then rebuilds six
+switch configurations from the source display lists through a 16-slot vertex
+cache, and the ignored `tests/mario_model.rs` test builds the same
+configurations from the ROM with the importer:
+
+| Configuration | Triangles | Matches |
+| --- | --- | --- |
+| standing (full detail, cap on, eyes open, fists) | 752 | yes |
+| moving near (full detail, mid-blink, holding the cap) | 804 | yes |
+| moving at medium range (cap off, dead eyes, open hands) | 585 | yes |
+| moving far (low detail, wing cap with wings, peace sign) | 284 | yes |
+| metal body standing (holding the wing cap) | 812 | yes |
+| vanish body flying (wing cap, open fists) | 796 | yes |
+
+Each digest covers every triangle vertex's bone, position and normal or color
+bytes in draw order. The builder reported no unsupported commands. The same
+test poses 90 played BOB ticks (idle, running, jumping onto the cannon mound),
+with every vertex within 500 units of Mario. Offscreen screenshots and Xvfb
+window captures of idle, running and jumping Mario were inspected; they are
+visual checks, not fidelity evidence.

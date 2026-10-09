@@ -6,6 +6,7 @@ pub mod geo;
 pub mod gfx;
 pub mod level;
 pub mod macros;
+pub mod mario;
 pub mod mio0;
 pub mod model;
 pub mod reader;

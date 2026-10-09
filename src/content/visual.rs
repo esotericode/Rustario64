@@ -128,6 +128,15 @@ pub struct VisualModel {
     pub batches: Vec<DrawBatch>,
 }
 
+/// A model whose vertices stay in the space of the transform node that was
+/// current when they were loaded, so a pose can place them each frame.
+/// `bones[b][v]` is the node of `model.batches[b].vertices[v]`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SkinnedModel {
+    pub model: VisualModel,
+    pub bones: Vec<Vec<u16>>,
+}
+
 impl VisualModel {
     pub fn triangle_count(&self) -> usize {
         self.batches.iter().map(|b| b.vertices.len() / 3).sum()

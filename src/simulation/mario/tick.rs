@@ -334,30 +334,48 @@ pub fn update_objects(m: &mut MarioState, w: &mut StepWorld<'_>) {
     update_mario_platform(m, w);
 }
 
+/// How the render pass placed Mario's object this frame. Presentation only:
+/// nothing in the simulation reads it.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct RenderedFrame {
+    /// The object was processed: active and in the rendered area.
+    pub processed: bool,
+    /// The floor-alignment matrix (`StepWorld::floor_align_matrix` index)
+    /// that replaced the object's position and angles, which the pass clears.
+    pub throw_matrix: Option<usize>,
+}
+
 /// What the render pass changes in Mario's object: geo_process_node_and_siblings
 /// and geo_process_object. Advancing the animation is authoritative (actions
 /// read the frame); the matrices and camera-relative position are not.
-pub fn render_mario_object(obj: &mut MarioObject, w: &StepWorld<'_>) {
+pub fn render_mario_object(obj: &mut MarioObject, w: &StepWorld<'_>) -> RenderedFrame {
+    let throw_matrix = obj.gfx.throw_matrix;
     if obj.gfx.node_flags & GRAPH_RENDER_ACTIVE == 0 {
         obj.gfx.throw_matrix = None;
-        return;
+        return RenderedFrame::default();
     }
     if obj.gfx.area_index == w.area_index {
         update_animation_frame(obj, w);
         obj.gfx.throw_matrix = None;
+        return RenderedFrame {
+            processed: true,
+            throw_matrix,
+        };
     }
+    RenderedFrame::default()
 }
 
 /// One frame: the controller read, the area update, and the render pass.
 /// `input.camera_yaw` is the camera yaw Mario reads this frame (the camera
 /// computed it last frame).
-pub fn tick(m: &mut MarioState, w: &mut StepWorld<'_>, input: TickInput) {
+pub fn tick(m: &mut MarioState, w: &mut StepWorld<'_>, input: TickInput) -> RenderedFrame {
     w.controller.sample(input);
     w.camera.yaw = input.camera_yaw;
     // area_update_objects.
     w.area_update_counter = w.area_update_counter.wrapping_add(1);
     update_objects(m, w);
     // render_game, then display_and_vsync.
-    render_mario_object(&mut m.obj, w);
+    let rendered = render_mario_object(&mut m.obj, w);
     w.global_timer = w.global_timer.wrapping_add(1);
+    rendered
 }
