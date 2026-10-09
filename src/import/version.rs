@@ -24,3 +24,9 @@ pub const SINE_COSINE_TABLE: Range<usize> = 0x102D80..0x107D80;
 pub const SINE_COSINE_SHA1: &str = "ada98573b7792b42e28667a452233c7275a81782";
 pub const ARCTAN_TABLE: Range<usize> = 0x107D80..0x108582;
 pub const ARCTAN_SHA1: &str = "c282767b1d02c68afe1e6c65e091540d868bc032";
+/// Mario's DMA animation table (`gMarioAnims`): sm64tools' "mario_animation"
+/// block. The decoder checks its structure; the content is validated against
+/// the pinned decomp's animation sources (tools/check_mario_anims_reference.py).
+pub const MARIO_ANIMATIONS: Range<usize> = 0x4EC000..0x579C26;
+/// MARIO_ANIM_* IDs 0x00..=0xD0 in the pinned include/mario_animation_ids.h.
+pub const MARIO_ANIMATION_COUNT: usize = 0xD1;

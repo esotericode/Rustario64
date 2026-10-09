@@ -1,3 +1,4 @@
+pub mod animation;
 pub mod visual;
 
 use serde::{Deserialize, Serialize};

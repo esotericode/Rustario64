@@ -1,3 +1,4 @@
+pub mod animation;
 pub mod bob;
 pub mod collision;
 pub mod engine;
