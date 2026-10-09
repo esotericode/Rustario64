@@ -7,8 +7,13 @@
 //! Replacement plan: once per-tick traces from original execution cover these
 //! queries, those traces become the authority and this harness can be retired.
 pub mod input_trace;
+pub mod tick_trace;
 
-use std::sync::{Mutex, MutexGuard};
+use rustario64::{content::animation::MarioAnimations, simulation::TickInput};
+use std::{
+    collections::BTreeMap,
+    sync::{Mutex, MutexGuard},
+};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
@@ -68,6 +73,48 @@ unsafe extern "C" {
     fn oracle_input_tick(state: *mut OracleMario, input: *mut OracleInput, which: i32);
     fn oracle_constant_count() -> i32;
     fn oracle_constant(i: i32, value: *mut i64) -> *const std::ffi::c_char;
+    fn oracle_set_mario_anims(
+        count: i32,
+        headers: *const i16,
+        indices: *const *const u16,
+        index_lens: *const i32,
+        values: *const *const i16,
+        value_lens: *const i32,
+    ) -> i32;
+    fn oracle_tick_begin(setup: *const TickSetup);
+    fn oracle_tick_run(input: *const OracleTickInput);
+    fn oracle_tick_snapshot(
+        names: *mut *const *const std::ffi::c_char,
+        words: *mut *const u32,
+    ) -> i32;
+}
+
+/// A level entry for the tick oracle (layout matches `OracleTickSetup` in
+/// c/tick.c): gMarioSpawnInfo as the level script sets it, the level and
+/// area, the camera mode inputs, and the save-file inputs.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TickSetup {
+    pub start_pos: [i32; 3],
+    pub start_angle: [i32; 3],
+    pub area_index: i32,
+    pub active_area_index: i32,
+    pub behavior_arg: u32,
+    pub level_num: i32,
+    pub terrain_type: u32,
+    pub camera_mode: i32,
+    pub camera_def_mode: i32,
+    pub save_flags: u32,
+    pub total_stars: i32,
+    /// The rendered area's index (gCurGraphNodeRoot->areaIndex).
+    pub root_area_index: i32,
+}
+
+#[repr(C)]
+struct OracleTickInput {
+    buttons: u32,
+    stick: [i32; 2],
+    camera_yaw: i32,
 }
 
 /// Flat MarioState plus the world inputs the step code reads (layout matches
@@ -376,6 +423,92 @@ impl Oracle {
         }
         // SAFETY: `state` is a valid OracleMario; surface indices were checked.
         unsafe { oracle_mario_call(state, which, arg) }
+    }
+
+    /// Load Mario's animation table into the C side's host-layout DMA table.
+    pub fn set_mario_animations(&self, anims: &MarioAnimations) {
+        let count = i32::try_from(anims.animations.len()).expect("table fits i32");
+        let headers: Vec<i16> = anims
+            .animations
+            .iter()
+            .flat_map(|a| {
+                [
+                    a.flags,
+                    a.y_trans_divisor,
+                    a.start_frame,
+                    a.loop_start,
+                    a.loop_end,
+                    a.bone_count,
+                ]
+            })
+            .collect();
+        let indices: Vec<*const u16> = anims.animations.iter().map(|a| a.index.as_ptr()).collect();
+        let index_lens: Vec<i32> = anims
+            .animations
+            .iter()
+            .map(|a| i32::try_from(a.index.len()).expect("index fits i32"))
+            .collect();
+        let values: Vec<*const i16> = anims.animations.iter().map(|a| a.values.as_ptr()).collect();
+        let value_lens: Vec<i32> = anims
+            .animations
+            .iter()
+            .map(|a| i32::try_from(a.values.len()).expect("values fit i32"))
+            .collect();
+        // SAFETY: every pointer/length pair describes a live slice; the C side
+        // copies the data before returning.
+        let status = unsafe {
+            oracle_set_mario_anims(
+                count,
+                headers.as_ptr(),
+                indices.as_ptr(),
+                index_lens.as_ptr(),
+                values.as_ptr(),
+                value_lens.as_ptr(),
+            )
+        };
+        assert_eq!(status, 0, "oracle_set_mario_anims failed");
+    }
+
+    /// Enter a level as c/tick.c's oracle_tick_begin does. Requires the
+    /// terrain (`load`) and `set_mario_animations`.
+    pub fn tick_begin(&self, setup: &TickSetup) {
+        // SAFETY: a valid setup record under the process-wide lock.
+        unsafe { oracle_tick_begin(setup) };
+    }
+
+    /// Run one complete frame of the decomp's Mario code.
+    pub fn tick(&self, input: TickInput) {
+        let input = OracleTickInput {
+            buttons: u32::from(input.buttons),
+            stick: input.stick.map(i32::from),
+            camera_yaw: i32::from(input.camera_yaw),
+        };
+        // SAFETY: a valid input record; tick_begin ran (the C side aborts otherwise).
+        unsafe { oracle_tick_run(&input) };
+    }
+
+    /// Every compared word after the last frame, named as c/tick.c names it.
+    pub fn tick_snapshot(&self) -> BTreeMap<String, u32> {
+        let mut names = std::ptr::null();
+        let mut words = std::ptr::null();
+        // SAFETY: the C side returns static arrays of `n` entries that stay
+        // valid until the next call, which the lock excludes.
+        unsafe {
+            let n = usize::try_from(oracle_tick_snapshot(&mut names, &mut words))
+                .expect("non-negative snapshot length");
+            let names = std::slice::from_raw_parts(names, n);
+            let words = std::slice::from_raw_parts(words, n);
+            names
+                .iter()
+                .zip(words)
+                .map(|(&name, &word)| {
+                    let name = std::ffi::CStr::from_ptr(name)
+                        .to_string_lossy()
+                        .into_owned();
+                    (name, word)
+                })
+                .collect()
+        }
     }
 
     pub fn find_water_level(&self, x: f32, z: f32) -> f32 {

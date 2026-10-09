@@ -366,6 +366,7 @@ s32 oracle_mario_call(OracleMario *o, s32 which, u32 arg) {
 /* Pre-action input oracle. Warp requests are counted from the event log. */
 void adjust_analog_stick(struct Controller *controller);
 void update_mario_button_inputs(struct MarioState *m);
+void update_mario_inputs(struct MarioState *m);
 void update_mario_joystick_inputs(struct MarioState *m);
 s32 oracle_events(OracleEvent *out, s32 max);
 

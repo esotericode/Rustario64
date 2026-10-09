@@ -114,7 +114,6 @@ s32 gSurfaceNodesAllocated;
 s32 gSurfacesAllocated;
 s32 gNumStaticSurfaceNodes;
 s32 gNumStaticSurfaces;
-Vec3f gVec3fZero = { 0.0f, 0.0f, 0.0f };
 
 /* Behavior scripts are compared by address only; objects never run them. */
 const BehaviorScript bhvDDDWarp[1];
@@ -382,6 +381,15 @@ void *main_pool_alloc(u32 size, u32 side) {
         sPools[sPoolCount++] = p;
     }
     return p;
+}
+
+/* Graph nodes are initialized in place (pool NULL); nothing allocates. */
+void *alloc_only_pool_alloc(struct AllocOnlyPool *pool, s32 size) {
+    (void) pool;
+    (void) size;
+    fprintf(stderr, "oracle: alloc-only pools are not modelled\n");
+    abort();
+    return NULL;
 }
 
 void *segmented_to_virtual(const void *addr) {

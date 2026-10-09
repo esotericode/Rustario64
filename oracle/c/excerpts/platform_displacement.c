@@ -5,6 +5,7 @@
 #include "sm64.h"
 #include "engine/math_util.h"
 #include "engine/surface_collision.h"
+#include "game/object_helpers.h"
 #include "game/object_list_processor.h"
 #include "game/platform_displacement.h"
 

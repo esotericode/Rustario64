@@ -4,13 +4,16 @@
 fn main() {
     let files = [
         "c/oracle.c",
+        "c/tick.c",
         "c/constants.c",
         "c/runtime_glue.c",
+        "c/interaction_unit.c",
         "c/excerpts/game_init.c",
         "c/excerpts/graph_node.c",
-        "c/excerpts/interaction.c",
+        "c/excerpts/rendering_graph_node.c",
         "c/excerpts/macro_special_objects.c",
         "c/excerpts/object_collision.c",
+        "c/excerpts/object_helpers.c",
         "c/excerpts/object_list_processor.c",
         "c/excerpts/platform_displacement.c",
         "c/decomp/src/engine/surface_load.c",
@@ -48,8 +51,14 @@ fn main() {
         .flag_if_supported("-ffp-contract=off")
         .flag_if_supported("-fno-fast-math")
         .flag_if_supported("-fexcess-precision=standard")
-        .flag_if_supported("-w")
-        .warnings(false);
+        // An implicit declaration silently passes floats as doubles and reads
+        // an int result; every call must see its prototype.
+        .flag("-Werror=implicit-function-declaration")
+        .flag("-Werror=implicit-int")
+        // The decomp is not written for host compilers' default warnings;
+        // keep them out of cargo's output (errors still fail the build).
+        .warnings(false)
+        .cargo_warnings(false);
     for file in files {
         build.file(file);
         println!("cargo:rerun-if-changed={file}");

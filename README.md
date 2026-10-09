@@ -19,13 +19,22 @@ What works now:
   decompilation's C.
 - Original controller normalization and Mario's pre-action input update: button
   edges, intended magnitude/yaw, geometry flags, floor fallback, and input timers.
-- A fixed 30 Hz scheduler and exact trace comparison, now with exportable
-  native-C/Rust **input-stage** trace pairs.
+- Mario's animation table imported from your ROM, and Mario's complete update
+  ported from `mario.c` and the action files: level entry (`init_mario`), the
+  stationary, moving, airborne, punching and hanging/ledge actions, health, caps,
+  special floors, and the per-frame update of Mario's object including the
+  animation frame advance. **Complete ticks match the decomp bit for bit**:
+  28,158 ticks on an authored playground (CI) and 64,158 on Bob-omb Battlefield
+  with your ROM's collision, tables and animations, at several presentation rates.
+- A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
+  **full-tick** and input-stage trace pairs.
 
-Mario is not playable yet: the physics steps exist and are tested on their own,
-but there are no actions, spawn initializer, camera logic, animation, objects,
-or missions. Input-stage traces do not validate complete movement ticks. The imported level is independently validated against the
-pinned decompilation; see [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md).
+Mario is not playable yet: his simulation runs and is compared tick by tick, but
+it is not connected to the viewer, and there is no reference camera (camera yaw
+is an input), no objects, no cutscene or water actions, and no missions. The
+comparisons are against the natively compiled decomp, not N64 execution. The
+imported level is independently validated against the pinned decompilation; see
+[docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md).
 
 ## Layout
 
@@ -33,7 +42,7 @@ pinned decompilation; see [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md).
 | --- | --- | --- |
 | `rustario64` | `.` | GPU-free core: import, content, simulation scaffolding, traces, headless CLI |
 | `rustario64-render` | `render/` | Optional wgpu renderer and the `rustario64-viewer` development binary |
-| `rustario64-oracle` | `oracle/` | Development-only: pinned CC0 decomp collision, math, Mario step and input C compiled natively for bitwise differential tests (needs a C compiler); never a runtime dependency |
+| `rustario64-oracle` | `oracle/` | Development-only: the pinned CC0 decomp's collision, math and Mario code compiled natively for bitwise component and full-tick differential tests (needs a C compiler); never a runtime dependency |
 
 The core never depends on the renderer, so simulation and replay comparisons run
 without a GPU or window.
@@ -56,8 +65,8 @@ cargo run --locked -- demo
 ```
 
 Oracle tests compile vendored decomp C with the system C compiler and compare it
-with the Rust collision, math, Mario step and input ports on authored data; see
-[oracle/README.md](oracle/README.md).
+with the Rust collision, math, Mario step, input and full-tick ports on authored
+data; see [oracle/README.md](oracle/README.md).
 Render tests draw small authored models offscreen. Without a GPU adapter they
 skip; set `RUSTARIO64_REQUIRE_GPU=1` to make a missing adapter fail (CI does this
 with Mesa's software Vulkan, `mesa-vulkan-drivers`). The viewer needs a Vulkan,
@@ -84,11 +93,14 @@ RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-ora
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked -p rustario64-oracle --test math rom_trig -- --ignored --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test mario_step bob_steps -- --ignored --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test mario_input bob_input -- --ignored --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --test animation local_us_rom_mario_animations -- --ignored --exact
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test mario_tick bob_ticks -- --ignored --nocapture
 ```
 
 The oracle tests compare BOB's real collision (about four million queries), the
-ROM's trig tables (about four million lookups), and Mario's physics steps on BOB
-(1.18 million step calls) between the Rust port and the decomp C.
+ROM's trig tables (about four million lookups), Mario's physics steps on BOB
+(1.18 million step calls), and 64,158 complete Mario ticks on BOB with the ROM's
+animations between the Rust port and the decomp C.
 
 ### View Bob-omb Battlefield
 
@@ -142,6 +154,23 @@ cargo run --locked -- demo --trace private/foundation.trace.json
 cargo run --locked -- compare-traces private/foundation.trace.json private/foundation.trace.json
 ```
 
+Export a native-vs-Rust **full-tick** trace pair with your ROM (60 seconds of
+scripted moves from BOB's script start; Rust runs at 144 Hz presentation):
+
+```sh
+cargo test --locked -p rustario64-oracle --test mario_tick
+cargo run --locked --release -p rustario64-oracle --example tick_trace -- \
+  /path/to/sm64.z64 private/tick-traces
+cargo run --locked -- compare-traces \
+  private/tick-traces/native-tick.trace.json private/tick-traces/rust-tick.trace.json
+```
+
+Each frame records about 260 named words: all of MarioState, Mario's object, his
+body and camera-status state, world globals, controller 1 and the frame's sound,
+camera and warp events. The entry is a fresh-boot level entry at the script's
+start, not a painting spawn. Mario's object is the only object, and the camera
+yaw is part of each tick's input.
+
 Export a native-vs-Rust **input-stage** trace pair with your ROM:
 
 ```sh
@@ -172,8 +201,9 @@ holds the owner-ROM evidence.
 
 ## Next increment
 
-Extend the input-stage oracle to spawn initialization, action setters/dispatch,
-and idle/walking/stopping actions. Represent animation state where it controls
-transitions and declare camera/object/sound boundaries. Compare complete ticks
-on BOB before connecting validated actions to the viewer. Original-execution
-traces remain the eventual authority. Skybox and placement models remain M1 work.
+Connect the compared tick to the viewer: keyboard/gamepad into `TickInput`, a
+simple camera yaw source, and Mario drawn with his imported animations at the
+interpolated presentation rate, with a replay check that the viewer's ticks stay
+identical to the native trace. Then port the reference camera with its own
+per-tick comparisons. Original-execution traces remain the eventual authority.
+Skybox and placement models remain M1 work.

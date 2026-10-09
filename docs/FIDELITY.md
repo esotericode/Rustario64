@@ -1,21 +1,24 @@
 # Comparison contract and coverage
 
-Original movement, actions, camera, RNG, objects, and interactions have **zero
-validated gameplay coverage**. Collision, math, physics steps and pre-action
-inputs have native-decomp component coverage. Input-stage traces compare at
-every tick; these are not complete gameplay ticks because no action runs yet. The diagnostic
-marker visualizes a tick counter; it is not a Mario approximation.
+Mario's movement now has **per-tick coverage against the natively compiled
+decomp**: complete frames of Mario alone (input stage, every non-object action
+group, Mario's object update and the animation frame advance) match bit for bit
+on an authored playground and on Bob-omb Battlefield with the owner ROM's data.
+That is not yet coverage against original N64 execution, and the camera,
+objects, interactions with objects, cutscene/submerged actions and RNG-driven
+behaviors have **zero validated coverage**. Collision, math, physics steps and
+pre-action inputs also keep their component suites. The diagnostic marker
+visualizes a tick counter; it is not a Mario approximation.
 
 Target US v1.0 at n64decomp/sm64 revision
 9921382a68bb0c865e5e45eb594d9c64db59b1af, ROM SHA-1
 9bef1128717f958171a4afac3ed78ee2bb4e86ce, 30 ticks/second, reference camera/input
 profile. Prefer unmodified matching N64/original execution; native-port float
 differences need separate evidence. Physics-modified ports are not unquestioned
-oracles. Static asset checks passed with the supported owner ROM before the
-workspace reset; the ROM needs to be supplied again for fresh integration runs
-(see [ROM_VALIDATION.md](ROM_VALIDATION.md)). A matching build, emulator trace setup,
-and per-tick exporter are still unavailable, so reference-vs-Rust gameplay
-checks have not run.
+oracles. Static asset checks and every owner-ROM comparison below were rerun
+with the supplied ROM on 2026-10-09 (see [ROM_VALIDATION.md](ROM_VALIDATION.md)).
+A matching N64 build, emulator trace setup and original-execution exporter are
+still unavailable, so comparisons against original execution have not run.
 
 ## Schema 1
 
@@ -133,12 +136,10 @@ dropping the floor normal's Y factor from the ground quarter-step displacement,
 the wall-angle bound 0x2AAA to 0x2AAB, and the 160-unit ceiling gap `>` to `>=`
 each fail the CI test.
 
-Not covered: mario_update_quicksand and mario_push_off_steep_floor (not ported),
-the paths where the original dereferences NULL or reads past a table (the port
-panics), object (dynamic) surfaces, and anything that depends on action code or the camera. Input processing
-is covered separately below. Single calls from generated states show the
-step functions match; they do not show that Mario reaches those states the same
-way, which needs action ports and per-tick traces.
+Not covered here: the paths where the original dereferences NULL or reads past
+a table (the port panics), object (dynamic) surfaces, and the camera. Single
+calls from generated states show the step functions match; the complete-tick
+comparisons below show Mario reaching those states through his actions.
 
 All component suites were rechecked on Rust 1.99.0 after the dependency update,
 including optimized authored and owner-ROM tests. Zero component divergences were
@@ -185,20 +186,87 @@ Camera yaw is scripted. Action timers/RNG and empty object lists are explicitly
 excluded placeholders. Dynamic surfaces and the dynamic-gap squish-input path
 remain unvalidated; original undefined paths remain outside coverage. Graphics
 options here test scheduler/snapshot isolation, not GPU gameplay. The input
-suite and example passed on the supplied ROM before a workspace reset; recovered
-source has fresh authored checks, but rerunning owner-ROM tests on the final
-commit needs the attachment again (PROJECT_PLAN session 5).
+suite passed again on the supplied ROM on 2026-10-09 with the action port's
+state model (the oracle's `InputContext` adapter maps the schema-1 context onto
+`StepWorld` and Mario's object).
+
+## Complete Mario tick coverage
+
+`oracle/c/tick.c` runs complete frames of the vendored decomp's Mario code with
+Mario's object as the only object, and `simulation::mario::tick` runs the same
+frames in Rust. Both start from the same level entry (`init_mario_from_save_file`,
+Mario's spawn from `gMarioSpawnInfo`, `init_mario`, `ACT_IDLE`) and then run
+independently: nothing is copied between them, so a divergence carries forward
+as it would in play. After the entry and after every frame, both report every
+compared value as a named 32-bit word (260 per frame, plus three per event): all MarioState
+fields (surfaces by index), Mario's object (graph-node flags, area, angles,
+position, scale, the whole animation state, throw matrix, collision fields, all
+0x50 raw object words, hitboxes, platform, behavior-script position), body and
+camera-status state, world globals and interaction statics, both floor-align
+matrices, the animation in the DMA buffer, controller 1, and the frame's boundary
+events in call order (sounds, camera requests, warps, level text, wind
+particles, unsupported groups). Schema-1 traces carry the words, so the CLI
+comparator reports the first differing tick and word.
+
+| Check | Authored playground (CI) | BOB, owner ROM (ignored test) |
+| --- | --- | --- |
+| World | 8x8 tiled field with typed floors (burning, quicksand, slippery, wind), a pit over a death plane, low and high blocks, a 1,400-unit wall, a hangable ceiling, a gentle ramp and a 52° slope; computed trig tables; an authored 209-entry animation table | BOB collision, ROM trig tables, Mario's 209 ROM animations, the level script's start, radial camera mode |
+| Scenarios | 15 scripted move sets (idle to sleep, run/turn/brake, jump chains to triple jumps, long jump, backflip, side flip, crouch/crawl, slide kick, dive and rollouts, punch/kick combos, ground pound, wall kicks, ledge grab/climb/drop, hanging, ramps, steep jumps, stomach and butt slides, lava, quicksand, wind, the pit) and 24 fuzzed 900-tick runs from 12 starts | The same 15 scripts from the script start and 32 fuzzed 1,800-tick runs from the start and random floors |
+| Ticks compared, all identical | 28,158 | 64,158 |
+| Distinct end-of-tick actions / boundary events | 69 / 10,092 | 60 / 19,048 |
+| Presentation | 600 ticks, Rust at 15/30/60/120/144 Hz with interpolation and graphics options on and off: identical to native | 900 ticks at 30/60/144 Hz: identical |
+
+The CI test fails if any of 28 key actions (from walking to lava boost) stops
+being reached, so script drift cannot silently shrink coverage. A Rust panic (a
+path the port does not support) ends a run's comparison at the previous tick
+and is reported; none occurred in these suites. Deliberately changing the
+steep-jump speed factor, the walking acceleration or the render stage's area
+check each failed the CI test at the first affected tick (sources restored).
+Building this harness exposed C implicit-declaration bugs in two excerpts'
+includes; the oracle now treats implicit declarations as errors (oracle/README.md).
+
+```sh
+cargo test --locked -p rustario64-oracle --test mario_tick -- --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test mario_tick bob_ticks -- --ignored --nocapture
+cargo run --locked --release -p rustario64-oracle --example tick_trace -- /path/to/sm64.z64 private/tick-traces
+cargo run --locked -- compare-traces private/tick-traces/native-tick.trace.json private/tick-traces/rust-tick.trace.json
+```
+
+Limits of this evidence:
+
+- Native host C, not N64 execution. IEEE single precision with `-fwrapv`,
+  `-ffp-contract=off` and `AVOID_UB` is assumed to match the N64 for these
+  operations; original-execution traces remain the authority.
+- Mario alone on static terrain. No objects, so object interactions, held or
+  ridden objects, platforms, dynamic surfaces and particles are absent; those
+  paths panic in Rust and abort in C. Cutscene and submerged action groups are
+  recorded as unsupported events and freeze the action (deaths, star dances,
+  water). Warps are recorded but not executed: the original's
+  `level_trigger_warp` would also set `invincTimer` and start a transition, so a
+  tick that records a warp ends faithful comparison with the original game.
+- The camera is a recorded input: its yaw comes with each tick, and camera
+  requests are events that do not change the mode (the real camera would).
+- The level entry is the no-warp branch with a fresh boot, not a painting entry
+  (which uses cutscene spawn actions).
+- Authored animations make action timing differ from the game; the BOB suite
+  uses the real table. The harness's object-pool and bhvMario steps are authored
+  mirrors on both sides (oracle/README.md).
+- The render pass's presentation-only writes (torso/head angle resets when Mario
+  is in view, the hand-scale counter) are not modelled on either side; they
+  never feed back into gameplay.
 
 ## Next reference work
 
-1. Extend the input-stage oracle to spawn initialization, action setters/dispatch,
-   and stationary/moving actions. Represent animation state where it affects
-   transitions; declare object/camera/sound boundaries. libsm64 remains excluded
-   as a fidelity oracle because it changes collision ordering.
-2. Compare complete spawn/idle/walking/turning/stopping ticks on BOB before viewer
-   integration, then airborne actions and long movement sequences.
-3. Obtain original-execution traces from a matching US build and emulator. Those
+1. Drive the viewer's Mario from the compared tick (keyboard/gamepad into
+   `TickInput`, a recorded or simple camera yaw) and render him with his imported
+   animations; any viewer replay must stay identical to the native trace.
+2. Port the reference camera (camera.c) so camera yaw and mode stop being inputs,
+   with its own per-tick comparisons; then the submerged and cutscene groups BOB
+   needs (water is absent from BOB, but deaths, star dances and spawn actions are
+   not).
+3. Objects for the first mission, with object state added to the tick snapshot.
+4. Obtain original-execution traces from a matching US build and emulator. Those
    remain unavailable and are the eventual authority over native-host results.
-4. Extend real gameplay replays to multiple presentation caps, slopes, walls,
-   ceilings, ledges, landings, dynamic surfaces and interactions. A finite exact
-   suite covers its cases/platforms, not all behavior.
+   libsm64 remains excluded as a fidelity oracle because it changes collision
+   ordering. A finite exact suite covers its cases and platforms, not all
+   behavior.

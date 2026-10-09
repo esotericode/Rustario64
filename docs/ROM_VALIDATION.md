@@ -142,13 +142,12 @@ Original spawn ordering, preset defaults, respawn mutation, executable behaviors
 native callbacks, and object interactions remain unimplemented. No behavior
 address has been promoted to an implemented runtime behavior.
 
-Skybox import, object models from globally loaded segments, animation import,
-dynamic object collision, Mario actions, camera, audio, and missions are missing. No
-movement fidelity claim follows from matching the asset streams. Native
-collision, math, Mario step and input-stage component comparisons exist; no
-original-execution per-tick exporter or complete gameplay trace exists. Next:
-skybox/object models for content, and spawn/action initialization plus
-idle/walking/stopping actions for fidelity.
+Skybox import, object models from globally loaded segments, dynamic object
+collision, objects, the camera, cutscene/submerged actions, audio, and missions
+are missing. No movement fidelity claim follows from matching the asset streams.
+Complete Mario ticks are compared with the natively compiled decomp (below); no
+original-execution per-tick exporter exists. Next: drive and draw Mario in the
+viewer from the compared tick, then the reference camera.
 
 ## Input-stage integration — 2026-10-08
 
@@ -160,8 +159,35 @@ passed. The fixture includes imported BOB collision and script-start data;
 script yaw is converted from degrees. It is not a spawn or action replay.
 
 The reset removed the ROM mount and unpushed files. The change was reconstructed
-and fresh authored checks pass. The final reconstructed commit still needs a
-fresh owner-ROM run; use README's `mario_input bob_input` and `input_trace`
-commands after supplying the ROM again. Existing asset digests and previous
-independent source comparisons were not replaced or rederived in this increment.
-No ROM, decoded assets, or traces were uploaded to the repository.
+and fresh authored checks pass; the owner-ROM input suite passed again on the
+reuploaded ROM on 2026-10-09 (below). No ROM, decoded assets, or traces were
+uploaded to the repository.
+
+## Mario animation table — 2026-10-09
+
+`RUSTARIO64_ROM=... cargo test --test animation local_us_rom_mario_animations
+-- --ignored` decodes Mario's DMA animation table (0x4EC000, 209 entries) from
+the owner ROM. Independently, `tools/check_mario_anims_reference.py --reference
+<clean pinned checkout> --rom <ROM>` parses the pinned `assets/anims/*.inc.c`
+with the rules of the decomp's `tools/mario_anims_converter.py`, rebuilds the
+big-endian N64 table (0x8DC16 bytes, SHA-1
+`27efba64f6698b8f87ec39a68cce3b0f5895cfb2`) and finds it equal to ROM bytes
+0x4EC000..0x579C16. Its canonical record digest
+`919843c7438f964a888830607c04e37e433fb99b` (every header field and array) is
+the value the Rust test pins, so the Rust decoder and the source rebuild agree on
+all 209 animations. Neither the table nor decoded values are stored.
+
+## Owner-ROM recheck and complete Mario ticks — 2026-10-09
+
+With the reuploaded US ROM, every ignored owner-ROM test passes in release mode:
+the asset import digests, the animation table, BOB collision (4,084,680
+queries), trig tables (3,993,600 checks), Mario steps (1,180,000 calls), the
+input stage, and the new complete-tick suite. The tick suite runs BOB's
+collision with the ROM's trig tables and Mario's real animations from the level
+script's start and from 31 random floor positions: all 64,158 ticks of 47 runs
+are identical between the Rust port and the natively compiled decomp,
+reaching 60 distinct actions and 19,048 boundary events, and a 900-tick run is
+identical at 30, 60 and 144 Hz presentation. The `tick_trace` example exports a
+1,800-tick native/Rust trace pair privately; the CLI comparator reports an exact
+match. These compare against native host C, not N64 execution; see
+[FIDELITY.md](FIDELITY.md) for the limits.

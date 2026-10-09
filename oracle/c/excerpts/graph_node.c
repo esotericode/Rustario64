@@ -4,6 +4,18 @@
  * edit. The include lines are authored (MIT). Item SHA-1s: oracle/README.md. */
 #include "sm64.h"
 #include "engine/graph_node.h"
+#include "engine/math_util.h"
+#include "game/area.h"
+#include "game/memory.h"
+
+/* src/engine/graph_node.c: Vec3f gVec3fZero = { 0.0f, 0.0f, 0.0f } */
+Vec3f gVec3fZero = { 0.0f, 0.0f, 0.0f };
+
+/* src/engine/graph_node.c: Vec3s gVec3sZero = { 0, 0, 0 } */
+Vec3s gVec3sZero = { 0, 0, 0 };
+
+/* src/engine/graph_node.c: Vec3f gVec3fOne = { 1.0f, 1.0f, 1.0f } */
+Vec3f gVec3fOne = { 1.0f, 1.0f, 1.0f };
 
 /* src/engine/graph_node.c: retrieve_animation_index */
 s32 retrieve_animation_index(s32 frame, u16 **attributes) {
@@ -68,4 +80,64 @@ s16 geo_update_animation_frame(struct AnimInfo *obj, s32 *accelAssist) {
     }
 
     return GET_HIGH_S16_OF_32(result);
+}
+
+/* src/engine/graph_node.c: init_scene_graph_node_links */
+void init_scene_graph_node_links(struct GraphNode *graphNode, s32 type) {
+    graphNode->type = type;
+    graphNode->flags = GRAPH_RENDER_ACTIVE;
+    graphNode->prev = graphNode;
+    graphNode->next = graphNode;
+    graphNode->parent = NULL;
+    graphNode->children = NULL;
+}
+
+/* src/engine/graph_node.c: init_graph_node_object */
+struct GraphNodeObject *init_graph_node_object(struct AllocOnlyPool *pool,
+                                               struct GraphNodeObject *graphNode,
+                                               struct GraphNode *sharedChild, Vec3f pos, Vec3s angle,
+                                               Vec3f scale) {
+    if (pool != NULL) {
+        graphNode = alloc_only_pool_alloc(pool, sizeof(struct GraphNodeObject));
+    }
+
+    if (graphNode != NULL) {
+        init_scene_graph_node_links(&graphNode->node, GRAPH_NODE_TYPE_OBJECT);
+        vec3f_copy(graphNode->pos, pos);
+        vec3f_copy(graphNode->scale, scale);
+        vec3s_copy(graphNode->angle, angle);
+        graphNode->sharedChild = sharedChild;
+        graphNode->throwMatrix = NULL;
+        graphNode->animInfo.animID = 0;
+        graphNode->animInfo.curAnim = NULL;
+        graphNode->animInfo.animFrame = 0;
+        graphNode->animInfo.animFrameAccelAssist = 0;
+        graphNode->animInfo.animAccel = 0x10000;
+        graphNode->animInfo.animTimer = 0;
+        graphNode->node.flags |= GRAPH_RENDER_HAS_ANIMATION;
+    }
+
+    return graphNode;
+}
+
+/* src/engine/graph_node.c: geo_obj_init_spawninfo */
+void geo_obj_init_spawninfo(struct GraphNodeObject *graphNode, struct SpawnInfo *spawn) {
+    vec3f_set(graphNode->scale, 1.0f, 1.0f, 1.0f);
+    vec3s_copy(graphNode->angle, spawn->startAngle);
+
+    graphNode->pos[0] = (f32) spawn->startPos[0];
+    graphNode->pos[1] = (f32) spawn->startPos[1];
+    graphNode->pos[2] = (f32) spawn->startPos[2];
+
+    graphNode->areaIndex = spawn->areaIndex;
+    graphNode->activeAreaIndex = spawn->activeAreaIndex;
+    graphNode->sharedChild = spawn->model;
+    graphNode->unk4C = spawn;
+    graphNode->throwMatrix = NULL;
+    graphNode->animInfo.curAnim = 0;
+
+    graphNode->node.flags |= GRAPH_RENDER_ACTIVE;
+    graphNode->node.flags &= ~GRAPH_RENDER_INVISIBLE;
+    graphNode->node.flags |= GRAPH_RENDER_HAS_ANIMATION;
+    graphNode->node.flags &= ~GRAPH_RENDER_BILLBOARD;
 }
