@@ -4,6 +4,7 @@
 fn main() {
     let files = [
         "c/oracle.c",
+        "c/constants.c",
         "c/runtime_glue.c",
         "c/excerpts/game_init.c",
         "c/excerpts/graph_node.c",

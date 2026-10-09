@@ -4,11 +4,11 @@ use rustario64::{
     presentation::GraphicsOptions,
     simulation::{
         TickInput,
-        collision::{CollisionFlags, CollisionWorld},
+        collision::CollisionWorld,
         controller::{A_BUTTON, B_BUTTON, Controller, Z_TRIG},
         mario::{
             MarioState, StepWorld, constants as c,
-            inputs::{self, InputContext, InputOutcome},
+            inputs::{self, InputOutcome},
         },
         math::{ARCTAN_ENTRIES, SINE_ENTRIES, TrigTables},
     },
@@ -16,8 +16,16 @@ use rustario64::{
 };
 use rustario64_oracle::{
     InputCall, Oracle, OracleInput, OracleMario,
-    input_trace::{Replay, snapshot, world_digest},
+    input_trace::{
+        InputContext, NO_ANIMATIONS, Replay, snapshot, update_mario_inputs, world_digest,
+    },
 };
+
+/// A state whose last authoritative graphics position is `pos`.
+fn with_gfx_pos(mut m: MarioState, pos: [f32; 3]) -> MarioState {
+    m.obj.gfx.pos = pos;
+    m
+}
 
 fn computed_tables() -> TrigTables {
     TrigTables::new(
@@ -37,15 +45,9 @@ fn world(stream: &[i16]) -> CollisionWorld {
     CollisionWorld::load_area_terrain(&mesh).unwrap()
 }
 fn step_world<'a>(world: &'a CollisionWorld, trig: &'a TrigTables) -> StepWorld<'a> {
-    StepWorld {
-        collision: world,
-        collision_flags: CollisionFlags::default(),
-        trig,
-        global_timer: 0,
-        area_terrain_type: 0,
-        level_num: c::LEVEL_BOB,
-        water_pseudo_floor_origin_offset: 0.0,
-    }
+    let mut w = StepWorld::new(world, trig, &NO_ANIMATIONS);
+    w.level_num = c::LEVEL_BOB;
+    w
 }
 /// Sixteen sloped tiles, ceiling, two-sided wall, and overlapping water/gas.
 fn authored_stream() -> Vec<i16> {
@@ -146,7 +148,7 @@ fn exhaustive_controls(trig: &TrigTables) {
     let world = world(&stream);
     let oracle = Oracle::load(&stream);
     oracle.set_trig(trig.sine_table(), trig.arctan_table());
-    let w = step_world(&world, trig);
+    let mut w = step_world(&world, trig);
     let mut checks = 0;
     for (squish, camera_yaw) in [(0, 0), (1, 32767), (255, -32768)] {
         let mut controller = Controller {
@@ -180,8 +182,10 @@ fn exhaustive_controls(trig: &TrigTables) {
                     InputCall::ButtonsAndJoystick,
                 );
                 controller.sample(input);
-                inputs::update_mario_button_inputs(&mut m, &controller);
-                inputs::update_mario_joystick_inputs(&mut m, &w, &controller, camera_yaw);
+                w.controller = controller;
+                w.camera.yaw = camera_yaw;
+                inputs::update_mario_button_inputs(&mut m, &w);
+                inputs::update_mario_joystick_inputs(&mut m, &w);
                 controller_matches(&controller, &reference_input);
                 assert_eq!(
                     m.intended_mag.to_bits(),
@@ -249,11 +253,6 @@ fn geometry_cases(
                 c::ACT_FREEFALL
             },
             pos: p,
-            gfx_pos: if i % 5 == 0 {
-                p
-            } else {
-                [-5400.0, 0.0, -5400.0]
-            },
             input: next() as u16,
             flags: next(),
             particle_flags: next(),
@@ -267,6 +266,11 @@ fn geometry_cases(
             squish_timer: if i % 2 == 0 { 0 } else { 3 },
             face_angle: [0, next() as i16, 0],
             ..Default::default()
+        };
+        m.obj.gfx.pos = if i % 5 == 0 {
+            p
+        } else {
+            [-5400.0, 0.0, -5400.0]
         };
         let mut w = step_world(world, trig);
         w.area_terrain_type = (i % 7) as u16;
@@ -291,7 +295,7 @@ fn geometry_cases(
             OracleInput::capture(&controller, &context, input, InputOutcome::Continue);
         oracle.input_tick(&mut reference, &mut reference_input, InputCall::Full);
         controller.sample(input);
-        let outcome = inputs::update_mario_inputs(&mut m, &mut w, &controller, &mut context);
+        let outcome = update_mario_inputs(&mut m, &mut w, &controller, &mut context);
         let actual = snapshot(
             &OracleMario::capture(&m, &w),
             &OracleInput::capture(&controller, &context, input, outcome),
@@ -304,7 +308,7 @@ fn geometry_cases(
         coverage.checks += 1;
         coverage.flags |= m.input;
         coverage.moved += usize::from(m.pos != p);
-        coverage.fallback += usize::from(m.pos != p && m.pos == m.gfx_pos);
+        coverage.fallback += usize::from(m.pos != p && m.pos == m.obj.gfx.pos);
         coverage.deaths += usize::from(outcome == InputOutcome::DeathWarpRequested);
         coverage.ceilings += usize::from(m.ceil.is_some());
     }
@@ -351,12 +355,14 @@ fn geometry_thresholds_keep_strict_floor_water_and_gas_bounds() {
         (500.0, c::INPUT_IN_POISON_GAS, false),
         (500.5, c::INPUT_IN_POISON_GAS, false),
     ] {
-        let mut m = MarioState {
-            action: c::ACT_IDLE,
-            pos: [-5400.0, height, -3400.0],
-            gfx_pos: [-5400.0, height, -3400.0],
-            ..Default::default()
-        };
+        let mut m = with_gfx_pos(
+            MarioState {
+                action: c::ACT_IDLE,
+                pos: [-5400.0, height, -3400.0],
+                ..Default::default()
+            },
+            [-5400.0, height, -3400.0],
+        );
         let mut w = step_world(&world, &trig);
         let mut context = InputContext::default();
         let controller = Controller::default();
@@ -365,7 +371,7 @@ fn geometry_thresholds_keep_strict_floor_water_and_gas_bounds() {
         let mut reference_input =
             OracleInput::capture(&controller, &context, input, InputOutcome::Continue);
         oracle.input_tick(&mut reference, &mut reference_input, InputCall::Full);
-        let outcome = inputs::update_mario_inputs(&mut m, &mut w, &controller, &mut context);
+        let outcome = update_mario_inputs(&mut m, &mut w, &controller, &mut context);
         assert_eq!(outcome, InputOutcome::Continue);
         assert_eq!(m.input & flag != 0, set, "height {height} flag {flag:#x}");
         assert_eq!(
@@ -405,16 +411,18 @@ fn chained_input_traces_match_at_multiple_render_rates_and_settings() {
     let replay = Replay {
         collision: &world,
         trig: &trig,
-        initial: MarioState {
-            action: c::ACT_IDLE,
-            pos: [-5400.0, 0.0, -5400.0],
-            gfx_pos: [-5400.0, 0.0, -5400.0],
-            frames_since_a: 255,
-            frames_since_b: 255,
-            wall_kick_timer: 5,
-            double_jump_timer: 255,
-            ..Default::default()
-        },
+        initial: with_gfx_pos(
+            MarioState {
+                action: c::ACT_IDLE,
+                pos: [-5400.0, 0.0, -5400.0],
+                frames_since_a: 255,
+                frames_since_b: 255,
+                wall_kick_timer: 5,
+                double_jump_timer: 255,
+                ..Default::default()
+            },
+            [-5400.0, 0.0, -5400.0],
+        ),
         controller: Controller {
             button_down: A_BUTTON,
             ..Default::default()
@@ -501,16 +509,18 @@ fn bob_input_stage_matches_with_rom_tables() {
     let replay = Replay {
         collision: &world,
         trig: &trig,
-        initial: MarioState {
-            action: c::ACT_IDLE,
-            pos: position.map(f32::from),
-            gfx_pos: position.map(f32::from),
-            // level_cmd_set_mario_start_pos converts raw script degrees.
-            face_angle: [0, (i32::from(yaw_degrees) * 0x8000 / 180) as i16, 0],
-            frames_since_a: 255,
-            frames_since_b: 255,
-            ..Default::default()
-        },
+        initial: with_gfx_pos(
+            MarioState {
+                action: c::ACT_IDLE,
+                pos: position.map(f32::from),
+                // level_cmd_set_mario_start_pos converts raw script degrees.
+                face_angle: [0, (i32::from(yaw_degrees) * 0x8000 / 180) as i16, 0],
+                frames_since_a: 255,
+                frames_since_b: 255,
+                ..Default::default()
+            },
+            position.map(f32::from),
+        ),
         controller: Controller::default(),
         context: InputContext::default(),
         area_terrain_type: imported.level.areas[0].terrain_type,

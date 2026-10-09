@@ -2,6 +2,7 @@
 //! compiled natively. CI uses authored collision and computed (non-ROM) trig
 //! tables; the ignored test uses BOB and the ROM's tables.
 use rustario64::{
+    content::animation::MarioAnimations,
     import::collision,
     simulation::{
         collision::{CollisionFlags, CollisionWorld},
@@ -10,6 +11,11 @@ use rustario64::{
     },
 };
 use rustario64_oracle::{MarioCall, Oracle, OracleMario, decomp_constants};
+
+/// The step functions never read animations.
+static NO_ANIMATIONS: MarioAnimations = MarioAnimations {
+    animations: Vec::new(),
+};
 
 struct Lcg(u64);
 
@@ -258,9 +264,9 @@ fn to_oracle(m: &MarioState, e: &Env) -> OracleMario {
         peak_height: m.peak_height,
         quicksand_depth: m.quicksand_depth,
         getting_blown_gravity: m.getting_blown_gravity,
-        wing_flutter: i8::from(m.wing_flutter),
-        gfx_pos: m.gfx_pos,
-        gfx_angle: m.gfx_angle,
+        wing_flutter: m.body.wing_flutter,
+        gfx_pos: m.obj.gfx.pos,
+        gfx_angle: m.obj.gfx.angle,
         global_timer: e.global_timer,
         area_terrain_type: e.area_terrain_type,
         level_num: e.level_num,
@@ -408,18 +414,15 @@ fn compare_call(
     let mut theirs = to_oracle(m, env);
     let c_result = oracle.mario_call(&mut theirs, call);
     let mut ours = m.clone();
-    let mut w = StepWorld {
-        collision: world,
-        collision_flags: CollisionFlags {
-            checking_for_camera: false,
-            find_floor_include_surface_intangible: env.include_intangible,
-        },
-        trig,
-        global_timer: env.global_timer,
-        area_terrain_type: env.area_terrain_type,
-        level_num: env.level_num,
-        water_pseudo_floor_origin_offset: env.water_pseudo,
+    let mut w = StepWorld::new(world, trig, &NO_ANIMATIONS);
+    w.collision_flags = CollisionFlags {
+        checking_for_camera: false,
+        find_floor_include_surface_intangible: env.include_intangible,
     };
+    w.global_timer = env.global_timer;
+    w.area_terrain_type = env.area_terrain_type;
+    w.level_num = env.level_num;
+    w.water_pseudo_floor_origin_offset = env.water_pseudo;
     let r_result = rust_call(&mut ours, &mut w, call);
     env.water_pseudo = w.water_pseudo_floor_origin_offset;
     env.include_intangible = w.collision_flags.find_floor_include_surface_intangible;
@@ -487,7 +490,7 @@ fn random_state(
     if rng.next().is_multiple_of(6) {
         action |= c::ACT_FLAG_RIDING_SHELL;
     }
-    Some(MarioState {
+    let mut m = MarioState {
         input: if rng.next().is_multiple_of(2) {
             c::INPUT_A_DOWN
         } else {
@@ -513,11 +516,10 @@ fn random_state(
         peak_height: rng.f(-1000.0, 3000.0),
         quicksand_depth: rng.f(0.0, 30.0),
         getting_blown_gravity: rng.f(0.0, 8.0),
-        wing_flutter: rng.next().is_multiple_of(2),
-        gfx_pos: [0.0; 3],
-        gfx_angle: [0; 3],
         ..Default::default()
-    })
+    };
+    m.body.wing_flutter = i8::from(rng.next().is_multiple_of(2));
+    Some(m)
 }
 
 /// A falling state just outside a wall, 105-145 units below its top, moving

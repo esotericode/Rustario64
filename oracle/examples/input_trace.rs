@@ -6,13 +6,13 @@ use rustario64::{
         TickInput,
         collision::CollisionWorld,
         controller::{A_BUTTON, B_BUTTON, Controller, Z_TRIG},
-        mario::{MarioState, constants as c, inputs::InputContext},
+        mario::{MarioState, constants as c},
     },
     trace,
 };
 use rustario64_oracle::{
     Oracle,
-    input_trace::{Replay, world_digest},
+    input_trace::{InputContext, Replay, world_digest},
 };
 use std::{error::Error, fs, io::Write, path::Path};
 fn main() -> Result<(), Box<dyn Error>> {
@@ -56,15 +56,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let replay = Replay {
         collision: &world,
         trig: &trig,
-        initial: MarioState {
-            action: c::ACT_IDLE,
-            pos: position.map(f32::from),
-            gfx_pos: position.map(f32::from),
-            // level_cmd_set_mario_start_pos converts raw script degrees.
-            face_angle: [0, (i32::from(yaw_degrees) * 0x8000 / 180) as i16, 0],
-            frames_since_a: 255,
-            frames_since_b: 255,
-            ..Default::default()
+        initial: {
+            let mut m = MarioState {
+                action: c::ACT_IDLE,
+                pos: position.map(f32::from),
+                // level_cmd_set_mario_start_pos converts raw script degrees.
+                face_angle: [0, (i32::from(yaw_degrees) * 0x8000 / 180) as i16, 0],
+                frames_since_a: 255,
+                frames_since_b: 255,
+                ..Default::default()
+            };
+            m.obj.gfx.pos = position.map(f32::from);
+            m
         },
         controller: Controller::default(),
         context: InputContext::default(),

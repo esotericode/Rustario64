@@ -2,17 +2,69 @@
 //! and object lists are explicitly excluded placeholders until those systems exist.
 use crate::{OracleInput, OracleMario};
 use rustario64::{
+    content::animation::MarioAnimations,
     simulation::{
         TickInput,
         controller::Controller,
         mario::{
             MarioState, StepWorld, SurfaceRef,
-            inputs::{InputContext, InputOutcome},
+            constants::O_INTERACT_STATUS,
+            inputs::{self, InputOutcome},
         },
     },
     trace::TickState,
 };
 use std::collections::BTreeMap;
+
+/// The input stage never reads animations.
+pub static NO_ANIMATIONS: MarioAnimations = MarioAnimations {
+    animations: Vec::new(),
+};
+
+/// The camera and Mario-object inputs of the input stage, as schema-1 input
+/// traces record them. They live in `StepWorld` (camera yaw, movement flags)
+/// and Mario's object (interaction status, collided types).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct InputContext {
+    pub camera_yaw: i16,
+    pub camera_movement_flags: u16,
+    pub object_interact_status: u32,
+    pub object_collided_interact_types: u32,
+}
+
+impl InputContext {
+    pub fn apply(&self, m: &mut MarioState, w: &mut StepWorld<'_>) {
+        w.camera.yaw = self.camera_yaw;
+        w.camera_movement_flags = self.camera_movement_flags as i16;
+        m.obj
+            .raw
+            .set_u32(O_INTERACT_STATUS, self.object_interact_status);
+        m.obj.collided_obj_interact_types = self.object_collided_interact_types;
+    }
+
+    pub fn capture(m: &MarioState, w: &StepWorld<'_>) -> Self {
+        Self {
+            camera_yaw: w.camera.yaw,
+            camera_movement_flags: w.camera_movement_flags as u16,
+            object_interact_status: m.obj.raw.u32(O_INTERACT_STATUS),
+            object_collided_interact_types: m.obj.collided_obj_interact_types,
+        }
+    }
+}
+
+/// update_mario_inputs with a sampled controller and an input context.
+pub fn update_mario_inputs(
+    m: &mut MarioState,
+    w: &mut StepWorld<'_>,
+    controller: &Controller,
+    context: &mut InputContext,
+) -> InputOutcome {
+    w.controller = *controller;
+    context.apply(m, w);
+    let outcome = inputs::update_mario_inputs(m, w);
+    *context = InputContext::capture(m, w);
+    outcome
+}
 impl OracleMario {
     pub fn capture(m: &MarioState, w: &StepWorld<'_>) -> Self {
         let surface = |s: Option<SurfaceRef>| match s {
@@ -51,9 +103,9 @@ impl OracleMario {
             peak_height: m.peak_height,
             quicksand_depth: m.quicksand_depth,
             getting_blown_gravity: m.getting_blown_gravity,
-            wing_flutter: i8::from(m.wing_flutter),
-            gfx_pos: m.gfx_pos,
-            gfx_angle: m.gfx_angle,
+            wing_flutter: m.body.wing_flutter,
+            gfx_pos: m.obj.gfx.pos,
+            gfx_angle: m.obj.gfx.angle,
             global_timer: w.global_timer,
             area_terrain_type: w.area_terrain_type,
             level_num: w.level_num,
@@ -187,11 +239,7 @@ use crate::{InputCall, Oracle};
 use rustario64::{
     import::{sha1_hex, version},
     presentation::{self, GraphicsOptions, Snapshot},
-    simulation::{
-        FixedClock,
-        collision::{CollisionFlags, CollisionWorld},
-        math::TrigTables,
-    },
+    simulation::{FixedClock, collision::CollisionWorld, math::TrigTables},
     trace::{Frame, Metadata, TRACE_SCHEMA, Trace},
 };
 use std::time::Duration;
@@ -235,15 +283,9 @@ impl Replay<'_> {
             return Err("nonempty samples and render rate 1..=1000 required");
         }
         let mut m = self.initial.clone();
-        let mut w = StepWorld {
-            collision: self.collision,
-            collision_flags: CollisionFlags::default(),
-            trig: self.trig,
-            global_timer: 0,
-            area_terrain_type: self.area_terrain_type,
-            level_num: self.level_num,
-            water_pseudo_floor_origin_offset: 0.0,
-        };
+        let mut w = StepWorld::new(self.collision, self.trig, &NO_ANIMATIONS);
+        w.area_terrain_type = self.area_terrain_type;
+        w.level_num = self.level_num;
         let mut controller = self.controller;
         let mut context = self.context;
         let mut reference = OracleMario::capture(&m, &w);
@@ -298,12 +340,7 @@ impl Replay<'_> {
                     w.global_timer = tick as u32;
                     context.camera_yaw = input.camera_yaw;
                     controller.sample(input);
-                    let outcome = rustario64::simulation::mario::inputs::update_mario_inputs(
-                        &mut m,
-                        &mut w,
-                        &controller,
-                        &mut context,
-                    );
+                    let outcome = update_mario_inputs(&mut m, &mut w, &controller, &mut context);
                     snapshot(
                         &OracleMario::capture(&m, &w),
                         &OracleInput::capture(&controller, &context, input, outcome),

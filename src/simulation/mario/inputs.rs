@@ -1,23 +1,13 @@
 //! Pre-action input update translated from pinned CC0 `mario.c`.
-//! This is one stage of a tick, not an action dispatcher or a playable runtime.
-use super::{MarioState, StepWorld, SurfaceRef, constants::*, step};
+//! This is one stage of a tick; `core::execute_mario_action` runs it first.
+use super::{Event, MarioState, StepWorld, SurfaceRef, constants::*, f32_to_s16, step};
 use crate::simulation::{
     collision::SURFACE_FLAG_DYNAMIC,
-    controller::{A_BUTTON, B_BUTTON, Controller, Z_TRIG},
+    controller::{A_BUTTON, B_BUTTON, Z_TRIG},
 };
 
-/// Reference camera and Mario-object inputs. Camera movement flags are mutable
-/// authoritative state. Camera yaw must never come from an interpolated pose.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct InputContext {
-    pub camera_yaw: i16,
-    pub camera_movement_flags: u16,
-    pub object_interact_status: u32,
-    pub object_collided_interact_types: u32,
-}
-
-/// The future level runtime must handle a missing-floor death request. This
-/// component does not implement warp timers, lives, or saves.
+/// A missing floor requests a death warp; the request is also recorded as an
+/// [`Event::Warp`]. Lives, warp timers and saves belong to the level runtime.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[must_use = "a missing-floor death warp request must be handled by the caller"]
 pub enum InputOutcome {
@@ -26,7 +16,8 @@ pub enum InputOutcome {
     DeathWarpRequested,
 }
 
-pub fn update_mario_button_inputs(m: &mut MarioState, controller: &Controller) {
+pub fn update_mario_button_inputs(m: &mut MarioState, w: &StepWorld<'_>) {
+    let controller = &w.controller;
     if controller.button_pressed & A_BUTTON != 0 {
         m.input |= INPUT_A_PRESSED;
     }
@@ -56,19 +47,16 @@ pub fn update_mario_button_inputs(m: &mut MarioState, controller: &Controller) {
     };
 }
 
-pub fn update_mario_joystick_inputs(
-    m: &mut MarioState,
-    w: &StepWorld<'_>,
-    controller: &Controller,
-    camera_yaw: i16,
-) {
+/// Intended magnitude and yaw from the stick and the reference camera yaw.
+pub fn update_mario_joystick_inputs(m: &mut MarioState, w: &StepWorld<'_>) {
+    let controller = &w.controller;
     let mag = ((controller.stick_mag / 64.0) * (controller.stick_mag / 64.0)) * 64.0;
     m.intended_mag = mag / if m.squish_timer == 0 { 2.0 } else { 8.0 };
     if m.intended_mag > 0.0 {
         m.intended_yaw = w
             .trig
             .atan2s(-controller.stick_y, controller.stick_x)
-            .wrapping_add(camera_yaw);
+            .wrapping_add(w.camera.yaw);
         m.input |= INPUT_NONZERO_ANALOG;
     } else {
         m.intended_yaw = m.face_angle[1];
@@ -150,15 +138,16 @@ pub fn update_mario_geometry_inputs(m: &mut MarioState, w: &mut StepWorld<'_>) -
     if m.floor.is_none() {
         // Preserve the graphical-position fallback quirk. This is the last
         // authoritative gfx position, never an interpolated presentation pose.
-        m.pos = m.gfx_pos;
+        m.pos = m.obj.gfx.pos;
         (m.floor_height, m.floor) = find_floor(m.pos, w);
     }
     let (ceil_height, ceil) = step::vec3f_find_ceil(w, m.pos, m.floor_height);
     m.ceil_height = ceil_height;
     m.ceil = ceil.map(SurfaceRef::Collision);
     let gas_level = w.collision.find_poison_gas_level(m.pos[0], m.pos[2]);
-    m.water_level = w.collision.find_water_level(m.pos[0], m.pos[2]) as i16;
+    m.water_level = f32_to_s16(w.collision.find_water_level(m.pos[0], m.pos[2]));
     let Some(floor) = m.floor.map(|f| w.surface(f)) else {
+        w.event(Event::Warp(WARP_OP_DEATH));
         return InputOutcome::DeathWarpRequested;
     };
     m.floor_angle = w.trig.atan2s(floor.normal[2], floor.normal[0]);
@@ -187,32 +176,32 @@ pub fn update_mario_geometry_inputs(m: &mut MarioState, w: &mut StepWorld<'_>) -
     InputOutcome::Continue
 }
 
-/// Run once before action dispatch. Debug text is presentation-only and the
-/// original stub_mario_step_1 is empty. Warp execution is an explicit boundary.
-pub fn update_mario_inputs(
-    m: &mut MarioState,
-    w: &mut StepWorld<'_>,
-    controller: &Controller,
-    context: &mut InputContext,
-) -> InputOutcome {
+/// update_mario_inputs: run once before action dispatch. Debug text is off
+/// unless `show_debug_text` is set (it only reads the floor then), and the
+/// original stub_mario_step_1 is empty.
+pub fn update_mario_inputs(m: &mut MarioState, w: &mut StepWorld<'_>) -> InputOutcome {
     m.particle_flags = 0;
     m.input = 0;
-    m.collided_obj_interact_types = context.object_collided_interact_types;
+    m.collided_obj_interact_types = m.obj.collided_obj_interact_types;
     m.flags &= 0x00ff_ffff;
-    update_mario_button_inputs(m, controller);
-    update_mario_joystick_inputs(m, w, controller, context.camera_yaw);
+    if w.show_debug_text != 0 {
+        // debug_print_speed_action_normal reads the floor normal for its text.
+        let _ = w.surface(m.floor.expect("debug text dereferences the floor"));
+    }
+    update_mario_button_inputs(m, w);
+    update_mario_joystick_inputs(m, w);
     let outcome = update_mario_geometry_inputs(m, w);
-    if context.camera_movement_flags & CAM_MOVE_C_UP_MODE != 0 {
+    if w.camera_movement_flags & CAM_MOVE_C_UP_MODE as i16 != 0 {
         if m.action & ACT_FLAG_ALLOW_FIRST_PERSON != 0 {
             m.input |= INPUT_FIRST_PERSON;
         } else {
-            context.camera_movement_flags &= !CAM_MOVE_C_UP_MODE;
+            w.camera_movement_flags &= !(CAM_MOVE_C_UP_MODE as i16);
         }
     }
     if m.input & (INPUT_NONZERO_ANALOG | INPUT_A_PRESSED) == 0 {
         m.input |= INPUT_UNKNOWN_5;
     }
-    if context.object_interact_status
+    if m.obj.raw.u32(O_INTERACT_STATUS)
         & (INT_STATUS_MARIO_STUNNED | INT_STATUS_MARIO_KNOCKBACK_DMG | INT_STATUS_MARIO_SHOCKWAVE)
         != 0
     {

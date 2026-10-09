@@ -4,10 +4,9 @@
 //! mario_get_terrain_sound_addend). f32 operation order, s16 angle wraparound,
 //! and the documented glitches are preserved.
 //!
-//! Not yet ported: mario_update_quicksand and mario_push_off_steep_floor (they
-//! change actions), bully collision helpers, and sound playback (play_sound has
-//! no gameplay state).
-use super::{MarioState, StepWorld, SurfaceRef, constants::*};
+//! Sounds are recorded as events. Not ported: the bully collision helpers
+//! (transfer_bully_speed, init_bully_collision_data), which need objects.
+use super::{MarioState, StepWorld, SurfaceRef, constants::*, core};
 use crate::simulation::collision::{SurfaceIndex, WallCollisionData};
 
 const MOVING_SAND_SPEEDS: [i16; 4] = [12, 8, 4, 0];
@@ -165,12 +164,19 @@ pub fn mario_get_terrain_sound_addend(m: &MarioState, w: &StepWorld<'_>) -> u32 
     ret as u32
 }
 
-/// mario_bonk_reflection (sound effects are presentation-only and omitted).
-pub fn mario_bonk_reflection(m: &mut MarioState, w: &StepWorld<'_>, negate_speed: bool) {
+/// mario_bonk_reflection.
+pub fn mario_bonk_reflection(m: &mut MarioState, w: &mut StepWorld<'_>, negate_speed: bool) {
     if let Some(wall) = m.wall {
         let normal = w.surface(wall).normal;
         let wall_angle = w.trig.atan2s(normal[2], normal[0]);
         m.face_angle[1] = wall_angle.wrapping_sub(m.face_angle[1].wrapping_sub(wall_angle));
+        w.play_sound(if m.flags & MARIO_METAL_CAP != 0 {
+            SOUND_ACTION_METAL_BONK
+        } else {
+            SOUND_ACTION_BONK
+        });
+    } else {
+        w.play_sound(SOUND_ACTION_HIT);
     }
     if negate_speed {
         mario_set_forward_vel(m, w, -m.forward_vel);
@@ -230,9 +236,66 @@ pub fn mario_update_windy_ground(m: &mut MarioState, w: &StepWorld<'_>) -> bool 
     false
 }
 
+/// mario_update_quicksand: TRUE when Mario sank to his death.
+pub fn mario_update_quicksand(
+    m: &mut MarioState,
+    w: &mut StepWorld<'_>,
+    sinking_speed: f32,
+) -> i32 {
+    if m.action & ACT_FLAG_RIDING_SHELL != 0 {
+        m.quicksand_depth = 0.0;
+    } else {
+        if m.quicksand_depth < 1.1 {
+            m.quicksand_depth = 1.1;
+        }
+        let sink_to = |m: &mut MarioState, limit: f32| {
+            m.quicksand_depth += sinking_speed;
+            if m.quicksand_depth >= limit {
+                m.quicksand_depth = limit;
+            }
+        };
+        match w.surface(floor_of(m)).surface_type {
+            SURFACE_SHALLOW_QUICKSAND => sink_to(m, 10.0),
+            SURFACE_SHALLOW_MOVING_QUICKSAND => sink_to(m, 25.0),
+            SURFACE_QUICKSAND | SURFACE_MOVING_QUICKSAND => sink_to(m, 60.0),
+            SURFACE_DEEP_QUICKSAND | SURFACE_DEEP_MOVING_QUICKSAND => {
+                m.quicksand_depth += sinking_speed;
+                if m.quicksand_depth >= 160.0 {
+                    core::update_mario_sound_and_camera(m, w);
+                    return core::drop_and_set_mario_action(m, w, ACT_QUICKSAND_DEATH, 0);
+                }
+            }
+            SURFACE_INSTANT_QUICKSAND | SURFACE_INSTANT_MOVING_QUICKSAND => {
+                core::update_mario_sound_and_camera(m, w);
+                return core::drop_and_set_mario_action(m, w, ACT_QUICKSAND_DEATH, 0);
+            }
+            _ => m.quicksand_depth = 0.0,
+        }
+    }
+    0
+}
+
+/// mario_push_off_steep_floor.
+pub fn mario_push_off_steep_floor(
+    m: &mut MarioState,
+    w: &mut StepWorld<'_>,
+    action: u32,
+    action_arg: u32,
+) -> i32 {
+    let floor_d_yaw = m.floor_angle.wrapping_sub(m.face_angle[1]);
+    if floor_d_yaw > -0x4000 && floor_d_yaw < 0x4000 {
+        m.forward_vel = 16.0;
+        m.face_angle[1] = m.floor_angle;
+    } else {
+        m.forward_vel = -16.0;
+        m.face_angle[1] = m.floor_angle.wrapping_add(i16::MIN);
+    }
+    core::set_mario_action(m, w, action, action_arg)
+}
+
 fn sync_gfx(m: &mut MarioState) {
-    m.gfx_pos = m.pos;
-    m.gfx_angle = [0, m.face_angle[1], 0];
+    m.obj.gfx.pos = m.pos;
+    m.obj.gfx.angle = [0, m.face_angle[1], 0];
 }
 
 /// stop_and_set_height_to_floor.
@@ -517,7 +580,7 @@ pub fn apply_gravity(m: &mut MarioState) {
     } else if m.action & ACT_FLAG_METAL_WATER != 0 {
         fall(m, 1.6, -16.0);
     } else if m.flags & MARIO_WING_CAP != 0 && m.vel[1] < 0.0 && m.input & INPUT_A_DOWN != 0 {
-        m.wing_flutter = true;
+        m.body.wing_flutter = 1;
         m.vel[1] -= 2.0;
         if m.vel[1] < -37.5 {
             m.vel[1] += 4.0;

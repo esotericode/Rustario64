@@ -195,18 +195,6 @@ f32 oracle_approach_f32(f32 current, f32 target, f32 inc, f32 dec) {
     return approach_f32(current, target, inc, dec);
 }
 
-/* ---- Constant table for the Rust consistency test ---- */
-#include "constants.inc.c"
-
-int oracle_constant_count(void) {
-    return (int) (sizeof(sConstants) / sizeof(sConstants[0]));
-}
-
-const char *oracle_constant(int i, long long *value) {
-    *value = sConstants[i].value;
-    return sConstants[i].name;
-}
-
 /* ---- Mario step and input oracles ---- */
 /* Defined in mario_step.c but not declared in mario_step.h. */
 void apply_gravity(struct MarioState *m);
