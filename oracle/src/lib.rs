@@ -6,6 +6,8 @@
 //! Boundary: this crate is never a dependency of the game runtime or renderer.
 //! Replacement plan: once per-tick traces from original execution cover these
 //! queries, those traces become the authority and this harness can be retired.
+pub mod input_trace;
+
 use std::sync::{Mutex, MutexGuard};
 
 #[repr(C)]

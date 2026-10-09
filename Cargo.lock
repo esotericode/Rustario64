@@ -1533,6 +1533,7 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "rustario64",
+ "serde_json",
 ]
 
 [[package]]

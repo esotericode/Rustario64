@@ -1,10 +1,9 @@
 # Comparison contract and coverage
 
 Original movement, actions, camera, RNG, objects, and interactions have **zero
-validated gameplay coverage**. Static collision loading and queries, the math
-utilities, and Mario's physics steps (mario_step.c) have exact coverage against
-the pinned decomp compiled natively (below); that is component coverage, not
-per-tick gameplay coverage, because no Mario action runs yet. The diagnostic
+validated gameplay coverage**. Collision, math, physics steps and pre-action
+inputs have native-decomp component coverage. Input-stage traces compare at
+every tick; these are not complete gameplay ticks because no action runs yet. The diagnostic
 marker visualizes a tick counter; it is not a Mario approximation.
 
 Target US v1.0 at n64decomp/sm64 revision
@@ -12,8 +11,9 @@ Target US v1.0 at n64decomp/sm64 revision
 9bef1128717f958171a4afac3ed78ee2bb4e86ce, 30 ticks/second, reference camera/input
 profile. Prefer unmodified matching N64/original execution; native-port float
 differences need separate evidence. Physics-modified ports are not unquestioned
-oracles. A supported owner ROM is available and static asset checks pass (see
-[ROM_VALIDATION.md](ROM_VALIDATION.md)). A matching build, emulator trace setup,
+oracles. Static asset checks passed with the supported owner ROM before the
+workspace reset; the ROM needs to be supplied again for fresh integration runs
+(see [ROM_VALIDATION.md](ROM_VALIDATION.md)). A matching build, emulator trace setup,
 and per-tick exporter are still unavailable, so reference-vs-Rust gameplay
 checks have not run.
 
@@ -31,8 +31,8 @@ src/trace.rs defines the required JSON fields:
 
 Initial state is before tick 1. Frame N records input consumed at tick N and
 complete state immediately after that tick. Reference and Rust advance once with
-identical input. Port and compare original stick normalization and button edges;
-recording raw bytes alone does not implement them.
+identical input. Original stick normalization and button edges are ported and compared below;
+initial controller history is included in input-stage traces.
 
 Authoritative floats serialize with f32::to_bits() into u32 values. Discrete
 state and bit patterns compare exactly, including signed zero. No tolerance,
@@ -135,8 +135,8 @@ each fail the CI test.
 
 Not covered: mario_update_quicksand and mario_push_off_steep_floor (not ported),
 the paths where the original dereferences NULL or reads past a table (the port
-panics), object (dynamic) surfaces, and anything that depends on action code,
-input processing, or the camera. Single calls from generated states show the
+panics), object (dynamic) surfaces, and anything that depends on action code or the camera. Input processing
+is covered separately below. Single calls from generated states show the
 step functions match; they do not show that Mario reaches those states the same
 way, which needs action ports and per-tick traces.
 
@@ -150,20 +150,55 @@ Limits: dynamic (object) surfaces, rooms, and float-to-int casts of values
 beyond the s32 range are not covered. Native IEEE single precision is assumed to
 match the N64 for these operations until original-execution traces confirm it.
 
+## Pre-action input coverage
+
+Seven verbatim native functions cover controller normalization, buttons,
+intended magnitude/yaw, floor classification, and the input update. Camera yaw
+and object status are supplied context. Debug output is disabled and death-warp
+requests recorded without executing the level runtime. No actions run.
+
+| Check | Authored data | Owner ROM (before workspace reset) |
+| --- | --- | --- |
+| Every raw stick pair; three squish/wrapped-camera contexts; button edges/ages | 196,608 identical cases | 196,608 with ROM tables |
+| Complete input stage, all exposed fields | 10,000 generated + 9 exact threshold cases | 20,000 BOB states |
+| Geometry outcomes | 5,152 moved positions, including 5,148 graphical fallbacks; 1,309 death requests; 5,223 ceiling contacts | 6,851 moved, including 6,715 fallbacks; 8,451 death requests; 475 ceiling contacts |
+| Chained 40-second replay | 1,200 ticks each at 15/30/60/120/144 Hz; interpolation/options toggled | 1,200 ticks each at 30/60/120/144 Hz |
+
+Comparisons use exact float bits and discrete state. Traces record controller
+history, normalized stick, intended direction, flags, timers, collision contacts,
+positions, velocities, graphic fields and world inputs. Metadata hashes ordered
+terrain words and actual trig tables. A one-bit intended-magnitude mutation
+reports its exact tick/field. Strict floor/water/gas threshold cases guard the
+original inequalities. Deliberately changing the negative-axis dead-zone
+offset, reversing the camera-yaw addition, or changing the off-floor `>` to
+`>=` each fails the corresponding authored test; source was restored afterwards.
+
+```sh
+cargo test --locked -p rustario64-oracle --test mario_input -- --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test mario_input bob_input -- --ignored --nocapture
+cargo run --locked --release -p rustario64-oracle --example input_trace -- /path/to/sm64.z64 private/input-traces
+cargo run --locked -- compare-traces private/input-traces/native-input.trace.json private/input-traces/rust-input.trace.json
+```
+
+The fixture starts at the imported script position/yaw, not an original spawn.
+Camera yaw is scripted. Action timers/RNG and empty object lists are explicitly
+excluded placeholders. Dynamic surfaces and the dynamic-gap squish-input path
+remain unvalidated; original undefined paths remain outside coverage. Graphics
+options here test scheduler/snapshot isolation, not GPU gameplay. The input
+suite and example passed on the supplied ROM before a workspace reset; recovered
+source has fresh authored checks, but rerunning owner-ROM tests on the final
+commit needs the attachment again (PROJECT_PLAN session 5).
+
 ## Next reference work
 
-1. Extend the native-decomp oracle from mario_step.c to the per-tick Mario
-   update: mario.c's input, floor, and action dispatch plus the stationary and
-   moving action files, with authored shims for objects, camera, sound, and
-   animation, emitting schema-1 per-tick traces. libsm64 was audited and rejected
-   as a fidelity oracle because it changes collision ordering (DECISIONS.md).
-   Separately, obtain an unmodified matching US build and emulator trace
-   exporter so native results can be checked against original execution.
-2. Add a reference exporter around each completed simulation tick, reproducible
-   initial world/state and tick input, and recorded build/emulator/platform
-   configuration. Instrumentation must not change arithmetic or update order.
-3. Capture a stationary spawn baseline, then running/turning/stopping/jump cases
-   as Rust actions are ported. Compare all relevant fields each tick, exactly.
-4. Replay genuine gameplay with multiple render caps/settings; extend to walls,
-   slopes, ceilings, ledges, landings, dynamic surfaces, interactions, and long
-   sequences. A finite exact suite proves its cases/platform, not all behavior.
+1. Extend the input-stage oracle to spawn initialization, action setters/dispatch,
+   and stationary/moving actions. Represent animation state where it affects
+   transitions; declare object/camera/sound boundaries. libsm64 remains excluded
+   as a fidelity oracle because it changes collision ordering.
+2. Compare complete spawn/idle/walking/turning/stopping ticks on BOB before viewer
+   integration, then airborne actions and long movement sequences.
+3. Obtain original-execution traces from a matching US build and emulator. Those
+   remain unavailable and are the eventual authority over native-host results.
+4. Extend real gameplay replays to multiple presentation caps, slopes, walls,
+   ceilings, ledges, landings, dynamic surfaces and interactions. A finite exact
+   suite covers its cases/platforms, not all behavior.
