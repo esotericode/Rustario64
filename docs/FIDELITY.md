@@ -4,10 +4,11 @@ Mario's movement now has **per-tick coverage against the natively compiled
 decomp**: complete frames of Mario alone (input stage, every non-object action
 group, Mario's object update and the animation frame advance) match bit for bit
 on an authored playground and on Bob-omb Battlefield with the owner ROM's data.
-That is not yet coverage against original N64 execution, and the camera,
+That is not yet coverage against original N64 execution, and the complete camera update,
 objects, interactions with objects, cutscene/submerged actions and RNG-driven
 behaviors have **zero validated coverage**. Collision, math, physics steps and
-pre-action inputs also keep their component suites. The viewer's Mario mode
+pre-action inputs also keep their component suites. Camera helpers and radial
+goal construction now have native component checks (Camera components below). The viewer's Mario mode
 runs the same tick, and its recorded runs replay exactly in the decomp (Played
 sessions below). Mario's drawn model is presentation: it reads completed ticks
 and is checked as imported content (ROM_VALIDATION.md), not compared per tick;
@@ -291,3 +292,45 @@ stops at the same boundaries as the suites (unsupported paths and warps).
    libsm64 remains excluded as a fidelity oracle because it changes collision
    ordering. A finite exact suite covers its cases and platforms, not all
    behavior.
+
+## Camera components (2026-10-09)
+
+`simulation::camera` is a direct translation of 33 camera.c helpers, including
+radial goal construction. The native oracle compiles verbatim excerpts generated
+by `oracle/tools/extract_excerpts.py`; item hashes are in oracle/README.md.
+All equality checks use original integer widths and exact float bits.
+
+The authored suite covers every initial s16 value with ten signed increments/
+divisors, two smooth/snap states and five approach operations; signed extremes
+exercise C promotions. Float cases include signed zero, subnormals, extreme
+finite values, negative increments and multipliers above one. All 4,096
+C-button history/pressed/held combinations also run with unrelated high bits.
+Vector/angle/distance, in-place rotation, pitch reconstruction, strict trigger
+faces and all four area clamps compare independently against native C.
+An authored terrain covers overlapping walls, camera-only/ignored surfaces,
+slopes, tight floor/ceiling gaps, water and missing contacts. Camera geometry,
+wall correction, vertical resolution and radial goals compare for four incoming
+collision-flag combinations. The retained-height NULL-floor boundary panics;
+the C side is not invoked on the original crashing path.
+
+A persistent 3,600-step helper sequence runs at 15/30/60/120/144 Hz with
+presentation interpolation on and off, comparing its position, yaw and C-button
+state after each step. This is an authored component sequence, **not**
+`update_camera`, `mode_radial_camera` or `update_lakitu`, and does not validate
+original camera-relative Mario movement. The viewer's follow camera is unchanged.
+
+```sh
+cargo test --locked -p rustario64-oracle --test camera -- --nocapture
+cargo test --locked --release -p rustario64-oracle --test camera -- --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test camera bob_camera_components -- --ignored --nocapture
+```
+
+The owner-ROM camera check imports BOB's raw collision and original trig tables.
+It is blocked in this session because no ROM is attached. Existing owner-ROM
+results above are prior-session evidence, not fresh checks of this revision.
+The complete reference camera and original-N64 execution remain unvalidated.
+
+Fresh authored checks pass in debug and release (eight tests, one owner-ROM
+test ignored). Deliberately changing strict trigger bounds to inclusive bounds
+or last-wall reuse to first-wall reuse fails the intended native comparison.
+Both mutations are reverted; the restored suite passes.

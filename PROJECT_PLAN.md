@@ -142,6 +142,24 @@ Do not add new jump physics, automatic wall kicks, extra moves, coyote time, or 
 
 Enhanced lighting may require authored light and material metadata because the original content does not supply a complete modern lighting setup. Shadows and filters should respect the game's visual style rather than require replacement assets.
 
+### Desktop builds and first GUI (added 2026-10-09)
+
+Treat Windows and Linux builds as an early playtesting requirement, alongside
+M2. Native runtime build jobs and private-content-free CI bundles begin now;
+compile success does not replace human GPU/driver/control testing.
+
+| Increment | Acceptance / priority |
+| --- | --- |
+| D0 Native runtime builds | Linux x86_64 and Windows x86_64 compile and run authored core tests in CI; bundle only Rust runtime binaries and required notices. Check the run before calling a target verified. |
+| D1 Launcher | Before wider human playtests: simple, elegant local ROM-selection window, supported-ROM validation and clear recovery errors, optional remembered path, basic presentation settings; no ROM upload. |
+| D2 In-game settings | Accessible pause/settings menu; pause ticks and discard menu elapsed time on resume; clear held inputs; presentation settings separate from reference camera/input and optional gameplay modes; behavior-changing options included in replay metadata. |
+| D3 Human testing | Owner-ROM smoke on Windows and Linux physical GPUs; document supported OS/drivers and control mapping. Collect reviewable input logs, without bundling game content. |
+
+Keep the GPU-free core platform-neutral. The C oracle is development-only and
+must not become a desktop runtime dependency. Saves/settings belong outside
+asset caches. Gamepad input/remapping remains early M2 work. See
+[docs/PLAYTEST.md](docs/PLAYTEST.md) for current bundle use and limitations.
+
 ## 8. Reference projects and reuse
 
 References were checked on 2026-10-08. Links below identify upstream projects; pin the actual revision used before copying or deriving code. Listed uses are recommendations for this project, not promises of ready-made compatibility.
@@ -212,9 +230,9 @@ Every handoff should report the working result, commands actually run, missing f
 | Supported ROM revision | US v1.0, exactly 8 MiB, normalized SHA-1 `9bef1128717f958171a4afac3ed78ee2bb4e86ce`; Z64/V64/N64 normalization; supplied Z64 positive path passes |
 | Comparison implementation | Target: pinned unmodified US n64decomp/original ROM execution at `9921382a68bb0c865e5e45eb594d9c64db59b1af`; no original-execution per-tick exporter yet. Native oracle: the same decomp's collision, math_util, mario.c, mario_step.c and the five non-cutscene action files (whole files) plus verbatim excerpts, compiled natively; `oracle/c/tick.c` runs complete frames of Mario's object |
 | Bob-omb Battlefield | Imported level: 1,101 visible area triangles (24 batches, 18 textures) from eight script-named dependent segments, plus the gate/seesaw/grate geo models; collision (570 vertices, 1,060 triangles), 17 specials, 30 script placements, 88 macros, seven warps. Every visible triangle and texture matches independent decomp-derived references. Renders in the viewer with collision and placement overlays. Collision loads into the ported original partition and answers queries identically to the decomp. Mario's complete ticks run identically to the decomp on it with the ROM's animations (64,158 compared ticks). Mario can be moved around it in the viewer with his ROM model and animations and a follow camera; recorded runs replay exactly. No skybox, objects, Mario shadow, original camera, warps or missions |
-| Fidelity coverage | Component checks against the natively compiled decomp, all bitwise-identical. Collision: loader and floor/ceiling/wall/water/gas queries (857k authored comparisons in CI; 4.08M on BOB). Math: ROM trig tables, sins/coss/atan2s/atan2f/approach (3.99M). Mario steps: ground/air/stationary steps, ledge grabs, gravity, wind, moving sand, bonk, velocity helpers from generated states (124k authored in CI; 1.18M on BOB with ROM tables). Exact trace comparator tested; 300 synthetic counter/input ticks identical at 30/60/120/144 Hz. Input stage: 196,608 controller/intent cases on authored and again on ROM tables; 10,009 authored and 20,000 BOB geometry cases; 1,200 chained ticks at multiple presentation rates. **Complete Mario ticks** (Mario's object only, against the native decomp): 28,158 authored ticks (69 actions) and 64,158 BOB ticks with ROM animations (60 actions), all identical, also at 15–144 Hz presentation. **Played sessions:** 3,600 CI ticks of held-control sessions replay identically in the decomp; two recorded BOB viewer runs (233 ticks) replay identically. No camera, object, cutscene/submerged or original-N64 coverage |
+| Fidelity coverage | Component checks against the natively compiled decomp, all bitwise-identical. Collision: loader and floor/ceiling/wall/water/gas queries (857k authored comparisons in CI; 4.08M on BOB). Math: ROM trig tables, sins/coss/atan2s/atan2f/approach (3.99M). Mario steps: ground/air/stationary steps, ledge grabs, gravity, wind, moving sand, bonk, velocity helpers from generated states (124k authored in CI; 1.18M on BOB with ROM tables). Exact trace comparator tested; 300 synthetic counter/input ticks identical at 30/60/120/144 Hz. Input stage: 196,608 controller/intent cases on authored and again on ROM tables; 10,009 authored and 20,000 BOB geometry cases; 1,200 chained ticks at multiple presentation rates. **Complete Mario ticks** (Mario's object only, against the native decomp): 28,158 authored ticks (69 actions) and 64,158 BOB ticks with ROM animations (60 actions), all identical, also at 15–144 Hz presentation. **Played sessions:** 3,600 CI ticks of held-control sessions replay identically in the decomp; two recorded BOB viewer runs (233 ticks) replay identically. Camera helpers/radial goals now have exact authored native comparisons; no complete camera, object, cutscene/submerged or original-N64 coverage |
 | Optional enhancements | Graphics-only options: higher resolution, 4x MSAA, culling and fog toggles, interpolation toggle, free inspection camera. Mario's skinned model interpolates between ticks at any frame rate. No enhanced lighting/shadows |
-| Immediate next task | M2: port the reference camera (BOB's radial/free-roam modes and camera triggers) with per-tick comparisons so camera yaw and mode stop being inputs; Mario's shadow; then objects for the first mission. M1 polish: skybox and placement models |
+| Immediate next task | M2: extend the compared camera helpers/radial goals into complete BOB radial/free-roam mode and Lakitu ticks, so yaw/mode stop being inputs; then shadow and objects. D0 native builds/CI bundles; D1/D2 ROM launcher and settings before wider playtesting. BOB's named trigger table is unused in the reference. |
 
 ### Implementation session 1 — 2026-10-08 (M0 and early M1)
 
@@ -383,6 +401,45 @@ Every handoff should report the working result, commands actually run, missing f
   (play stops at them), gamepad input, sound; the callbacks' render-pass writes
   into the body state are approximated in presentation (DECISIONS.md).
 - **Next:** Port the reference camera with per-tick comparisons; Mario's shadow.
+
+### Implementation session 8 — 2026-10-09 (camera foundation and desktop builds)
+
+- **Base:** Latest remote main and `claude/gifted-goldberg-5bz4sb`,
+  `15368f8dd944fa7648f54451e08fff9a801f446d` (Mario ROM model); work on
+  `codex/reference-camera-foundation`. No older development branch reused.
+- **Camera increment:** 33 original camera.c functions translated into the
+  GPU-free `simulation::camera`: approaches, button precedence, geometry/angle
+  helpers, strict trigger bounds, camera collisions and radial goal construction.
+  Globals and collision flags are explicit; the complete camera update remains
+  pending. Generated constants now include camera status flags and area IDs.
+- **Native reference:** Generated verbatim camera excerpts from the same pinned
+  CC0 source, with hashes and original headers. Differential cases cover integer
+  promotions/wrap, float bits, vector aliases, filtered contact types/heights,
+  wall reuse, water and radial goals; persistent helper sequences run at
+  15/30/60/120/144 Hz with interpolation on/off.
+- **Source boundary found:** With an intangible floor and no floor beneath it,
+  the collision query retains a height but returns NULL; camera.c dereferences
+  that contact. The Rust camera panics explicitly. Random valid fixtures include
+  a lower floor. BOB's named trigger table is unused and remains disabled.
+- **Desktop:** Native Windows/Linux runtime build/test jobs plus ZIP packaging
+  with an explicit allowlist and dependency notices. The C oracle and private
+  content are excluded. Recorded D1 ROM-selection GUI and D2 pause/settings
+  requirements before broader playtesting; neither GUI is implemented yet.
+- **Checks:** Workspace/all-target tests pass on authored fixtures; updated camera
+  suite passes eight tests in debug and release (one owner-ROM test ignored).
+  Required offscreen GPU tests pass. Direct rustfmt and warnings-denied Clippy
+  workspace checks pass; release runtime binaries and the runnable demo pass.
+  Verbatim excerpt regeneration matches the clean pinned source. Inclusive-trigger
+  and first-wall mutations each fail the intended comparison; source restored.
+  Three packaging checks pass; locked Linux/Windows runtime notice graphs resolve,
+  and an actual Linux ZIP builds with only the allowlisted files.
+- **Blocked:** No ROM attachment or original-execution comparison setup in this
+  workspace. Owner-ROM camera integration and visual play smoke not run here.
+  Windows and physical-GPU testing depend on CI/human checks.
+- **Next:** Port complete BOB camera mode/transition/Lakitu state and compare each
+  camera-and-Mario tick; then integrate it into the viewer. In parallel with M2
+  milestones, deliver D1/D2 before wider human testing; then Mario's shadow and
+  first-mission objects.
 
 ### Bob-omb Battlefield acceptance tracker
 

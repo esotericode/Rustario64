@@ -478,3 +478,63 @@ controls; the viewer maps keys and draws.
   the initial case). The decoder's field is now `num_cases`, and the static
   model builder draws case 0 for switches it cannot run; BOB's models have no
   switches, so its import is unchanged.
+
+## Reference camera foundation — 2026-10-09
+
+`simulation::camera` ports 33 functions from the same pinned CC0 camera.c:
+scalar/vector approaches, C-button precedence, angle/distance/rotation helpers,
+strict rotated trigger bounds, area clamps, camera wall/vertical corrections,
+Mario's camera geometry queries, slope pitch, floor/water height offsets,
+focus placement and radial goal construction. No new runtime dependency.
+Globals are explicit parameters or `RadialState`; collision flags are passed
+by mutable reference where the original changes them. The core stays GPU-free.
+
+Important source behaviors are preserved: integer promotions before division,
+s16 stores and wraparound (including MIN increments/divisors), pointer and
+value float-approach forms differing on multipliers above 1, camera-filtered
+surface types but gameplay-filtered heights, last-wall reuse in
+`collide_with_walls`, and the repeated water query. An intangible floor with
+no lower contact retains a height in the original collision query; camera.c
+then dereferences NULL. Rust panics with an explicit message on that boundary,
+rather than supplying a made-up surface type. Pole height offsets require
+objects and panic before dispatch.
+
+The development oracle compiles generated verbatim excerpts of those functions
+with the original headers; an authored adapter holds the same process-wide
+lock as all other C comparisons. `RadialGoal` is an intermediate goal, not a
+complete camera tick. BOB's `sCamBOB` table is explicitly unused in the pinned
+source and is not activated here. The full mode dispatcher, radial/free-roam
+movement, transitions, obstruction rotation, zoom, initialization and Lakitu
+update still need independent state and complete per-tick comparisons. The
+viewer continues to use its labeled follow camera. No partial reference mode
+is advertised as faithful, and no graphics setting changes movement inputs.
+
+## Desktop playtesting and GUI — 2026-10-09
+
+Windows x86_64 and Linux x86_64 are early distribution targets. CI builds the
+two runtime binaries natively on Windows Server 2025 and Ubuntu 24.04, without
+building the C oracle; native core tests run on both. The Linux headless job
+still owns the native-C/GPU comparison suite. Windows native oracle fidelity
+is not implied by a successful Windows runtime build.
+
+`tools/package_desktop.py` uses an explicit file allowlist: runtime binaries,
+playtest instructions, project/upstream licenses and provenance. It collects
+third-party notices from Cargo's target-filtered runtime dependency graph
+(excluding dev dependencies and the oracle), fails if license files are absent,
+and includes the notices in the ZIP. It never recursively packages a checkout,
+target directory, ROM, cache or trace. ZIPs are CI artifacts for review/testing,
+not public release announcements. Physical GPU/driver and desktop OS smoke tests
+remain separate from compile and authored-fixture evidence.
+
+Before broader human movement testing, add a small launcher and pause/settings
+UI in the application/render crate. The launch flow selects a local ROM,
+validates its existing fingerprint adapter, shows useful errors and starts BOB;
+remembering the local path must be opt-in. Keep settings/saves outside asset
+caches. Use the existing winit/wgpu window and select a permissively licensed UI
+and native-dialog library only after verifying compatibility with the pinned
+wgpu release; no extra engine/framework dependency is added speculatively.
+Graphics controls read/write presentation options only. Camera, input and future
+gameplay modes must remain separate, named and included in replay metadata.
+Opening settings must pause ticks, clear elapsed backlog on resume, and release
+held/latching input so menu keys cannot cause gameplay actions. These behaviors
+need replay/pause regression checks before the UI ships.

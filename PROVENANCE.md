@@ -31,6 +31,7 @@ by src/diagnostics.rs and tests; they are not samples from the game.
 | Same pinned sm64 | assets/anims/*.inc.c, tools/mario_anims_converter.py | tools/check_mario_anims_reference.py, tests/animation.rs (ignored test), docs/ROM_VALIDATION.md | Validation only: rebuilds the N64 table from a user-provided clean pinned checkout with the converter's rules and compares it with the ROM; stores only a digest. | CC0 source reference; no animation data bundled. |
 | Same pinned sm64 | levels/scripts.c (level_main_scripts_entry), include/model_ids.h; src/game/rendering_graph_node.c (geo_process_object placement, geo_process_node_and_siblings, switch, level of detail, rotation, translation-rotation, scale, generated lists, animated parts, geo_set_animation_globals); src/game/mario_misc.c (Mario's geo callbacks, gMarioBlinkAnimation, gMarioAttackScaleAnimation, make_gfx_mario_alpha); src/engine/math_util.c (mtxf_rotate_xyz_and_translate, mtxf_rotate_zxy_and_translate, mtxf_scale_vec3f); src/engine/graph_node.c (init_graph_node_switch_case) | import/mario.rs, import/geo.rs, import/gfx.rs (bone tags), presentation/mario.rs, simulation/mario/tick.rs (`RenderedFrame`) | Rust translation for presentation: the main-scripts scan, the render traversal and Mario's callbacks reading the body state. The callbacks' writes into the body state are not made (zeroed angles are drawn; the punch countdown is kept in presentation). Builds per draw list, CPU skinning, interpolation. | CC0. Authored-skeleton fixtures in CI; owner ROM: six configurations match source-rebuilt digests (tests/mario_model.rs). |
 | Same pinned sm64 | actors/mario/geo.inc.c, actors/mario/model.inc.c, include/sm64.h (layers), src/game/shadow.h | tools/check_mario_model_reference.py, tests/mario_model.rs (ignored test), import/version.rs (callback addresses), docs/ROM_VALIDATION.md | Validation only: walks the ROM's `mario_geo` alongside the source to check every command and display-list address and to locate the 13 callback addresses; rebuilds configuration triangle digests from the source display lists. Stores only addresses, counts and digests. | CC0 source reference; no model data bundled. |
+| Same pinned sm64 | src/game/camera.c (33 helpers: approaches, inputs, geometry, radial goals); src/game/camera.h and math_util.c helpers | simulation/camera.rs, oracle/c/excerpts/camera.c, oracle/c/camera_unit.c, oracle/src/camera.rs, oracle/tests/camera.rs | Rust translation with explicit globals/flags and original widths/order/quirks; verbatim generated C excerpts for development-only component comparisons. Full camera update not ported. Named BOB trigger table confirmed unused. Pole-object and retained-height NULL-contact paths explicitly panic. | CC0; existing notice retained. Authored bitwise differential cases and chained helper sequences; owner-ROM camera check available but blocked this session. |
 | Same pinned sm64 | src/game/game_init.c | simulation.rs, docs | Reference cadence only: yields to VI twice / 30 FPS. New rational integer accumulator; no movement algorithm translated. | CC0. Synthetic cadence/backlog/long-clock tests. |
 | [queueRAM/sm64tools](https://github.com/queueRAM/sm64tools/tree/81de9e5a8f0fa96686a16441d5b9f25742f4d17d) — 81de9e5a8f0fa96686a16441d5b9f25742f4d17d | configs/sm64.u.yaml | import/version.rs | Referenced BOB ROM ranges, segment-7 collision offset, five RGBA16 texture offsets/dimensions, and the Mario animation table start (`mario_animation`, 0x4EC000). Other version offsets are not scattered in gameplay. | MIT, Copyright (c) 2015 Q; retained LICENSES/sm64tools-MIT.txt. Owner-ROM decode/export passes. |
 | Same pinned sm64tools | libmio0.c : mio0_decode | import/mio0.rs | Rust algorithm adaptation, retaining MSB-first masks, token length/distance and overlapping copies. Adds stream bounds, output cap, checked back-references and strict malformed-token rejection. | MIT notice in source and LICENSES/. Authored literal/overlap/truncation/limit fixtures. |
@@ -52,7 +53,7 @@ Newly authored application, safe readers, content types, geo/Fast3D importers,
 scheduler, presentation, play session (held controls, follow camera, input
 logs), renderer, shader, viewer, trace comparator, exporters, fixtures, the oracle's shim headers, glue, tick harness and tools
 (`extract_excerpts.py`, `gen_constants.py`) use this repository's MIT license.
-Translated collision, math, Mario step, input, core-update, action, animation and
+Translated collision, math, camera, Mario step, input, core-update, action, animation and
 tick code derives from CC0 sources.
 
 | Dependency | Resolved direct version | Purpose | Declared terms |
@@ -101,3 +102,17 @@ Original collision, macro, visible-triangle, and texture asset comparisons pass
 using the supplied ROM; [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md) records
 the source expansions, decomp-tool extraction, digests, local checks, and the
 remaining runtime/graphics/oracle gaps. Rendering is visually reviewed only.
+
+Desktop build/packaging scripts and fixtures are authored MIT code. The native
+CI matrix retains winit/wgpu platform boundaries and packages no C oracle.
+Dependency notices are assembled from the locked, target-filtered runtime graph.
+
+Four registry crates omit their repository license files; desktop notice generation
+uses these byte-identical pinned upstream copies only for those exact versions:
+
+| Dependency | Source | Retained notice |
+| --- | --- | --- |
+| profiling 1.0.18 | [aclysma/profiling, 8271551172eb6fa4cba47369aedd93790c623df9](https://github.com/aclysma/profiling/blob/8271551172eb6fa4cba47369aedd93790c623df9/LICENSE-MIT), from crate .cargo_vcs_info.json | LICENSES/dependencies/profiling-1.0.18-MIT.txt (MIT; copyright Philip Degarmo and other contributors). Git blob 6a84e059ad8b43e03c2b06bc2af4dc1d8442808d. |
+| spirv 0.4.0+sdk-1.4.341.0 | [gfx-rs/rspirv, 8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4](https://github.com/gfx-rs/rspirv/blob/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/LICENSE), from crate .cargo_vcs_info.json | LICENSES/dependencies/spirv-0.4.0-APACHE.txt (Apache-2.0). Git blob d645695673349e3947e8e5ae42332d0ac3164cd7. |
+| gl_generator 0.14.0 | [brendanzab/gl-rs, ea503e8d5fb6d73c6030e6191ce738cd3bf3433e](https://github.com/brendanzab/gl-rs/blob/ea503e8d5fb6d73c6030e6191ce738cd3bf3433e/LICENSE), from crate .cargo_vcs_info.json | LICENSES/dependencies/gl_generator-0.14.0-APACHE.txt (Apache-2.0). |
+| khronos_api 3.1.0 | [brendanzab/gl-rs, f150967b1c44ae888e6676f93f639ebc82771bdc](https://github.com/brendanzab/gl-rs/blob/f150967b1c44ae888e6676f93f639ebc82771bdc/LICENSE), from crate .cargo_vcs_info.json | LICENSES/dependencies/khronos_api-3.1.0-APACHE.txt (Apache-2.0). |

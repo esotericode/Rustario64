@@ -3,7 +3,7 @@
 `rustario64-oracle` compiles byte-identical CC0 sources from
 [n64decomp/sm64 at 9921382a68bb0c865e5e45eb594d9c64db59b1af](https://github.com/n64decomp/sm64/tree/9921382a68bb0c865e5e45eb594d9c64db59b1af)
 natively, so tests can compare the Rust collision, math, Mario step, input and
-action ports with the original code bit for bit.
+action ports and camera components with the original code bit for bit.
 
 **Boundary.** This crate is a test/comparison tool. Nothing in the game runtime
 or renderer depends on it, and it is never shipped. The C keeps global state, so
@@ -239,3 +239,68 @@ The authored tests run on independently authored collision streams, terrain,
 tables and animation data (CI-safe); the ignored tests use BOB's real
 collision, the real trig tables and Mario's real animations from the owner's
 ROM. Coverage counts are in [docs/FIDELITY.md](../docs/FIDELITY.md).
+
+## Camera component oracle
+
+`c/camera_unit.c` compiles `c/excerpts/camera.c` with original headers and
+authored prototypes for helpers absent from camera.h (`c/shim/camera_boundary.h`).
+`src/camera.rs` holds the existing global lock, loads authored/owner terrain and
+trig tables, and reports exact native words. No mode dispatch or Lakitu update
+runs; the complete Mario tick oracle is unchanged.
+
+`cargo test --locked -p rustario64-oracle --test camera` runs the authored
+component and radial-goal cases; repeat with `--release`. The ignored
+`bob_camera_components_match_with_rom_tables` case requires `RUSTARIO64_ROM`.
+The crashing NULL-contact/pole paths are rejected before invoking native C.
+See docs/FIDELITY.md for scope and missing complete-camera comparisons.
+
+### Camera excerpt item hashes
+
+Regenerate/check with the existing excerpt tool; all items below are byte-identical
+to camera.c at the pinned revision. Only include lines and adapters are authored.
+
+| Item | SHA-1 |
+| --- | --- |
+| `#define CBUTTON_MASK (U_CBUTTONS` | `D_CBUTTONS` |
+| `struct PlayerGeometry sMarioGeometry` | `5eccb38136dc52bb6e7a38cc237ba632ed7d583b` |
+| `struct Camera *gCamera` | `f14d58fcba1048fe552b808e877c434e83eafce3` |
+| `s16 sStatusFlags` | `66d0eed3417d7df10e69adc95d414b93e37ec1b8` |
+| `s16 sAreaYaw` | `07446e395087e22a2acbde8df0db35bc0b61cd47` |
+| `s16 sLakituDist` | `a389a122e28a877962e007f8d753e0153cded960` |
+| `s16 sLakituPitch` | `39267ec4416c58f7551438f7d9f65f328d46098f` |
+| `s16 sModeOffsetYaw` | `f90adc54b20cce4d091f1a26d094c205ddc393ad` |
+| `s32 gCurrLevelArea = 0` | `5ef230b90f71aa0db409e1246da421ba4726b9a8` |
+| `struct PlayerCameraState *sMarioCamState = &gPlayerCameraState[0]` | `5d0bdd1f0a2f4d495b1dd5177f42fca37bdbfdbf` |
+| `find_c_buttons_pressed` | `973573cc648734b6222cc4395044cd13bc3cf1a4` |
+| `approach_f32_asymptotic_bool` | `6de030eae465cab17d58e01c5583ccd3945b3fbb` |
+| `approach_f32_asymptotic` | `0ec35e5e9a6981367b9cd065f2caafc7e92de022` |
+| `set_or_approach_f32_asymptotic` | `347dd3a86dfb999845e5e558731855cc5f86993e` |
+| `approach_s16_asymptotic_bool` | `7d5a7abf73572cff30db0e18ef91600d7b022335` |
+| `approach_s16_asymptotic` | `650d2fb41eeec108fd8f55b4a418bfd158ae8014` |
+| `approach_vec3f_asymptotic` | `ff780f01bb7fea8ef4191e66207b5a309e3ba99a` |
+| `approach_vec3s_asymptotic` | `8fd619a3c57aac123fdd50c6058c1d476528377d` |
+| `set_or_approach_vec3f_asymptotic` | `4149d7d1d035589cbde634fcb24eb5d8c71bfce5` |
+| `camera_approach_s16_symmetric_bool` | `0f49bd8b8db3d02a0d59361ab6cfab98193ee426` |
+| `camera_approach_s16_symmetric` | `8776a2f8b8d7d684bd1c3e7d9199e8a4994774be` |
+| `set_or_approach_s16_symmetric` | `06b7a3ae241beec51d27a7e0ddd01c107bee3f7f` |
+| `camera_approach_f32_symmetric_bool` | `750be3b89cc073644679a41cbf22a45b0855dcc8` |
+| `camera_approach_f32_symmetric` | `415136b4701dd2498d647ab869c6eb067add2677` |
+| `calculate_pitch` | `9c8865fcebaef7d4051a21264a9fb0e889fb2aab` |
+| `calculate_yaw` | `0bd675ae926cd8e269ad525c3842cf29f5bacda9` |
+| `calculate_angles` | `63b8657d945eee94b6259a26b1ce70618ad636c7` |
+| `calc_abs_dist` | `4794a1a3bdea420f58b924b8ad8f7cb623c3f9d9` |
+| `calc_hor_dist` | `44df37dc8d3483573dc6f3b6827c120554fd1a93` |
+| `rotate_in_xz` | `26525e919b501966f4f38c5e14d66b05aec49648` |
+| `rotate_in_yz` | `171ff839d6d844be3b211c3f0daef25c92ec9d5b` |
+| `scale_along_line` | `cde20461f34302ea27122521a3c5e96ad9b16e1f` |
+| `clamp_pitch` | `a377fd40b2fb50dc68f5b9c6cad3f9af9601911e` |
+| `is_pos_in_bounds` | `b883aaf852b3aecbe14c3c222cdc2a7e7cb3aeb7` |
+| `clamp_positions_and_find_yaw` | `5a14473b09ec0cb8f4a87f5e02c9114a135575d9` |
+| `find_in_bounds_yaw_wdw_bob_thi` | `1a87465ddf19884a99a4b190fb673ef9a0d6d2e9` |
+| `collide_with_walls` | `ed3e666acb185e9cbd66a35d9f0ba410fa9d388f` |
+| `resolve_geometry_collisions` | `425a5cbbced77a5a7bc9e8a6e306fbc425f094dd` |
+| `find_mario_floor_and_ceil` | `17c118d2c364752e585fc4ccf1cda8a9bf0ee836` |
+| `look_down_slopes` | `aa9aebd2b508305ae28e31dcb90087e74e2cc42f` |
+| `calc_y_to_curr_floor` | `25c77ac8de19c4a6d36182006afb0c9c106e20a9` |
+| `focus_on_mario` | `ab42ef2caee247f05be38b125ffcbe016f22ba20` |
+| `update_radial_camera` | `3e1246de2a74fde4d05d456cec79a6dbb43a5d7b` |

@@ -5,6 +5,7 @@ fn main() {
     let files = [
         "c/oracle.c",
         "c/tick.c",
+        "c/camera_unit.c",
         "c/constants.c",
         "c/runtime_glue.c",
         "c/interaction_unit.c",

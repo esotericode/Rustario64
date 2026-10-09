@@ -35,6 +35,9 @@ What works now:
   cap, torso tilt, level of detail) as the original render pass does, skinned
   on the CPU and interpolated between ticks at any frame rate. Six switch
   configurations match triangle digests rebuilt from the pinned decomp source.
+- Reference-camera helpers, camera collision/geometry and radial goal construction
+  with exact native comparisons on authored fixtures. The complete camera update
+  is still pending; the viewer keeps its labeled follow camera.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
   **full-tick** and input-stage trace pairs.
 
@@ -61,7 +64,8 @@ without a GPU or window.
 ## Build and test
 
 Rust 1.99.0 (current stable as of 2026-10-08) with rustfmt and Clippy is selected
-by `rust-toolchain.toml`. Linux x86_64 is the checked platform. Dependencies use
+by `rust-toolchain.toml`. Linux x86_64 is the locally checked platform. CI also builds/tests the Rust
+runtime on Windows x86_64; consult that run before treating Windows as verified. Dependencies use
 compatible SemVer requirements; committed Cargo.lock and `--locked` make builds
 reproducible. Upgrade the toolchain and lockfile together and rerun the component
 oracles; compiler age is not a requirement for original gameplay behavior.
@@ -87,6 +91,27 @@ libraries (for example `libxkbcommon-x11-0` on X11).
 `demo` decodes an independently authored MIO0/BOB-shaped fixture and runs a
 ten-second synthetic counter/input replay at 30, 60, 120, and 144 Hz presentation
 schedules with identical tick records. This tests scaffolding, not Mario.
+
+### Desktop test bundles
+
+The `Desktop runtime` jobs build the two Rust runtime binaries on Linux and
+Windows and upload `rustario64-linux-x86_64` / `rustario64-windows-x86_64` ZIPs
+as workflow artifacts. The C oracle, ROMs, caches and extracted content never
+ship. These are early terminal-launched test builds; a local ROM-selection GUI
+and in-game pause/settings menu are explicit early priorities and remain pending.
+See [docs/PLAYTEST.md](docs/PLAYTEST.md) for commands, controls and missing features.
+
+Local runtime-only packaging (use `windows-x86_64` on Windows):
+
+```sh
+cargo build --locked --release -p rustario64 -p rustario64-render --bins
+python tools/package_desktop.py --target linux-x86_64
+python tools/test_package_desktop.py
+```
+
+The packager includes the commit/target/compiler in `BUILD_INFO.txt` and notices
+from the target-filtered Cargo dependency graph. It refuses an existing ZIP;
+use a fresh `--output` directory for another build.
 
 ## Use your ROM locally
 
@@ -250,8 +275,13 @@ holds the owner-ROM evidence.
 
 ## Next increment
 
-Port the reference camera (camera.c: BOB's radial and free-roam modes and its
-camera triggers) with its own per-tick comparisons, so the camera yaw and mode
-stop being inputs; draw Mario's shadow; then begin objects for the first
+Extend the compared reference-camera helpers/radial goals into full BOB radial
+and free-roam modes, transitions and Lakitu updates, with per-tick comparisons
+so camera yaw and mode stop being inputs (the source's named BOB trigger table
+is unused); draw Mario's shadow; then begin objects for the first
 mission. Original-execution traces remain the eventual authority. Skybox and
 placement models remain M1 work.
+
+Camera checks without a ROM: `cargo test --locked -p rustario64-oracle --test camera`;
+repeat with `--release` for optimized comparisons. The owner-ROM camera test
+is ignored in ordinary CI; see [docs/FIDELITY.md](docs/FIDELITY.md).
