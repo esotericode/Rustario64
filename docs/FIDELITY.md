@@ -253,8 +253,9 @@ Limits of this evidence:
   water). Warps are recorded but not executed: the original's
   `level_trigger_warp` would also set `invincTimer` and start a transition, so a
   tick that records a warp ends faithful comparison with the original game.
-- The camera is a recorded input: its yaw comes with each tick, and camera
-  requests are events that do not change the mode (the real camera would).
+- In these Mario-only suites the camera is a recorded input: its yaw comes
+  with each tick, and camera requests are events that do not change the mode.
+  The complete-frame suites below link the original camera instead.
 - The level entry is the no-warp branch with a fresh boot, not a painting entry
   (which uses cutscene spawn actions).
 - Authored animations make action timing differ from the game; the BOB suite
@@ -266,27 +267,28 @@ Limits of this evidence:
 
 ## Played sessions
 
-The viewer's Mario mode runs `play::Session`, which enters the level with the
-same `enter_level` and advances with the same `tick` as the suites above, and
-keeps each tick's input: buttons, stick bytes and the follow camera's yaw. The
-follow camera is not the original camera; its yaw is an input like the
-recorded yaws above. Two checks cover this path:
+The viewer's Mario mode runs `play::Session`, which since session 12 runs
+`simulation::game`: the same level entry and frame as the complete-frame
+suites below, with the original camera. Each logged frame keeps the buttons,
+stick bytes and the camera yaw Mario read (the yaw the camera produced the
+frame before); input log schema 2 marks such logs `"camera": "reference"`.
+Two checks cover this path:
 
 | Check | Evidence |
 | --- | --- |
-| CI: `played_sessions_replay_exactly_in_the_decomp` | Six sessions on the authored playground driven by held controls (directions, walking, held buttons, single-tick taps, camera turns): 3,600 ticks, 31 actions, 322 camera yaws. The decomp replaying each session's input log reports the session's own words after every tick; the log survives a JSON round trip; re-entering the level with the same controls gives the same words. `level_script_entries_match_the_native_setup` checks the entry conversion |
-| Owner ROM: viewer recordings | `rustario64-viewer view ROM --mario --record DIR` writes one input log per run; `tick_trace ROM NEW_DIR --inputs RUN` replays it in the native decomp. Two windowed BOB runs driven by synthetic key events under Xvfb (154 ticks: running onto the cannon mound, a jump, a camera turn; 79 ticks after a reset: a dive into a stomach slide) compared exactly, and the CLI comparator agrees. The ROM test also checks that the viewer's entry equals the script-start scenarios' |
+| CI: `played_sessions_with_the_camera_replay_exactly_in_the_decomp` | Six sessions on the authored camera playground driven by held controls (directions, walking, held buttons, C buttons, R, single-frame taps): 3,600 frames, 2,250 distinct camera yaws, radial, close, C-Up and boss-fight modes. The decomp replaying each session's input log with its own camera reports the session's own words after every frame; each logged yaw equals the one the replay's Mario reads; the log survives a JSON round trip; re-entering the level with the same controls gives the same words. `level_script_entries_match_the_native_setup` (mario_tick) checks the entry conversion |
+| Owner ROM: viewer recordings | `rustario64-viewer view ROM --mario --record DIR` writes one input log per run; `tick_trace ROM NEW_DIR --inputs RUN` replays it in the native decomp, with the camera linked for reference-camera logs. Two windowed BOB runs with the original camera, driven by synthetic key events under Xvfb (904 frames: running, jumps, C-Left/Right turns, C-Down zoom, C-Up and its exit, R; 124 frames after a reset), compared exactly with every camera word. Session 7's two follow-camera recordings (schema 1, 233 ticks) predate the reference camera |
 
-These show the port matches the decomp for the inputs given. They do not show
-that a player using the original camera would give the same inputs, and play
-stops at the same boundaries as the suites (unsupported paths and warps).
+These show the port matches the decomp for the inputs given, with the camera
+the original game would have shown. Play stops at the same boundaries as the
+suites (unsupported paths, unsupported camera modes or cutscenes, and warps).
 
 ## Next reference work
 
-1. Port the reference camera (camera.c) so camera yaw and mode stop being inputs,
-   with its own per-tick comparisons; then the submerged and cutscene groups BOB
-   needs (water is absent from BOB, but deaths, star dances and spawn actions are
-   not).
+1. Done for BOB in session 12 (below). Next: the submerged and cutscene groups
+   BOB needs (water is absent from BOB, but deaths, star dances and spawn
+   actions are not), with the camera's cutscenes, and the camera modes and
+   trigger tables of further areas as they are imported.
 2. Objects for the first mission, with object state added to the tick snapshot.
 3. Obtain original-execution traces from a matching US build and emulator. Those
    remain unavailable and are the eventual authority over native-host results.
@@ -318,7 +320,7 @@ A persistent 3,600-step helper sequence runs at 15/30/60/120/144 Hz with
 presentation interpolation on and off, comparing its position, yaw and C-button
 state after each step. This is an authored component sequence, **not**
 `update_camera`, `mode_radial_camera` or `update_lakitu`, and does not validate
-original camera-relative Mario movement. The viewer's follow camera is unchanged.
+original camera-relative Mario movement (see the complete-frame section below).
 
 ```sh
 cargo test --locked -p rustario64-oracle --test camera -- --nocapture
@@ -328,8 +330,8 @@ RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-ora
 
 The owner-ROM camera check imports BOB's raw collision and original trig tables.
 The ROM attached on 2026-10-09 validates as supported US v1.0 and passes all
-20,000 positions x four collision-flag combinations. The complete reference
-camera and original-N64 execution remain unvalidated.
+20,000 positions x four collision-flag combinations. Original-N64 execution
+remains unvalidated.
 
 Fresh authored checks pass in debug and release (eight tests, one owner-ROM
 test ignored). Deliberately changing strict trigger bounds to inclusive bounds
@@ -366,15 +368,14 @@ RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-ora
 python3 oracle/tools/lakitu_layout.py --check
 ```
 
-This is **not** `update_camera` coverage: initialization, surface-based mode
-selection, complete radial/free-roam mode controllers,
-C-Up/R-trigger handling, cutscene dispatch and the original RNG remain missing.
-Active handheld/random shock requests are explicit unsupported boundaries;
-existing handheld angle offsets decay when no random request is active.
+This stage alone is **not** `update_camera` coverage; the complete-frame
+section below covers the dispatcher. Since session 12 the stage takes the
+shared RNG: `shock_shakes_draw_from_the_shared_random_sequence` compares the
+shock shake's two draws and the seed, and the handheld shake runs in the
+complete-frame suites.
 FOV setup is compared, not the perspective node's FOV animation or rendering.
 The outer update must write `last_frame_action` after this stage; tests compare
-that assignment separately. Original camera-relative Mario movement is not
-validated, and the viewer continues using its approximate follow camera.
+that assignment separately.
 
 Deliberately truncating a float shake increment before adding it to the angle
 fails the native comparison; unconditionally clearing the camera-floor flag
@@ -404,9 +405,8 @@ Both sides retain independent persistent state. The 94-word shared record and
 controller second-rotation flags, area yaw and collision flags compare exactly.
 No Rust post-tick value is loaded into native state. Authored Mario paths and
 floor inputs make this a **stage-composition check**, not combined Mario/camera
-gameplay or complete mode_radial_camera. Input, height/pan, free roam, mode
-selection, initialization and full update_camera remain pending. The viewer
-still uses its approximate follow camera, and original-N64 traces remain missing.
+gameplay or complete mode_radial_camera; those are covered by the
+complete-frame section below. Original-N64 traces remain missing.
 
 Selecting the first wall instead of the last, making the low-wall cutoff
 inclusive, or narrowing the radial condition before its comparison each causes
@@ -430,4 +430,72 @@ signed angles/zero and coincident/vertical eyes. All 94 shared words compare,
 with independent assertions that yaw/eye do not change. The existing persistent
 radial-goal/Lakitu compositions now include pan before Lakitu (18,000 ticks per
 terrain at five render rates and both interpolation settings). Run the same
-`--test radial` commands above. No complete camera or viewer fidelity is claimed.
+`--test radial` commands above.
+
+## Complete frames with the original camera (session 12, 2026-10-09)
+
+`simulation::game` runs one original frame: controller read, the area update
+counter, Mario's object update (his `set_camera_mode` and
+`set_camera_shake_from_hit` calls are applied after it in call order, with his
+own later reads of the mode mirrored as the shared `struct Camera` would show
+them), `update_camera`, then the render pass's perspective node (FOV), camera
+node (graph camera) and Mario's animation frame. The oracle runs the same frame
+in `oracle/c/tick.c` with camera.c's verbatim update path linked
+(oracle/README.md). Both sides start from the same fresh-boot camera globals,
+area camera node, act and RNG seed and then run independently. After the entry
+and after every frame, both report Mario's words and every camera word: the
+area's `struct Camera`, all of Lakitu, the mode transition and mode info,
+Mario's camera geometry, FOV, flags, the handheld shake, C-Up's stored camera,
+the cutscene values the dispatcher reads, the RNG seed, the HUD camera status
+and the graph camera's position, focus, roll and field of view.
+
+| Check | Authored playground (CI) | BOB, owner ROM (ignored test) |
+| --- | --- | --- |
+| World | 9x9 tiles with close-camera, boss-fight, rotate-left/right/middle, free-roam and no-camera-collision tiles, tall blocks and a tunnel that obstruct the camera, hangable ceilings over close and radial floor, a ramp and a pit; BOB's area rules; computed trig tables; authored animations | BOB collision, ROM trig tables and animations, the area camera node from the ROM (mode 1, its position and focus), the level script's start; act 1 |
+| Scenarios | 15 scripted programs (idle to sleep and the FOV, radial running with every C button, C-Up look and exits, close-camera tiles, steps and ramp, hanging under close and radial floor, boss-fight tiles, rotation surfaces, the R-button Mario camera, tunnel and walls, jumps/dives/pounds, the C-Up exit search against a wall, free-roam and slippery tiles) and 16 fuzzed 900-frame runs from eight starts, each with its own RNG seed | The 15 scripts from the script start; 40 fuzzed 1,800-frame runs from starts on BOB's close-camera, boss-fight, rotation and hangable surfaces and random floors |
+| Frames compared, all identical | 19,512 | 77,112 |
+| Actions / camera modes reached | 45 / radial, close, free-roam, C-Up, boss-fight (all five required by the test) | 62 / radial, close, C-Up, boss-fight (all four required) |
+| Presentation | `radial-run-and-c-buttons` at 15/30/60/120/144 Hz: identical | 900 fuzzed frames from the script start at 30/60/144 Hz: identical |
+
+Also compared: the 1,800-frame `tick_trace --camera` program on BOB (camera
+buttons, R and C-Up over the Mario program) and the played sessions above. A
+mode, transition or cutscene the port does not model ends a Rust run with
+`Unsupported` after the completed frame (the frames before it are compared);
+the C side aborts on the same paths. The area camera node's callbacks must
+resolve to `geo_camera_main` and `geo_camera_fov` before the camera starts.
+
+Seeded mutations (each reverted afterwards): 14 one-line changes to the Rust
+port were tried against the authored suite. Ten fail it: the hanging goal
+factor, the RNG constant, C-Up's head-look scale, the boss-fight distance
+factor, C-Up's return distance, the FOV's sleeping approach, a handheld spline
+coefficient (0.7), the random spline offset range, and, after the scenarios
+were strengthened (raised close-camera floors and a corrected hanging spawn,
+and a C-Up exit against a wall), the default camera's floor-scan step and the
+C-Up exit search step. Four survive because the reached states do not
+distinguish them: adding BOB's boss-fight height as one 250 instead of two
+125s, a one-ulp change to a spline coefficient, raising the handheld
+increment floor from 0.02 to 0.03, and reassociating `move_into_c_up`'s
+distance fraction.
+
+```sh
+cargo test --locked -p rustario64-oracle --test camera_tick -- --nocapture
+cargo test --locked --release -p rustario64-oracle --test camera_tick -- --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test camera_tick -- --include-ignored --nocapture
+cargo run --locked --release -p rustario64-oracle --example tick_trace -- /path/to/sm64.z64 private/camera-traces --camera
+```
+
+Limits of this evidence:
+
+- Native host C, not N64 execution; original-execution traces remain the
+  authority.
+- Areas without camera triggers only. Levels whose original `sCameraTriggers`
+  entry is not NULL are refused on both sides; the cannon, behind-Mario,
+  water-surface, 8-direction, outward-radial, parallel-tracking, slide, fixed
+  and spiral-stairs modes and every cutscene are unported (cutscene starts are
+  detected and end play). The pause screen's camera path is ported but never
+  reached because no pause runs.
+- Mario alone: no objects, so object-driven camera behavior (cutscene focus
+  objects, King Bob-omb's boss fight, the cannon) is absent.
+- Camera sounds are compared as recorded events in call order with Mario's;
+  no audio runs.
+

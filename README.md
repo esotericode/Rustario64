@@ -27,27 +27,29 @@ What works now:
   animation frame advance. **Complete ticks match the decomp bit for bit**:
   28,158 ticks on an authored playground (CI) and 64,158 on Bob-omb Battlefield
   with your ROM's collision, tables and animations, at several presentation rates.
-- **Mario mode in the viewer**: the keyboard drives that same tick at 30 Hz with
-  a simple follow camera supplying the camera yaw, and every run can be recorded
-  and replayed exactly against the decomp.
+- **The original camera on Bob-omb Battlefield**: `camera.c`'s frame for areas
+  without camera triggers, ported to Rust: Lakitu's radial camera with C-button
+  turns and zoom, the R-button Mario camera, C-Up first person, the boss-fight
+  camera, BOB's surface rules, shakes (with the original random generator), the
+  field of view and the graph camera. Mario and the camera run in the original
+  frame order; **complete frames match the decomp word for word** (19,512
+  authored frames in CI, 77,112 on Bob-omb Battlefield with your ROM).
+- **Mario mode in the viewer**: the keyboard drives that same frame at 30 Hz,
+  the window draws through the original camera (interpolated between frames),
+  and every run can be recorded and replayed exactly against the decomp.
 - **Mario's model from your ROM**: his geo layout and display lists, posed each
   tick from the animation the tick advanced and his body state (eyes, hands,
   cap, torso tilt, level of detail) as the original render pass does, skinned
   on the CPU and interpolated between ticks at any frame rate. Six switch
   configurations match triangle digests rebuilt from the pinned decomp source.
-- Reference-camera helpers, camera collision/geometry and obstruction scans,
-  radial rotation/zoom and goals, look-ahead pan, and the persistent
-  Lakitu/transition stage with exact native comparisons on authored
-  fixtures and BOB's ROM data. Full mode dispatch is pending; the viewer keeps
-  its labeled follow camera.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
   **full-tick** and input-stage trace pairs.
 
-This is level exploration with Mario's movement, not mission support: the
-follow camera is not the original camera, Mario has no shadow yet, and there
-are no objects (coins, enemies, trees, the cannon lid), cutscene or water
-actions, warps, deaths, or missions. Play stops
-where the port stops (unsupported paths, falling off the course); R re-enters.
+This is level exploration with Mario's movement and camera, not mission
+support: Mario has no shadow yet, and there are no objects (coins, enemies,
+trees, the cannon lid), camera cutscenes, pause menu, cutscene or water
+actions, warps, deaths, or missions. Play stops where the port stops
+(unsupported paths, falling off the course); R re-enters.
 The comparisons are against the natively compiled decomp, not N64 execution.
 The imported level is independently validated against the pinned
 decompilation; see [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md).
@@ -56,9 +58,9 @@ decompilation; see [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md).
 
 | Crate | Path | Purpose |
 | --- | --- | --- |
-| `rustario64` | `.` | GPU-free core: import, content, simulation, the play session that drives it from held controls, traces, headless CLI |
+| `rustario64` | `.` | GPU-free core: import, content, simulation (Mario, the reference camera, the game frame), the play session that drives it from held controls, traces, headless CLI |
 | `rustario64-render` | `render/` | Optional wgpu renderer and the `rustario64-viewer` development binary |
-| `rustario64-oracle` | `oracle/` | Development-only: the pinned CC0 decomp's collision, math and Mario code compiled natively for bitwise component and full-tick differential tests (needs a C compiler); never a runtime dependency |
+| `rustario64-oracle` | `oracle/` | Development-only: the pinned CC0 decomp's collision, math, Mario and camera code compiled natively for bitwise component and full-tick differential tests (needs a C compiler); never a runtime dependency |
 
 The core never depends on the renderer, so simulation and replay comparisons run
 without a GPU or window.
@@ -170,23 +172,26 @@ shadows are terrain).
 # Window: Mario mode from the start, recording each run's inputs privately
 cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
   view /path/to/sm64.z64 --mario --record private/runs
-# Offscreen: Mario after 90 ticks of holding the stick up, from the follow camera
+# Offscreen: Mario after 90 frames of holding the stick up, from the original camera
 cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
   screenshot /path/to/sm64.z64 --out private/mario.png --mario-ticks 90
 ```
 
 Mario mode (`--mario`, or M in the window): WASD is the stick (hold Shift to
 walk), Space is A (jump), J is B (punch, dive), K is Z (crouch, ground pound),
-the Left/Right arrows turn the camera, R re-enters the level, and M returns to
-the free camera (Mario pauses). Mario starts at the level script's start and
-runs the tick that is compared with the decomp, at the original 30 Hz; the
-window interpolates his pose between ticks. The follow camera turns only when
-asked; its yaw is the camera input Mario's controls are relative to (stick up
-moves away from the camera), as the original camera's is. A key tapped between
-two ticks counts as held for the next tick. Play stops on paths the port does
-not support and on warps (falling off the course); the window title and terminal
-say why, and R re-enters. `--record DIR` writes `run-NNN.inputs.json` for each
-run (see Trace comparison to replay one against the decomp).
+the arrow keys are the C buttons (Left/Right rotate Lakitu, Down zooms out and
+Up back in, then Up enters first person; A, B or another C button leaves it), E
+is the R button (Lakitu or Mario camera), R re-enters the level, and M returns
+to the free camera (Mario pauses). Mario starts at the level script's start; he
+and the original camera run the frame that is compared with the decomp, at the
+original 30 Hz. The window draws from the camera's position, focus, roll and
+field of view, interpolated between frames and snapped across cuts; Mario's
+controls are relative to the yaw the camera produced the frame before, as in
+the original. A key tapped between two frames counts as held for the next
+frame. Play stops on paths the port does not support and on warps (falling off
+the course); the window title and terminal say why, and R re-enters. `--record
+DIR` writes `run-NNN.inputs.json` for each run (see Trace comparison to replay
+one against the decomp).
 
 Mario is drawn with his model from the ROM, posed from each completed tick (he
 appears from his first tick on, as in the original, whose first frame renders
@@ -229,8 +234,10 @@ cargo run --locked -- compare-traces private/foundation.trace.json private/found
 ```
 
 Export a native-vs-Rust **full-tick** trace pair with your ROM (60 seconds of
-scripted moves from BOB's script start; Rust runs at 144 Hz presentation), or
-replay a run recorded in the viewer with `--inputs`:
+scripted moves from BOB's script start; Rust runs at 144 Hz presentation), the
+same with the original camera linked on both sides (`--camera`, adding the
+camera buttons), or replay a run recorded in the viewer with `--inputs` (runs
+recorded with the reference camera replay with the camera linked):
 
 ```sh
 cargo test --locked -p rustario64-oracle --test mario_tick
@@ -239,14 +246,18 @@ cargo run --locked --release -p rustario64-oracle --example tick_trace -- \
 cargo run --locked -- compare-traces \
   private/tick-traces/native-tick.trace.json private/tick-traces/rust-tick.trace.json
 cargo run --locked --release -p rustario64-oracle --example tick_trace -- \
+  /path/to/sm64.z64 private/camera-traces --camera
+cargo run --locked --release -p rustario64-oracle --example tick_trace -- \
   /path/to/sm64.z64 private/replay-1 --inputs private/runs/run-001.inputs.json
 ```
 
 Each frame records about 260 named words: all of MarioState, Mario's object, his
 body and camera-status state, world globals, controller 1 and the frame's sound,
 camera and warp events. The entry is a fresh-boot level entry at the script's
-start, not a painting spawn. Mario's object is the only object, and the camera
-yaw is part of each tick's input.
+start, not a painting spawn. Mario's object is the only object. Without the
+camera the yaw is part of each tick's input; with it, each frame adds every
+camera word (the area's `struct Camera`, Lakitu, transitions, C-Up, shakes,
+the random seed, FOV and graph camera).
 
 Export a native-vs-Rust **input-stage** trace pair with your ROM:
 
@@ -278,17 +289,14 @@ holds the owner-ROM evidence.
 
 ## Next increment
 
-Connect the compared reference-camera helpers and persistent Lakitu/transition
-stage to full BOB radial and free-roam mode controllers (input, height,
-surface-mode selection and initialization), with per-tick comparisons
-so camera yaw and mode stop being inputs (the source's named BOB trigger table
-is unused); draw Mario's shadow; then begin objects for the first
-mission. Original-execution traces remain the eventual authority. Skybox and
-placement models remain M1 work.
+The D1 ROM launcher and D2 pause/settings menu for wider playtesting; then
+Mario's original shadow and the first objects for BOB's first mission, with the
+camera cutscenes that mission needs. Original-execution traces remain the
+eventual authority. Skybox and placement models remain M1 work.
 
-Camera checks without a ROM: `cargo test --locked -p rustario64-oracle --test camera --test lakitu --test radial`;
-repeat with `--release` for optimized comparisons. The owner-ROM camera test
-is ignored in ordinary CI; see [docs/FIDELITY.md](docs/FIDELITY.md).
+Camera checks without a ROM: `cargo test --locked -p rustario64-oracle --test camera --test lakitu --test radial --test camera_tick`;
+repeat with `--release` for optimized comparisons. The owner-ROM camera tests
+are ignored in ordinary CI; see [docs/FIDELITY.md](docs/FIDELITY.md).
 
 With your supported ROM, run the whole integration suite locally:
 

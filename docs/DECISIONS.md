@@ -407,8 +407,9 @@ controls; the viewer maps keys and draws.
   start, the start area's terrain type, and the camera mode of the area's
   GEO_CAMERA node, which create_camera copies into the mode and default mode.
   The oracle's native setup converts from the same `LevelEntry`.
-- **Camera yaw.** The reference camera is not ported. A follow camera supplies
-  the yaw: it starts behind Mario and turns only on request, 0x300 per tick,
+- **Camera yaw.** (Superseded in session 12: the session runs the original
+  camera; see "Complete BOB reference camera" below.) The reference camera is
+  not ported. A follow camera supplies the yaw: it starts behind Mario and turns only on request, 0x300 per tick,
   after Mario's update as the original camera updates after Mario. The yaw is
   part of each tick's input, so play is reproducible; it does not claim to be
   the original camera. Only the eye position (interpolated yaw, fixed distance
@@ -506,8 +507,8 @@ complete camera tick. BOB's `sCamBOB` table is explicitly unused in the pinned
 source and is not activated here. The full mode dispatcher, radial/free-roam
 movement, obstruction rotation, zoom and initialization still need independent
 state and complete per-tick comparisons. The persistent Lakitu/transition stage
-is now implemented and documented below. The
-viewer continues to use its labeled follow camera. No partial reference mode
+is now implemented and documented below, and the complete BOB camera
+(session 12) replaced the viewer's follow camera. No partial reference mode
 is advertised as faithful, and no graphics setting changes movement inputs.
 
 ## Desktop playtesting and GUI — 2026-10-09
@@ -558,8 +559,9 @@ paused. The 94-word comparison record includes every modeled value read/written
 by this stage and transition/hit setup, plus collision flags. Authored transport
 generation shares field names/layout only; C and Rust behavior remain independent.
 
-Active RNG-driven handheld shake and shock requests return `Unsupported` before
-state mutation. Decay of existing handheld angle offsets with no active random
+(Superseded in session 12: the shared original RNG is ported and both random
+shakes run.) Active RNG-driven handheld shake and shock requests return
+`Unsupported` before state mutation. Decay of existing handheld angle offsets with no active random
 request is supported. The native adapter compiles full verbatim handheld/spline/
 random-vector excerpts but aborts if an unavailable RNG call is reached. Its hit
 function is renamed during preprocessing so the separate Mario tick harness
@@ -601,3 +603,62 @@ flags. This composition deliberately omits mode input, camera height/pan, free
 roam, surface-mode selection, initialization and outer dispatch. Those need their
 own comparisons before this replaces the viewer camera. The runtime remains
 entirely Rust; generated C excerpts are development-only, with pinned hashes.
+
+## Complete BOB reference camera — 2026-10-09 (session 12)
+
+- **One camera system, explicit inputs.** `simulation::camera::system::CameraSystem`
+  holds camera.c's globals for the frame path (mode info, transitions, C-Up's
+  stored camera, FOV state, Mario's camera geometry, the area's camera, Lakitu
+  through the existing `Rig`, flags and timers). Each `update` takes a `Frame`:
+  the collision world, trig tables, collision flags, controller 1, Mario's
+  camera report (`PlayerCameraState`), his action and speed view, the shared RNG
+  and the event list. The camera never reaches into Mario's state directly.
+- **Only what BOB reaches, refused otherwise.** Ported: level entry, course
+  processing for areas without trigger tables (BOB's surface rules), the radial,
+  close (R/Mario), free-roam, boss-fight and C-Up
+  modes, transitions, HUD status and the render pass's FOV and graph camera.
+  A mode, transition or cutscene start outside that set, or a level whose
+  original trigger table is not NULL, returns a typed `Unsupported` after the
+  frame completes; play stops there rather than inventing behavior. Porting a
+  new area adds its modes, triggers and cutscenes with their own comparisons.
+- **No cutscene, spline or trigger data in the repository.** The oracle's
+  excerpt holds only the functions above and the tables they read
+  (`sZoomOutAreaMasks`); `sCameraTriggers` is authored all-NULL and the frame
+  adapter checks each level's original entry by name from `level_defines.h`.
+- **RNG ownership.** `simulation::rng::Rng` is gRandomSeed16. The game frame
+  owns one seed and passes it to every caller in the original call order;
+  today only the camera's handheld and shock shakes draw from it. Objects will
+  share the same seed when they arrive, so their order relative to the camera
+  is part of the simulation.
+- **Frame order and Mario's camera requests.** `simulation::game::Game::frame`
+  runs controller read, `gAreaUpdateCounter++`, Mario's object update,
+  `update_camera`, then the render pass's perspective node, camera node and
+  Mario's animation frame, and `gGlobalTimer++`. Mario's `set_camera_mode` and
+  `set_camera_shake_from_hit` calls are recorded during his update and applied
+  to the camera immediately after it, in call order, against the camera report
+  he wrote the frame before; within his own update, his later reads of the mode
+  see the requested mode (`StepWorld::set_camera_mode` mirrors it) as the
+  shared `struct Camera` would show them. The per-frame comparisons cover this
+  ordering.
+- **The render stages are authoritative.** `geo_camera_fov` can set
+  `CAM_FLAG_SLEEPING`, and `update_graph_node_camera` feeds the next frame's
+  state, so both run in the simulation frame, not per rendered frame.
+- **The area's camera node is imported and verified.** `GameEntry::script_start`
+  takes the area's GEO_CAMERA node (mode, position, focus) and requires its
+  callback and the enclosing perspective node's callback to equal the version
+  adapter's `geo_camera_main` and `geo_camera_fov` addresses.
+- **Presentation.** The viewer draws from the graph camera's position, focus,
+  roll and field of view, interpolated between the last two completed frames
+  (roll by the shortest signed difference) and snapped when either point moves
+  more than `CAMERA_CUT_DISTANCE` (1,500 units) in one frame. Mario's level of
+  detail and C-Up head look read the same authoritative camera; nothing
+  presentation-side writes back. The free inspection camera remains a separate
+  presentation tool.
+- **Input logs, schema 2.** `InputLog` gains `camera`: `recorded-yaw` (schema 1
+  logs, where each input's yaw drove Mario) or `reference` (the yaw Mario read
+  from the original camera; replays run the camera and check each yaw). Schema
+  1 logs still load as recorded-yaw.
+- **Controls.** The pad gains R and the four C buttons (arrow keys and E in the
+  viewer). They use the same latch as A/B/Z: a tap between two frames reaches
+  the next frame.
+

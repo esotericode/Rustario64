@@ -1,16 +1,18 @@
 # Rustario64 development build
 
 This is an early Bob-omb Battlefield exploration build. Mario's non-object
-movement has native decomp comparison coverage. Missions, objects (including
-the cannon lid), the original camera, water/cutscene actions, warps, saves,
-gamepad controls and audio are missing. The camera follows Mario; it does not
-reproduce the original camera. Play stops on unsupported paths; R re-enters.
+movement and the original camera (Lakitu, the R-button Mario camera, C-Up
+first person) have native decomp comparison coverage. Missions, objects
+(including the cannon lid), camera cutscenes, the pause menu, water/cutscene
+actions, warps, saves, gamepad controls and audio are missing. Play stops on
+unsupported paths; R re-enters.
 
 ## Start
 
 Windows and Linux ZIP builds are attached to successful runs of the
 [Rust foundation workflow](https://github.com/esotericode/Rustario64/actions/workflows/rust.yml).
-Choose the latest successful run for `codex/reference-camera-foundation`, then
+Choose the latest successful run for the branch under test (the original
+camera arrived on `claude/keen-maxwell-bqppaj`), then
 download `rustario64-windows-x86_64` or `rustario64-linux-x86_64` under Artifacts.
 GitHub's artifact ZIP contains the runtime ZIP; extract both layers. The build
 identifier is in the runtime folder's BUILD_INFO.txt.
@@ -42,9 +44,12 @@ OS versions and physical GPU/controller combinations need human testing.
 
 ## Controls and options
 
-WASD is the stick; hold Shift to walk. Space jumps (A), J punches/dives (B),
-K crouches/ground-pounds (Z). Left/Right arrows turn the follow camera. R resets,
-M switches to the inspection camera (Mario pauses), Esc exits.
+WASD is the stick; hold Shift to walk. Space jumps (A), J punches/dives (B), K
+crouches/ground-pounds (Z). The arrow keys are the C buttons: Left/Right rotate
+Lakitu, Down zooms out and Up back in; Up again looks through Mario's eyes (A,
+B or another C button returns). E is the R button (switch between the Lakitu
+and Mario cameras). R resets, M switches to the inspection camera (Mario
+pauses), Esc exits.
 
 Presentation flags: `--msaa 4`, `--no-fog`, `--no-cull`, `--size 1280x960`,
 `--no-interpolation`. C/P/F toggle collision, placements and fog in the window.
