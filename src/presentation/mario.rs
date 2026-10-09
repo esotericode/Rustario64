@@ -18,7 +18,8 @@ use crate::{
     content::ImportIssue,
     content::{
         animation::{
-            ANIM_FLAG_6, ANIM_FLAG_HOR_TRANS, ANIM_FLAG_VERT_TRANS, Animation, MarioAnimations,
+            ANIM_FLAG_5, ANIM_FLAG_6, ANIM_FLAG_HOR_TRANS, ANIM_FLAG_VERT_TRANS, Animation,
+            MarioAnimations,
         },
         visual::{LAYER_OPAQUE, LAYER_TRANSPARENT, SkinnedModel, VisualModel, VisualVertex},
     },
@@ -221,6 +222,48 @@ impl AnimCursor<'_> {
             .copied()
             .unwrap_or(0)
     }
+}
+
+/// geo_process_shadow: the object's position plus lateral animation offset,
+/// rotated by its yaw. The floor alignment matrix does not move the shadow.
+pub fn shadow_origin(
+    pose: &MarioPose,
+    anims: &MarioAnimations,
+    trig: &TrigTables,
+    child_scale: f32,
+) -> [f32; 3] {
+    let mut position = pose.position;
+    if let Some(a) = pose
+        .animation
+        .and_then(|a| anims.get(a.entry).map(|animation| (a, animation)))
+    {
+        let (a, animation) = a;
+        if animation.flags & (ANIM_FLAG_5 | ANIM_FLAG_HOR_TRANS) == 0
+            && (animation.flags & ANIM_FLAG_VERT_TRANS != 0 || animation.flags & ANIM_FLAG_6 == 0)
+        {
+            let mut cursor = AnimCursor {
+                animation,
+                frame: i32::from(a.frame),
+                attribute: 0,
+                kind: AnimType::Translation,
+                multiplier: if animation.y_trans_divisor == 0 {
+                    1.0
+                } else {
+                    f32::from(a.y_trans) / f32::from(animation.y_trans_divisor)
+                },
+            };
+            let x = f32::from(cursor.next()) * cursor.multiplier * child_scale;
+            cursor.attribute += 1;
+            let z = f32::from(cursor.next()) * cursor.multiplier * child_scale;
+            let (sin, cos) = (
+                trig.sins(i32::from(pose.angle[1])),
+                trig.coss(i32::from(pose.angle[1])),
+            );
+            position[0] += x * cos + z * sin;
+            position[2] += -x * sin + z * cos;
+        }
+    }
+    position
 }
 
 /// A callback's effect on the next sibling (node->next).

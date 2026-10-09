@@ -12,6 +12,7 @@ pub mod model;
 pub mod reader;
 pub mod rom;
 pub mod segments;
+pub mod shadow;
 mod special;
 pub mod texture;
 pub mod version;

@@ -12,9 +12,14 @@ use rustario64::{
         animation, bob, engine,
         mario::{self as mario_model, MarioModelSource},
         rom::Rom,
+        shadow::{self, ShadowSource},
     },
     play::{self, BOB_SCRIPT_START, Pad, Session},
-    presentation::{GraphicsOptions, mario::MarioDrawer},
+    presentation::{
+        GraphicsOptions,
+        mario::{MarioDrawer, shadow_origin},
+        shadow::{ShadowDrawer, player_shadow},
+    },
     simulation::{collision::CollisionWorld, game::GameEntry, math::TrigTables},
 };
 use rustario64_render::{
@@ -159,6 +164,7 @@ struct Level {
     rom_sha1: &'static str,
     /// Mario's model, or None when it could not be imported.
     mario_model: Option<&'static MarioModelSource>,
+    shadow: Option<&'static ShadowSource>,
 }
 
 impl Level {
@@ -171,6 +177,10 @@ impl Level {
 struct MarioModel {
     drawer: MarioDrawer<'static>,
     view: present::MarioModelView,
+    shadow: Option<(ShadowDrawer, &'static ShadowSource)>,
+    shadow_view: present::ShadowModelView,
+    trig: &'static TrigTables,
+    anims: &'static MarioAnimations,
 }
 
 impl MarioModel {
@@ -178,6 +188,10 @@ impl MarioModel {
         let mut model = Self {
             drawer: MarioDrawer::new(level.mario_model?, level.trig, level.anims),
             view: present::MarioModelView::default(),
+            shadow: level.shadow.map(|s| (ShadowDrawer::new(s), s)),
+            shadow_view: present::ShadowModelView::default(),
+            trig: level.trig,
+            anims: level.anims,
         };
         model.tick(session, camera);
         Some(model)
@@ -190,17 +204,52 @@ impl MarioModel {
         if let Err(error) = self.drawer.update(&pose, Some(lod)) {
             eprintln!("warning: Mario's model could not be built: {error}");
         }
+        if let Some((drawer, source)) = &mut self.shadow {
+            let origin = shadow_origin(&pose, self.anims, self.trig, source.child_scale);
+            let anim = &session.mario().obj.gfx.anim;
+            drawer.update(
+                pose.visible
+                    .then(|| {
+                        player_shadow(
+                            session.world().collision,
+                            self.trig,
+                            origin,
+                            (f32::from(source.scale) * pose.scale[0]) as i32 as i16,
+                            source.solidity,
+                            anim.anim_id,
+                            anim.anim_frame,
+                        )
+                    })
+                    .flatten(),
+            );
+        }
     }
 
     /// A new level entry: snap, then pose the entry state.
     fn reset(&mut self, session: &Session<'_>, camera: &FlyCamera) {
         self.drawer.reset();
+        if let Some((drawer, _)) = &mut self.shadow {
+            drawer.reset();
+        }
         self.tick(session, camera);
+    }
+
+    fn snap(&mut self) {
+        self.drawer.snap();
+        if let Some((drawer, _)) = &mut self.shadow {
+            drawer.snap();
+        }
     }
 
     fn show(&mut self, renderer: &mut Renderer, alpha: f32, graphics: GraphicsOptions) {
         self.view
             .show(renderer, self.drawer.frame(alpha, graphics.interpolation));
+        self.shadow_view.show(
+            renderer,
+            self.shadow
+                .as_ref()
+                .and_then(|(d, _)| d.frame(alpha, graphics.interpolation)),
+        );
     }
 }
 
@@ -237,6 +286,13 @@ fn load(rom_path: &Path) -> AppResult<Level> {
             None
         }
     };
+    let shadow = mario_model.and_then(|mario| match shadow::import(&rom, mario) {
+        Ok(source) => Some(&*Box::leak(Box::new(source))),
+        Err(error) => {
+            eprintln!("warning: Mario's shadow was not imported: {error}");
+            None
+        }
+    });
     Ok(Level {
         collision: overlay::collision(&imported.collision),
         placements: overlay::placements(&imported.level, &imported.collision),
@@ -248,6 +304,7 @@ fn load(rom_path: &Path) -> AppResult<Level> {
         entry,
         rom_sha1: rom.fingerprint(),
         mario_model,
+        shadow,
     })
 }
 
@@ -386,7 +443,12 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
     }
     match (mario, model_builds) {
         (true, Some(Some(builds))) => println!(
-            "Mario's model from the ROM, posed by the tick's animation ({builds} draw lists built); no shadow yet."
+            "Mario's model from the ROM, posed by the tick's animation ({builds} draw lists built); shadow {}.",
+            if level.shadow.is_some() {
+                "imported"
+            } else {
+                "unavailable"
+            }
         ),
         (true, Some(None)) => println!(
             "Mario is drawn from his first tick on, as the original renders after his first update."
@@ -581,7 +643,7 @@ impl App {
         self.play.release_all();
         self.play.session.snap_presentation();
         if let Some(mario) = self.mario.as_mut() {
-            mario.drawer.snap();
+            mario.snap();
         }
         self.looking = false;
         if let Some(gpu) = &self.gpu {
@@ -836,7 +898,7 @@ impl App {
                 self.clock.reset();
                 self.play.session.snap_presentation();
                 if let Some(mario) = self.mario.as_mut() {
-                    mario.drawer.snap();
+                    mario.snap();
                 }
             }
             KeyCode::KeyC | KeyCode::KeyP if down => {

@@ -39,6 +39,10 @@ pub const MAIN_SCRIPTS_SEGMENT: u8 = 0x15;
 /// 0x17. The importer checks that the main scripts load exactly these.
 pub const GROUP0_MIO0: Range<usize> = 0x114750..0x1279B0;
 pub const GROUP0_SEGMENT: u8 = 0x04;
+/// sm64tools' font_graphics MIO0 segment; pinned sm64 assets.json names
+/// the 16x16 IA8 quarter-circle at decoded offset 0x120B8.
+pub const SEGMENT2_MIO0: Range<usize> = 0x108A40..0x114750;
+pub const SHADOW_CIRCLE_TEXTURE: usize = 0x120B8;
 pub const GROUP0_GEO: Range<usize> = 0x1279B0..0x12A7E0;
 pub const GROUP0_GEO_SEGMENT: u8 = 0x17;
 /// MODEL_MARIO in the pinned include/model_ids.h.

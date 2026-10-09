@@ -260,3 +260,31 @@ ROM, decoded assets, images and state records remain local and untracked. Native
 host C is still the comparison implementation; original-execution traces are
 unavailable. Windows/Linux build/package jobs at `be65225` both pass; human
 GPU/driver/controller checks and the ROM-picker/settings GUI remain pending.
+
+## Mario shadow — 2026-10-09
+
+The attached supported US v1.0 ROM supplies Mario's player shadow parameters
+(type 99, diameter 100, solidity 180, immediate child scale 0.25) and the 16x16
+IA8 quarter-circle at decoded segment-2 offset `0x120B8`. The independently
+reproduced RGBA digest is `8bf7a3d2b651a090b0aadeff3979213f5b782875`.
+`python3 tools/check_shadow_reference.py --rom ROM --reference SM64_SOURCE`
+uses hash-checked pinned `assets.json` and `bin/segment2.c`, its own MIO0/IA8
+decode and the source's triangle list; it writes no asset data.
+
+The optimized ignored shadow integration test passes 8,400 BOB grid positions
+and 360 played frames (350 shadows present), comparing every original signed
+vertex/UV coordinate, opacity and layer against native C. Animation origins
+also match the original geo callback bit for bit. Reading/drawing shadows at
+five presentation fractions leaves full Mario and camera words unchanged.
+38,475 authored cases cover slopes, edges, water, ice and ledge-animation frame
+boundaries; 7,680 geo cases cover animation flag combinations, frames, yaw and
+child scales. The complete optimized core/oracle owner-ROM suite and the
+GPU-required desktop/render suite pass. Offscreen software Vulkan images at
+30 and 90 ticks were inspected; coplanar blending, foreground depth occlusion
+and hiding are also checked by an authored GPU test.
+
+The owner confirms smooth animation after the previous fix; no OS/GPU was
+specified. Physical hardware checks remain part of D3. Special lava-level and
+flying-carpet shadow adjustments are outside the current BOB implementation;
+N64 execution and pixel-perfect renderer comparisons remain unavailable.
+ROM, decoded textures, screenshots and traces remain private and untracked.

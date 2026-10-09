@@ -10,6 +10,7 @@ use rustario64::{
     },
     play::CameraView,
     presentation::mario::MarioFrame,
+    presentation::shadow::ShadowFrame,
 };
 use std::{collections::HashMap, f32::consts::PI};
 
@@ -80,6 +81,24 @@ impl MarioModelView {
     /// The number of builds uploaded so far.
     pub fn uploaded(&self) -> usize {
         self.uploaded.len()
+    }
+}
+
+/// Original shadow meshes share the same upload/update lifecycle as Mario,
+/// with the original render layer serving as the mesh identity.
+#[derive(Debug, Default)]
+pub struct ShadowModelView(MarioModelView);
+
+impl ShadowModelView {
+    pub fn show(&mut self, renderer: &mut Renderer, frame: Option<ShadowFrame<'_>>) {
+        self.0.show(
+            renderer,
+            frame.map(|f| MarioFrame {
+                build: usize::from(f.layer),
+                template: f.template,
+                vertices: f.vertices,
+            }),
+        );
     }
 }
 

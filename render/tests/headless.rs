@@ -85,6 +85,95 @@ fn options() -> RenderOptions {
 }
 
 #[test]
+fn original_shadow_blends_on_coplanar_floor_and_hides_when_absent() {
+    use rustario64::{
+        import::shadow::ShadowSource,
+        presentation::shadow::{Shadow, ShadowDrawer, ShadowVertex},
+    };
+    use rustario64_render::play::ShadowModelView;
+    let Some(mut renderer) = renderer(options()) else {
+        return;
+    };
+    let mut floor_material = material(SHADE);
+    floor_material.cull_back = false;
+    let floor = VisualModel {
+        textures: vec![],
+        batches: vec![DrawBatch {
+            material: floor_material,
+            source: 0,
+            vertices: [
+                [-500.0, 0.0, -500.0],
+                [-500.0, 0.0, 500.0],
+                [500.0, 0.0, -500.0],
+                [500.0, 0.0, -500.0],
+                [-500.0, 0.0, 500.0],
+                [500.0, 0.0, 500.0],
+            ]
+            .map(|position| VisualVertex {
+                position,
+                uv: [0.0; 2],
+                color: [255; 4],
+            })
+            .to_vec(),
+        }],
+    };
+    let camera = FlyCamera::looking_at([0.0, 600.0, 200.0], [0.0, 0.0, 0.0]);
+    renderer.load_model(&floor);
+    assert_eq!(
+        centre(&renderer.capture(64, 64, &camera).unwrap(), 64),
+        [255; 4]
+    );
+    let mut drawer = ShadowDrawer::new(&ShadowSource {
+        texture: TextureImage {
+            width: 1,
+            height: 1,
+            rgba: vec![0, 0, 0, 255],
+            source: 0,
+            format: 3,
+            size: 1,
+        },
+        scale: 100,
+        solidity: 180,
+        child_scale: 0.25,
+    });
+    drawer.update(Some(Shadow {
+        origin: [0.0; 3],
+        layer: LAYER_TRANSPARENT_DECAL,
+        vertices: std::array::from_fn(|i| ShadowVertex {
+            position: [(i as i16 % 3 - 1) * 100, 0, (i as i16 / 3 - 1) * 100],
+            uv: [0; 2],
+            alpha: 180,
+        }),
+    }));
+    let mut view = ShadowModelView::default();
+    view.show(&mut renderer, drawer.frame(1.0, true));
+    let pixel = centre(&renderer.capture(64, 64, &camera).unwrap(), 64);
+    assert!(
+        (70..=80).contains(&pixel[0]),
+        "coplanar shadow pixel {pixel:?}"
+    );
+    assert_eq!(pixel[0], pixel[1]);
+    assert_eq!(pixel[1], pixel[2]);
+    // A foreground floor must occlude the shadow; the decal does not float
+    // through geometry in front of its receiving floor.
+    let mut foreground = floor.clone();
+    for v in &mut foreground.batches[0].vertices {
+        v.position[1] = 100.0;
+    }
+    let index = renderer.add_model(&foreground);
+    assert_eq!(
+        centre(&renderer.capture(64, 64, &camera).unwrap(), 64),
+        [255; 4]
+    );
+    renderer.set_visible(index, false);
+    view.show(&mut renderer, None);
+    assert_eq!(
+        centre(&renderer.capture(64, 64, &camera).unwrap(), 64),
+        [255; 4]
+    );
+}
+
+#[test]
 fn shade_combiner_draws_vertex_colors_and_culls_back_faces() {
     let Some(mut renderer) = renderer(options()) else {
         return;

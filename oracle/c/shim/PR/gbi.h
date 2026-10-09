@@ -1,5 +1,6 @@
-/* Authored shim (MIT, Rustario64): opaque display-list and matrix types named
- * by the vendored headers. No display list is built or interpreted. */
+/* Authored shim (MIT, Rustario64): display-list/matrix stand-ins named by the
+ * vendored headers and the Vtx fields used by the shadow comparison. No
+ * display list is built or interpreted. */
 #ifndef ORACLE_GBI_H
 #define ORACLE_GBI_H
 #include <PR/ultratypes.h>
@@ -15,9 +16,11 @@ typedef struct {
     s16 vtrans[4];
 } Vp;
 typedef struct {
-    s16 ob[3];
-    u16 flag;
-    s16 tc[2];
-    u8 cn[4];
+    struct {
+        s16 ob[3];
+        u16 flag;
+        s16 tc[2];
+        u8 cn[4];
+    } v;
 } Vtx;
 #endif

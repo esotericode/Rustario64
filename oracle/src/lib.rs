@@ -9,6 +9,7 @@
 pub mod camera;
 pub mod camera_trace;
 pub mod input_trace;
+pub mod shadow;
 pub mod tick_trace;
 
 use rustario64::{content::animation::MarioAnimations, simulation::TickInput};

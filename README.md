@@ -44,11 +44,16 @@ What works now:
   configurations match triangle digests rebuilt from the pinned decomp source.
 - A local ROM-selection launcher, remembered-path opt-in, and Esc pause/settings
   (interpolation, fog, VSync and fullscreen), with paused and unfocused time discarded.
+- **Mario's original blob shadow**: the ROM's quarter-circle texture, nine
+  vertices, slope/ledge clipping, height-based size and opacity, ledge-animation
+  fades, water/ice layers and lateral animation offsets. Shadow presentation
+  interpolates with Mario while simulation stays at 30 Hz. Original vertex
+  coordinates, alpha and layers match the native decomp on authored cases and BOB.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
   **full-tick** and input-stage trace pairs.
 
 This is level exploration with Mario's movement and camera, not mission
-support: Mario has no shadow yet, and there are no objects (coins, enemies,
+support: there are no objects (coins, enemies,
 trees, the cannon lid), camera cutscenes, original pause behavior, cutscene or water
 actions, warps, deaths, or missions. Play stops where the port stops
 (unsupported paths, falling off the course); R re-enters.
@@ -310,14 +315,22 @@ holds the owner-ROM evidence.
 
 ## Next increment
 
-Physical-GPU Windows/Linux playtesting of the launcher and pause/settings; then
-Mario's original shadow and the first objects for BOB's first mission, with the
+Physical-GPU Windows/Linux playtesting continues. Implement object-list
+processing and the first BOB coins, then the first mission's actors, with the
 camera cutscenes that mission needs. Original-execution traces remain the
 eventual authority. Skybox and placement models remain M1 work.
 
 Camera checks without a ROM: `cargo test --locked -p rustario64-oracle --test camera --test lakitu --test radial --test camera_tick`;
 repeat with `--release` for optimized comparisons. The owner-ROM camera tests
 are ignored in ordinary CI; see [docs/FIDELITY.md](docs/FIDELITY.md).
+
+Shadow checks: `cargo test --locked -p rustario64-oracle --test shadow`.
+With your ROM, set `RUSTARIO64_ROM` and add `-- --include-ignored`.
+`tools/check_shadow_reference.py --rom ROM --reference SM64_SOURCE`
+independently validates the texture digest and original triangle order using
+hash-checked files from the pinned source. Special lava-level and flying-carpet
+shadow adjustments remain outside the BOB implementation; enhanced shadow maps
+remain optional future work.
 
 With your supported ROM, run the whole integration suite locally:
 
