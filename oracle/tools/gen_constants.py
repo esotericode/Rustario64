@@ -23,7 +23,7 @@ DECOMP = ORACLE / "c" / "decomp"
 FLAGS = ["-std=gnu99", "-DNON_MATCHING", "-DVERSION_US=1", "-DAVOID_UB", "-DNO_SEGMENTED_MEMORY",
          "-D_LANGUAGE_C", "-DOBJECT_FIELDS_INDEX_DIRECTLY", "-I" + str(ORACLE / "c" / "shim"),
          "-I" + str(DECOMP / "include"), "-I" + str(DECOMP / "src"), "-I" + str(DECOMP)]
-HEADERS = ["sm64.h", "surface_terrains.h", "sounds.h", "mario_animation_ids.h", "level_table.h",
+HEADERS = ["sm64.h", "dialog_ids.h", "surface_terrains.h", "sounds.h", "mario_animation_ids.h", "level_table.h",
            "object_constants.h", "object_fields.h", "game/camera.h", "game/interaction.h",
            "game/level_update.h", "game/mario.h", "game/save_file.h", "engine/graph_node.h"]
 
@@ -48,7 +48,19 @@ GROUPS = [
     (r"LEVEL_\w+", "i16"),
     (r"CAMERA_MODE_\w+", "i16"),
     (r"CAM_MOVE_\w+", "u16"),
+    (r"CAM_MOVING_INTO_MODE", "u16"),
     (r"CAM_FLAG_\w+", "i16"),
+    (r"CAM_MODE_\w+", "i16"),
+    (r"CAM_SOUND_\w+", "i16"),
+    (r"CAM_SELECTION_\w+", "i32"),
+    (r"CAM_ANGLE_\w+", "i32"),
+    (r"CAM_FOV_\w+", "u8"),
+    (r"CAM_STATUS_\w+", "i16"),
+    (r"HAND_CAM_SHAKE_\w+", "u8"),
+    (r"DOOR_(DEFAULT|LEAVING_SPECIAL|ENTER_LOBBY)", "u8"),
+    (r"CUTSCENE_(STOP|LOOP)", "i16"),
+    (r"CUTSCENE_\w+", "u8"),
+    (r"DIALOG_NONE", "i16"),
     (r"AREA_\w+", "i32"),
     (r"CAM_EVENT_\w+", "i16"),
     (r"SHAKE_\w+", "i16"),

@@ -118,6 +118,8 @@ unsafe extern "C" {
         cutscene: u8,
     );
     fn oracle_camera_lakitu_control(operation: i32, value: i16, frames: i16);
+    fn oracle_rng_seed() -> u16;
+    fn oracle_set_rng_seed(seed: u16);
     fn oracle_camera_lakitu_snapshot(out: *mut u32);
     fn oracle_camera_lakitu_update(
         for_camera: i16,
@@ -376,16 +378,24 @@ impl CameraOracle {
             oracle_camera_lakitu_control(1, mode, frames);
         }
     }
+    /// set_camera_shake_from_hit; the shock shake draws from the native
+    /// gRandomSeed16 (see `set_rng_seed`).
     pub fn lakitu_hit(&self, shake: i16) {
-        assert_ne!(
-            shake,
-            rustario64::simulation::mario::constants::SHAKE_SHOCK,
-            "native shock RNG unavailable"
-        );
-        // SAFETY: supported selector, no RNG request; lock held.
+        // SAFETY: supported selector; lock held.
         unsafe {
             oracle_camera_lakitu_control(2, shake, 0);
         }
+    }
+
+    /// The native gRandomSeed16.
+    pub fn rng_seed(&self) -> u16 {
+        // SAFETY: reads a C global; lock held.
+        unsafe { oracle_rng_seed() }
+    }
+
+    pub fn set_rng_seed(&self, seed: u16) {
+        // SAFETY: writes a C global; lock held.
+        unsafe { oracle_set_rng_seed(seed) }
     }
     pub fn lakitu_snapshot(&self) -> [u32; STATE_WORDS] {
         let mut out = [0; STATE_WORDS];

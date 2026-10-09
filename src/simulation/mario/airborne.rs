@@ -40,7 +40,7 @@ fn camera_mode(w: &StepWorld<'_>) -> i16 {
 
 /// set_camera_mode: a recorded request to the camera.
 fn set_camera_mode(w: &mut StepWorld<'_>, mode: i16, frames: i16) {
-    w.event(Event::CameraMode { mode, frames });
+    w.set_camera_mode(mode, frames);
 }
 
 /// set_camera_mode(m->area->camera, m->area->camera->defMode, 1).

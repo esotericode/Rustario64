@@ -260,10 +260,7 @@ pub fn update_mario_sound_and_camera(m: &MarioState, w: &mut StepWorld<'_>) {
     if action == ACT_FIRST_PERSON {
         w.event(Event::RaiseBackgroundNoise(2));
         w.camera_movement_flags &= !(CAM_MOVE_C_UP_MODE as i16);
-        w.event(Event::CameraMode {
-            mode: -1,
-            frames: 1,
-        });
+        w.set_camera_mode(-1, 1);
     } else if action == ACT_SLEEPING {
         w.event(Event::RaiseBackgroundNoise(2));
     }
@@ -271,10 +268,7 @@ pub fn update_mario_sound_and_camera(m: &MarioState, w: &mut StepWorld<'_>) {
         && (cam_preset == i32::from(CAMERA_MODE_BEHIND_MARIO)
             || cam_preset == i32::from(CAMERA_MODE_WATER_SURFACE))
     {
-        w.event(Event::CameraMode {
-            mode: i16::from(w.camera.def_mode),
-            frames: 1,
-        });
+        w.set_camera_mode(i16::from(w.camera.def_mode), 1);
     }
 }
 
@@ -604,10 +598,7 @@ pub fn check_common_hold_action_exits(m: &mut MarioState, w: &mut StepWorld<'_>)
 
 /// transition_submerged_to_walking.
 pub fn transition_submerged_to_walking(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
-    w.event(Event::CameraMode {
-        mode: i16::from(w.camera.def_mode),
-        frames: 1,
-    });
+    w.set_camera_mode(i16::from(w.camera.def_mode), 1);
     m.angle_vel = [0, 0, 0];
     let action = if m.held_obj.is_none() {
         ACT_WALKING
@@ -628,10 +619,7 @@ pub fn set_water_plunge_action(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32
         m.face_angle[0] = 0;
     }
     if w.camera.mode != CAMERA_MODE_WATER_SURFACE as u8 {
-        w.event(Event::CameraMode {
-            mode: CAMERA_MODE_WATER_SURFACE,
-            frames: 1,
-        });
+        w.set_camera_mode(CAMERA_MODE_WATER_SURFACE, 1);
     }
     set_mario_action(m, w, ACT_WATER_PLUNGE, 0)
 }
@@ -665,23 +653,14 @@ pub fn set_submerged_cam_preset_and_spawn_bubbles(m: &mut MarioState, w: &mut St
         let cam_preset = i16::from(w.camera.mode);
         if m.action & ACT_FLAG_METAL_WATER != 0 {
             if cam_preset != CAMERA_MODE_CLOSE {
-                w.event(Event::CameraMode {
-                    mode: CAMERA_MODE_CLOSE,
-                    frames: 1,
-                });
+                w.set_camera_mode(CAMERA_MODE_CLOSE, 1);
             }
         } else {
             if height_below_water > 800.0 && cam_preset != CAMERA_MODE_BEHIND_MARIO {
-                w.event(Event::CameraMode {
-                    mode: CAMERA_MODE_BEHIND_MARIO,
-                    frames: 1,
-                });
+                w.set_camera_mode(CAMERA_MODE_BEHIND_MARIO, 1);
             }
             if height_below_water < 400.0 && cam_preset != CAMERA_MODE_WATER_SURFACE {
-                w.event(Event::CameraMode {
-                    mode: CAMERA_MODE_WATER_SURFACE,
-                    frames: 1,
-                });
+                w.set_camera_mode(CAMERA_MODE_WATER_SURFACE, 1);
             }
             if m.action & ACT_FLAG_INTANGIBLE == 0
                 && (m.pos[1] < (i32::from(m.water_level) - 160) as f32 || m.face_angle[0] < -0x800)

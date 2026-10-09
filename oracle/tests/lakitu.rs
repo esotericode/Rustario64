@@ -2,10 +2,11 @@
 //! persistent stage, NOT the mode dispatcher or original camera-relative play.
 use rustario64::simulation::{
     FixedClock,
-    camera::lakitu::{Camera, Lakitu, Rig, STATE_FIELD_NAMES, Transition, Unsupported},
+    camera::lakitu::{Camera, Lakitu, Rig, STATE_FIELD_NAMES, Transition},
     collision::CollisionFlags,
     mario::constants as c,
     math::TrigTables,
+    rng::Rng as GameRng,
 };
 use rustario64_oracle::camera::CameraOracle;
 use std::time::Duration;
@@ -139,9 +140,15 @@ fn random_cases(stream: &[i16], trig: &TrigTables, cases: usize) {
                 oracle.reset_lakitu(state);
                 compare(&state, &oracle.lakitu_snapshot(), "transport");
                 oracle.lakitu_goal(mario, action, state.camera);
-                state
-                    .update(mario, action, &world, &mut flags, trig)
-                    .unwrap();
+                state.update(
+                    mario,
+                    action,
+                    &world,
+                    &mut flags,
+                    trig,
+                    &mut GameRng::default(),
+                    false,
+                );
                 let (native, native_flags) = oracle.lakitu_update(CollisionFlags {
                     checking_for_camera,
                     find_floor_include_surface_intangible,
@@ -210,11 +217,11 @@ fn mode_transitions_and_damage_shake_priority_match() {
                 rig.lakitu.shake_magnitude = [old; 3];
                 oracle.reset_lakitu(rig);
                 oracle.lakitu_goal([0.0; 3], action, rig.camera);
-                rig.shake_from_hit(shake, action).unwrap();
+                rig.shake_from_hit(shake, action, &mut GameRng::default());
                 oracle.lakitu_hit(shake);
                 compare(&rig, &oracle.lakitu_snapshot(), "hit shake");
                 // Repeated/weaker requests must respect existing magnitude priority.
-                rig.shake_from_hit(c::SHAKE_SMALL_DAMAGE, action).unwrap();
+                rig.shake_from_hit(c::SHAKE_SMALL_DAMAGE, action, &mut GameRng::default());
                 oracle.lakitu_hit(c::SHAKE_SMALL_DAMAGE);
                 compare(&rig, &oracle.lakitu_snapshot(), "weaker repeated shake");
             }
@@ -283,11 +290,19 @@ fn sequences(stream: &[i16], trig: &TrigTables, origin: [f32; 3]) {
                             c::SHAKE_SMALL_DAMAGE,
                             c::SHAKE_FALL_DAMAGE,
                         ][count / 137 % 4];
-                        rig.shake_from_hit(shake, action).unwrap();
+                        rig.shake_from_hit(shake, action, &mut GameRng::default());
                         oracle.lakitu_hit(shake);
                     }
                     let mut flags = CollisionFlags::default();
-                    rig.update(mario, action, &world, &mut flags, trig).unwrap();
+                    rig.update(
+                        mario,
+                        action,
+                        &world,
+                        &mut flags,
+                        trig,
+                        &mut GameRng::default(),
+                        false,
+                    );
                     let (native, native_flags) = oracle.lakitu_update(CollisionFlags::default());
                     compare(&rig, &native, &format!("sequence tick {count}, {hz}Hz"));
                     assert_eq!(flags_words(flags), native_flags);
@@ -321,29 +336,21 @@ fn persistent_lakitu_ticks_match_at_all_presentation_rates() {
 }
 
 #[test]
-fn random_requests_stop_before_mutating_state() {
-    let world = world(&terrain());
-    let trig = tables();
-    let mut rig = seed();
-    let before = rig.state_words();
-    assert_eq!(
-        rig.shake_from_hit(c::SHAKE_SHOCK, c::ACT_IDLE),
-        Err(Unsupported::ShockRandomShake)
-    );
-    assert_eq!(rig.state_words(), before);
-    rig.handheld_magnitude = 1;
-    let before = rig.state_words();
-    assert_eq!(
-        rig.update(
-            [0.0; 3],
-            c::ACT_IDLE,
-            &world,
-            &mut CollisionFlags::default(),
-            &trig
-        ),
-        Err(Unsupported::HandheldRandomShake)
-    );
-    assert_eq!(rig.state_words(), before);
+fn shock_shakes_draw_from_the_shared_random_sequence() {
+    let oracle = CameraOracle::new(&terrain(), &tables());
+    for start in [0u16, 1, 0x1234, 22026, 0xFFFF, 0x8000] {
+        for old in [0, 0x20, 0x7FFF] {
+            let mut rig = seed();
+            rig.lakitu.shake_magnitude = [old; 3];
+            oracle.reset_lakitu(rig);
+            oracle.set_rng_seed(start);
+            let mut rng = GameRng::new(start);
+            rig.shake_from_hit(c::SHAKE_SHOCK, c::ACT_IDLE, &mut rng);
+            oracle.lakitu_hit(c::SHAKE_SHOCK);
+            compare(&rig, &oracle.lakitu_snapshot(), "shock shake");
+            assert_eq!(rng.seed, oracle.rng_seed(), "seed after the shock shake");
+        }
+    }
 }
 
 #[test]
@@ -358,8 +365,15 @@ fn camera_filter_flag_is_retained_when_floor_corrected_or_missing() {
         rig.status = 0;
         rig.camera.pos = pos;
         let mut flags = CollisionFlags::default();
-        rig.update([0.0; 3], c::ACT_IDLE, &world, &mut flags, &trig)
-            .unwrap();
+        rig.update(
+            [0.0; 3],
+            c::ACT_IDLE,
+            &world,
+            &mut flags,
+            &trig,
+            &mut GameRng::default(),
+            false,
+        );
         assert!(flags.checking_for_camera);
     }
 }

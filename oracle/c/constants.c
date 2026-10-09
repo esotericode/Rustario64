@@ -2,6 +2,7 @@
  * fields evaluate to their rawData indices in this translation unit only. */
 #define OBJECT_FIELDS_INDEX_DIRECTLY
 #include "sm64.h"
+#include "dialog_ids.h"
 #include "surface_terrains.h"
 #include "sounds.h"
 #include "mario_animation_ids.h"

@@ -65,6 +65,11 @@ impl TickSetup {
             save_flags: entry.save.flags,
             total_stars: entry.save.total_star_count,
             root_area_index: i32::from(spawn.area_index),
+            camera_linked: 0,
+            camera_pos: [0.0; 3],
+            camera_focus: [0.0; 3],
+            act_num: 0,
+            rng_seed: 0,
         }
     }
 
@@ -111,28 +116,28 @@ pub fn rust_begin<'a>(
 }
 
 /// Named words, inserted once each.
-struct Words(BTreeMap<String, u32>);
+pub struct Words(pub BTreeMap<String, u32>);
 
 impl Words {
-    fn put(&mut self, name: impl Into<String>, value: u32) {
+    pub(crate) fn put(&mut self, name: impl Into<String>, value: u32) {
         let name = name.into();
         assert!(
             self.0.insert(name.clone(), value).is_none(),
             "duplicate word {name}"
         );
     }
-    fn i(&mut self, name: impl Into<String>, value: i32) {
+    pub(crate) fn i(&mut self, name: impl Into<String>, value: i32) {
         self.put(name, value as u32);
     }
-    fn f(&mut self, name: impl Into<String>, value: f32) {
+    pub(crate) fn f(&mut self, name: impl Into<String>, value: f32) {
         self.put(name, value.to_bits());
     }
-    fn s16v(&mut self, name: &str, values: &[i16]) {
+    pub(crate) fn s16v(&mut self, name: &str, values: &[i16]) {
         for (i, v) in values.iter().enumerate() {
             self.i(format!("{name}[{i}]"), i32::from(*v));
         }
     }
-    fn f32v(&mut self, name: &str, values: &[f32]) {
+    pub(crate) fn f32v(&mut self, name: &str, values: &[f32]) {
         for (i, v) in values.iter().enumerate() {
             self.f(format!("{name}[{i}]"), *v);
         }

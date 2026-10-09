@@ -186,6 +186,8 @@ mod tests {
             fov_degrees: 45,
             near: 100,
             far: 12800,
+            callback: 0,
+            perspective_callback: None,
         };
         assert_eq!(
             follow_view(&camera, [0.0; 3], 1.0, Some(frustum)).far,

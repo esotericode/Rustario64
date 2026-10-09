@@ -9,6 +9,12 @@
  * update_mario_platform), the authoritative part of the render pass, and
  * gGlobalTimer++. State persists across ticks and is only read back.
  *
+ * With the camera linked, the area's camera is the original camera.c's (see
+ * camera_unit.c): created when the area loads, reset at level entry, updated
+ * by update_camera after the objects and drawn by the render pass's camera
+ * nodes, and Mario's camera calls run the original functions as well as
+ * being recorded. Otherwise the camera's mode and yaw are explicit inputs.
+ *
  * Original functions run unmodified (vendored files and verbatim excerpts).
  * Authored here: the object-pool slot reset and allocation fields for Mario's
  * object, bhvMario's script steps, the render pass's object condition, and
@@ -75,7 +81,27 @@ typedef struct {
     u32 saveFlags;
     s32 totalStars;
     s32 rootAreaIndex;
+    /* The complete camera (see camera_unit.c): linked, the area's GEO_CAMERA
+     * node position and focus, gCurrActNum and gRandomSeed16. */
+    s32 cameraLinked;
+    f32 cameraPos[3];
+    f32 cameraFocus[3];
+    s32 actNum;
+    u32 rngSeed;
 } OracleTickSetup;
+
+typedef struct {
+    s32 mode;
+    f32 pos[3];
+    f32 focus[3];
+    s32 actNum;
+    u32 rngSeed;
+} OracleCameraSetup;
+struct Camera *oracle_camera_create(const OracleCameraSetup *s);
+void oracle_camera_reset(void);
+void oracle_camera_update(void);
+void oracle_camera_render(void);
+void oracle_camera_snapshot(void (*put)(const char *name, u32 value));
 
 typedef struct {
     u32 buttons;
@@ -89,6 +115,7 @@ static struct Camera sTickCamera;
 static s32 sBhvLoopEntered;
 static s8 sRootAreaIndex;
 static s32 sTickReady;
+static s32 sCameraLinked;
 
 static void fail(const char *what) {
     fprintf(stderr, "tick oracle: %s\n", what);
@@ -218,6 +245,19 @@ void oracle_tick_begin(const OracleTickSetup *s) {
     sTickArea.camera = &sTickCamera;
     gCurrentArea = &sTickArea;
     sRootAreaIndex = (s8) s->rootAreaIndex;
+    sCameraLinked = s->cameraLinked != 0;
+    gOracleCameraLinked = sCameraLinked;
+    if (sCameraLinked) {
+        /* lvl_init_from_save_file's select_mario_cam_mode, then the area's
+         * load, whose GEO_CAMERA node creates the camera. */
+        OracleCameraSetup camera;
+        camera.mode = s->cameraMode;
+        memcpy(camera.pos, s->cameraPos, sizeof(camera.pos));
+        memcpy(camera.focus, s->cameraFocus, sizeof(camera.focus));
+        camera.actNum = s->actNum;
+        camera.rngSeed = s->rngSeed;
+        sTickArea.camera = oracle_camera_create(&camera);
+    }
 
     /* Object lists: Mario alone in OBJ_LIST_PLAYER. */
     gObjectLists = gObjectListArray;
@@ -246,6 +286,9 @@ void oracle_tick_begin(const OracleTickSetup *s) {
     sTickMario.header.prev = &gObjectListArray[OBJ_LIST_PLAYER];
     gCurrentObject = &sTickMario;
     init_mario();
+    if (sCameraLinked) {
+        oracle_camera_reset();
+    }
     set_mario_action(gMarioState, ACT_IDLE, 0);
     sBhvLoopEntered = FALSE;
     sTickReady = TRUE;
@@ -349,19 +392,28 @@ void oracle_tick_run(const OracleTickInput *in) {
     controller->buttonPressed = buttons & (buttons ^ controller->buttonDown);
     controller->buttonDown = buttons;
     adjust_analog_stick(controller);
-    /* The camera computed this yaw during the previous frame. */
-    sTickCamera.yaw = (s16) in->cameraYaw;
+    if (!sCameraLinked) {
+        /* The camera computed this yaw during the previous frame. */
+        sTickCamera.yaw = (s16) in->cameraYaw;
+    }
     /* area_update_objects */
     gAreaUpdateCounter++;
     tick_update_objects();
-    /* render_game, then display_and_vsync */
+    if (sCameraLinked) {
+        /* update_hud_values does not touch the camera; then update_camera. */
+        oracle_camera_update();
+    }
+    /* render_game: the camera nodes enclose the object nodes. */
+    if (sCameraLinked) {
+        oracle_camera_render();
+    }
     tick_render_mario();
     gGlobalTimer++;
 }
 
 /* ---- Snapshot: every compared value as a named 32-bit word ---- */
-#define MAX_WORDS 1024
-static char sNames[MAX_WORDS][48];
+#define MAX_WORDS 2048
+static char sNames[MAX_WORDS][64];
 static const char *sNamePtrs[MAX_WORDS];
 static u32 sWords[MAX_WORDS];
 static s32 sCount;
@@ -387,7 +439,7 @@ static void put_f(const char *name, f32 value) {
 }
 
 static void put_s16v(const char *name, const s16 *v, s32 n) {
-    char buf[48];
+    char buf[64];
     s32 i;
     for (i = 0; i < n; i++) {
         snprintf(buf, sizeof(buf), "%s[%d]", name, i);
@@ -396,7 +448,7 @@ static void put_s16v(const char *name, const s16 *v, s32 n) {
 }
 
 static void put_f32v(const char *name, const f32 *v, s32 n) {
-    char buf[48];
+    char buf[64];
     s32 i;
     for (i = 0; i < n; i++) {
         snprintf(buf, sizeof(buf), "%s[%d]", name, i);
@@ -477,7 +529,7 @@ static void snapshot_mario_state(void) {
 static void snapshot_mario_object(void) {
     struct Object *o = &sTickMario;
     struct GraphNodeObject *gfx = &o->header.gfx;
-    char buf[48];
+    char buf[64];
     s32 i;
     s32 curAnim;
     s32 throwMatrix;
@@ -554,14 +606,14 @@ static void snapshot_world(void) {
     struct Controller *controller = &gControllers[0];
     OracleEvent events[64];
     s32 interaction[5];
-    char buf[48];
+    char buf[64];
     s32 i, j, n;
     put("world.globalTimer", gGlobalTimer);
     put_i("world.areaUpdateCounter", gAreaUpdateCounter);
     put_i("world.cameraMovementFlags", gCameraMovementFlags);
-    put_i("world.camera.mode", sTickCamera.mode);
-    put_i("world.camera.defMode", sTickCamera.defMode);
-    put_i("world.camera.yaw", sTickCamera.yaw);
+    put_i("world.camera.mode", sTickArea.camera->mode);
+    put_i("world.camera.defMode", sTickArea.camera->defMode);
+    put_i("world.camera.yaw", sTickArea.camera->yaw);
     put_i("world.levelNum", gCurrLevelNum);
     put_i("world.terrainType", sTickArea.terrainType);
     put_i("world.specialTripleJump", gSpecialTripleJump);
@@ -615,6 +667,9 @@ s32 oracle_tick_snapshot(const char *const **names, const u32 **words) {
     snapshot_mario_object();
     snapshot_body_and_camera_status();
     snapshot_world();
+    if (sCameraLinked) {
+        oracle_camera_snapshot(put);
+    }
     *names = sNamePtrs;
     *words = sWords;
     return sCount;

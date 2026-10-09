@@ -11,6 +11,7 @@ use rustario64::simulation::{
     collision::{CollisionFlags, Surface},
     mario::constants as c,
     math::TrigTables,
+    rng::Rng as GameRng,
 };
 use rustario64_oracle::camera::CameraOracle;
 use std::time::Duration;
@@ -682,7 +683,15 @@ fn persistent_stages(stream: &[i16], trig: &TrigTables) {
                         "persistent pan",
                     );
                     let incoming_flags = flags;
-                    rig.update(mario, action, &world, &mut flags, trig).unwrap();
+                    rig.update(
+                        mario,
+                        action,
+                        &world,
+                        &mut flags,
+                        trig,
+                        &mut GameRng::default(),
+                        false,
+                    );
                     let (native, native_flags) = oracle.lakitu_update(incoming_flags);
                     compare(&rig, &native, &format!("hz={hz} tick={tick} Lakitu"));
                     assert_eq!(flags_words(flags), native_flags);

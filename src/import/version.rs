@@ -43,6 +43,16 @@ pub const GROUP0_GEO: Range<usize> = 0x1279B0..0x12A7E0;
 pub const GROUP0_GEO_SEGMENT: u8 = 0x17;
 /// MODEL_MARIO in the pinned include/model_ids.h.
 pub const MODEL_MARIO: u16 = 1;
+/// The native callbacks of an area geo layout's camera nodes, by decomp name
+/// and address in this revision: the GEO_CAMERA node's and the enclosing
+/// GEO_CAMERA_FRUSTUM_WITH_FUNC node's. BOB area 1's nodes hold these
+/// addresses where the pinned levels/bob/areas/1/geo.inc.c names the
+/// functions (the owner-ROM import test pins the node values that align them).
+pub const AREA_CAMERA_CALLBACKS: [(&str, u32); 2] = [
+    ("geo_camera_main", 0x80287D30),
+    ("geo_camera_fov", 0x8029AA3C),
+];
+
 /// The native callbacks in Mario's geo layout, by their decomp names and their
 /// addresses in this revision. Located by tools/check_mario_geo_reference.py,
 /// which walks `mario_geo` from the ROM alongside the pinned

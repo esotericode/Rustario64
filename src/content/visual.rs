@@ -165,7 +165,10 @@ pub enum Background {
     Color(u16),
 }
 
-/// Camera node values from the area geo layout (original integer units).
+/// Camera node values from the area geo layout (original integer units),
+/// with the native callbacks of the camera node and of the perspective node
+/// that encloses it (ROM addresses; `import::version::AREA_CAMERA_CALLBACKS`
+/// names them).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct GeoCamera {
     pub mode: i16,
@@ -174,6 +177,8 @@ pub struct GeoCamera {
     pub fov_degrees: i16,
     pub near: i16,
     pub far: i16,
+    pub callback: u32,
+    pub perspective_callback: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

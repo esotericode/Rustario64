@@ -701,17 +701,11 @@ fn act_first_person(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     let leave = m.input & (INPUT_OFF_FLOOR | INPUT_ABOVE_SLIDE | INPUT_STOMPED) != 0;
     if m.action_state == 0 {
         w.event(Event::LowerBackgroundNoise(2));
-        w.event(Event::CameraMode {
-            mode: CAMERA_MODE_C_UP,
-            frames: 0x10,
-        });
+        w.set_camera_mode(CAMERA_MODE_C_UP, 0x10);
         m.action_state = 1;
     } else if m.input & INPUT_FIRST_PERSON == 0 || leave {
         w.event(Event::RaiseBackgroundNoise(2));
-        w.event(Event::CameraMode {
-            mode: -1,
-            frames: 1,
-        });
+        w.set_camera_mode(-1, 1);
         return set_mario_action(m, w, ACT_IDLE, 0);
     }
     let floor = w.surface(m.floor.expect("first-person floor"));

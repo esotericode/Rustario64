@@ -7,6 +7,7 @@
 //! Replacement plan: once per-tick traces from original execution cover these
 //! queries, those traces become the authority and this harness can be retired.
 pub mod camera;
+pub mod camera_trace;
 pub mod input_trace;
 pub mod tick_trace;
 
@@ -94,7 +95,7 @@ unsafe extern "C" {
 /// c/tick.c): gMarioSpawnInfo as the level script sets it, the level and
 /// area, the camera mode inputs, and the save-file inputs.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct TickSetup {
     pub start_pos: [i32; 3],
     pub start_angle: [i32; 3],
@@ -109,6 +110,17 @@ pub struct TickSetup {
     pub total_stars: i32,
     /// The rendered area's index (gCurGraphNodeRoot->areaIndex).
     pub root_area_index: i32,
+    /// Nonzero runs the complete camera (c/camera_unit.c): created from the
+    /// area's GEO_CAMERA node (`camera_mode`, `camera_pos`, `camera_focus`),
+    /// reset at level entry and updated every frame; Mario's camera calls
+    /// then reach it, and the input's camera yaw is ignored.
+    pub camera_linked: i32,
+    pub camera_pos: [f32; 3],
+    pub camera_focus: [f32; 3],
+    /// gCurrActNum.
+    pub act_num: i32,
+    /// gRandomSeed16 at level entry.
+    pub rng_seed: u32,
 }
 
 #[repr(C)]

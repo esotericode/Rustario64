@@ -96,6 +96,18 @@ pub fn enter_level<'a>(
     anims: &'a MarioAnimations,
     entry: &LevelEntry,
 ) -> (MarioState, StepWorld<'a>) {
+    enter_level_with(collision, trig, anims, entry, |_, _| {})
+}
+
+/// `enter_level`, running `after_init_mario` where init_level runs
+/// reset_camera: after init_mario and before the idle action.
+pub fn enter_level_with<'a>(
+    collision: &'a CollisionWorld,
+    trig: &'a TrigTables,
+    anims: &'a MarioAnimations,
+    entry: &LevelEntry,
+    after_init_mario: impl FnOnce(&mut MarioState, &mut StepWorld<'a>),
+) -> (MarioState, StepWorld<'a>) {
     let mut w = StepWorld::new(collision, trig, anims);
     w.level_num = entry.level_num;
     w.area_terrain_type = entry.terrain_type;
@@ -108,6 +120,7 @@ pub fn enter_level<'a>(
     init_mario_from_save_file(&mut m, &w);
     m.obj = spawn_mario_object(&entry.spawn, w.level_num);
     init_mario(&mut m, &mut w, entry.spawn);
+    after_init_mario(&mut m, &mut w);
     set_mario_action(&mut m, &mut w, ACT_IDLE, 0);
     (m, w)
 }

@@ -235,13 +235,21 @@ pub struct MarioState {
 }
 
 /// The fields of the area's struct Camera that Mario code reads. `yaw` is the
-/// reference camera's movement yaw; there is no reference camera port yet, so
-/// the caller supplies it and records it in replays.
+/// reference camera's movement yaw. Without a linked camera they are explicit
+/// inputs (the caller supplies the yaw and records it in replays). With one
+/// (`simulation::game`), they are copied from it before Mario's update, and
+/// `last_mode` and `level_area` let a request change `mode` immediately, as
+/// the original set_camera_mode does for the rest of Mario's update.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct CameraState {
     pub mode: u8,
     pub def_mode: u8,
     pub yaw: i16,
+    /// Whether a camera receives Mario's requests (see `StepWorld::set_camera_mode`).
+    pub linked: bool,
+    /// sModeInfo.lastMode and gCurrLevelArea, while linked.
+    pub last_mode: i16,
+    pub level_area: i32,
 }
 
 /// Save-file inputs Mario code reads (save_file_get_flags and friends).
@@ -434,6 +442,30 @@ impl<'a> StepWorld<'a> {
 
     pub fn event(&mut self, event: Event) {
         self.events.push(event);
+    }
+
+    /// set_camera_mode(m->area->camera, mode, frames): recorded in call order.
+    /// While a camera is linked, the camera's mode changes now, as the
+    /// original's does for the rest of Mario's update; the linked camera
+    /// performs the rest of the request after Mario's update
+    /// (`simulation::game`).
+    pub fn set_camera_mode(&mut self, mode: i16, frames: i16) {
+        self.events.push(Event::CameraMode { mode, frames });
+        let camera = &mut self.camera;
+        if !camera.linked
+            || (mode == constants::CAMERA_MODE_WATER_SURFACE
+                && camera.level_area == constants::AREA_TTM_OUTSIDE)
+        {
+            return;
+        }
+        let mode = if mode == constants::CAMERA_MODE_NONE {
+            constants::CAMERA_MODE_CLOSE
+        } else {
+            mode
+        };
+        let new_mode = if mode != -1 { mode } else { camera.last_mode };
+        camera.last_mode = i16::from(camera.mode);
+        camera.mode = new_mode as u8;
     }
 
     /// play_sound: a boundary event; sound has no simulated state.

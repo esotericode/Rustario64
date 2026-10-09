@@ -1,4 +1,9 @@
-/* Authored prototypes absent from camera.h; MIT, development only. */
+/* Authored declarations for the camera excerpts; MIT, development only.
+ * Prototypes for camera.c functions that camera.h does not declare, and the
+ * two tables c/camera_unit.c supplies: the mode-transition table (verbatim
+ * functions for modes the oracle models, aborting stubs otherwise) and the
+ * camera-trigger table (NULL for every level; the adapters only run levels
+ * whose original entry is NULL). */
 #ifndef ORACLE_CAMERA_BOUNDARY_H
 #define ORACLE_CAMERA_BOUNDARY_H
 void approach_vec3s_asymptotic(Vec3s current, Vec3s target, s16 x, s16 y, s16 z);
@@ -17,4 +22,21 @@ s32 is_mario_behind_surface(struct Camera *camera, struct Surface *surface);
 void radial_camera_move(struct Camera *camera);
 void lakitu_zoom(f32 rangeDist, s16 rangePitch);
 void pan_ahead_of_player(struct Camera *camera);
+s32 update_c_up(struct Camera *c, Vec3f focus, Vec3f pos);
+s32 update_mario_camera(struct Camera *c, Vec3f focus, Vec3f pos);
+s32 update_boss_fight_camera(struct Camera *c, Vec3f focus, Vec3f pos);
+s32 nop_update_water_camera(struct Camera *c, Vec3f focus, Vec3f pos);
+/* Unreachable in the modelled areas: authored aborting stubs in camera_unit.c. */
+s32 determine_dance_cutscene(struct Camera *c);
+void mode_behind_mario_camera(struct Camera *c);
+void mode_water_surface_camera(struct Camera *c);
+void mode_cannon_camera(struct Camera *c);
+void mode_8_directions_camera(struct Camera *c);
+void mode_outward_radial_camera(struct Camera *c);
+void mode_parallel_tracking_camera(struct Camera *c);
+void mode_slide_camera(struct Camera *c);
+void mode_fixed_camera(struct Camera *c);
+void mode_spiral_stairs_camera(struct Camera *c);
+extern s32 (*sModeTransitions[])(struct Camera *c, Vec3f focus, Vec3f pos);
+extern struct CameraTrigger *sCameraTriggers[];
 #endif

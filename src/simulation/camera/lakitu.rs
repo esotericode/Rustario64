@@ -1,8 +1,10 @@
 //! Persistent Lakitu/transition stage of pinned CC0 camera.c. A mode controller
-//! must supply `camera.pos/focus/next_yaw` before `update`; this is not the full
-//! update_camera dispatcher. All smoothing and shakes run once per 30 Hz tick.
+//! must supply `camera.pos/focus/next_yaw` before `update`; `system` runs the
+//! complete update_camera around it. All smoothing and shakes run once per
+//! 30 Hz tick.
 #![allow(clippy::too_many_arguments)]
 use super::*;
+use crate::simulation::rng::Rng;
 
 mod record;
 pub use record::{STATE_FIELD_NAMES, STATE_WORDS};
@@ -79,6 +81,10 @@ pub struct Rig {
     pub handheld_angles: [i16; 3],
     pub handheld_magnitude: i16,
     pub handheld_increment: f32,
+    /// sHandheldShakeTimer and sHandheldShakeSpline's points and indices.
+    pub handheld_timer: f32,
+    pub handheld_spline: [[i16; 3]; 4],
+    pub handheld_spline_index: [i8; 4],
     pub fov_shake: FovShake,
     pub new_mode: i16,
     pub last_mode: i16,
@@ -91,12 +97,6 @@ pub struct Rig {
     pub cannon_y_offset: f32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Unsupported {
-    HandheldRandomShake,
-    ShockRandomShake,
-}
-
 /// C compound assignment converts the complete float sum, then narrows to s16.
 /// Truncating the increment first gives different answers across zero.
 fn add_float_angle(angle: i16, delta: f32) -> i16 {
@@ -105,7 +105,7 @@ fn add_float_angle(angle: i16, delta: f32) -> i16 {
 fn abs_float(x: f32) -> f32 {
     if x > 0.0 { x } else { -x }
 }
-fn get_dist_angle(from: [f32; 3], to: [f32; 3], trig: &TrigTables) -> (f32, i16, i16) {
+pub(super) fn get_dist_angle(from: [f32; 3], to: [f32; 3], trig: &TrigTables) -> (f32, i16, i16) {
     // math_util.c accumulates x*x + y*y + z*z, just like calc_abs_dist.
     let [pitch, yaw] = calculate_angles(from, to, trig);
     (calc_abs_dist(from, to), pitch, yaw)
@@ -183,6 +183,7 @@ impl Rig {
         world: &CollisionWorld,
         flags: &mut CollisionFlags,
         trig: &TrigTables,
+        pass_vanish_walls: bool,
     ) -> ([f32; 3], [f32; 3], i16) {
         let mut pos = self.camera.pos;
         let mut focus = self.camera.focus;
@@ -228,7 +229,7 @@ impl Rig {
                     pos[1] = floor_height + 125.0;
                 }
                 let mut data = WallCollisionData::new(pos, 0.0, 100.0);
-                world.find_wall_collisions(&mut data, *flags, false);
+                world.find_wall_collisions(&mut data, *flags, pass_vanish_walls);
                 pos = [data.x, data.y, data.z];
             }
             t.frames_left -= 1;
@@ -272,7 +273,9 @@ impl Rig {
             };
         }
     }
-    pub fn shake_from_hit(&mut self, shake: i16, action: u32) -> Result<(), Unsupported> {
+    /// set_camera_shake_from_hit. `action` is sMarioCamState's; the shock
+    /// shake draws twice from the shared random sequence.
+    pub fn shake_from_hit(&mut self, shake: i16, action: u32, rng: &mut Rng) {
         match shake {
             c::SHAKE_ATTACK => {
                 self.lakitu.foc_h_speed = 0.0;
@@ -313,15 +316,21 @@ impl Rig {
                 self.lakitu.foc_h_speed = 0.07;
                 self.lakitu.pos_h_speed = 0.07;
             }
-            c::SHAKE_SHOCK => return Err(Unsupported::ShockRandomShake),
+            c::SHAKE_SHOCK => {
+                // The float magnitude converts to the s16 parameter.
+                let pitch = (rng.random_float() * 64.0) as i32 as i16;
+                self.set_pitch_shake(pitch, 0x8, i16::MIN);
+                let yaw = (rng.random_float() * 64.0) as i32 as i16;
+                self.set_yaw_shake(yaw, 0x8, i16::MIN);
+            }
             _ => {}
         }
-        Ok(())
     }
 
     /// Original update_lakitu only. `last_frame_action` is written by the outer
     /// update_camera AFTER this stage; the caller must preserve that ordering.
-    /// RNG-driven handheld requests are rejected before any state changes.
+    /// `pass_vanish_walls` is whether the current object (Mario, the last
+    /// object updated) passes vanish-cap walls in the transition's wall query.
     pub fn update(
         &mut self,
         mario: [f32; 3],
@@ -329,12 +338,12 @@ impl Rig {
         world: &CollisionWorld,
         flags: &mut CollisionFlags,
         trig: &TrigTables,
-    ) -> Result<(), Unsupported> {
+        rng: &mut Rng,
+        pass_vanish_walls: bool,
+    ) {
         if self.movement & c::CAM_MOVE_PAUSE_SCREEN == 0 {
-            if self.handheld_magnitude != 0 {
-                return Err(Unsupported::HandheldRandomShake);
-            }
-            let (new_pos, new_focus, new_yaw) = self.next_state(mario, world, flags, trig);
+            let (new_pos, new_focus, new_yaw) =
+                self.next_state(mario, world, flags, trig, pass_vanish_walls);
             set_or_approach_s16_symmetric(
                 &mut self.camera.yaw,
                 new_yaw,
@@ -395,21 +404,8 @@ impl Rig {
                 );
                 decay_shake(l, 2);
             }
-            for angle in &mut self.handheld_angles {
-                approach_s16_asymptotic_bool(angle, 0, 8);
-            }
-            if self.handheld_angles[0] | self.handheld_angles[1] != 0 {
-                let (dist, pitch, yaw) = get_dist_angle(l.pos, l.focus, trig);
-                l.focus = set_dist_and_angle(
-                    l.pos,
-                    dist,
-                    pitch.wrapping_add(self.handheld_angles[0]),
-                    yaw.wrapping_add(self.handheld_angles[1]),
-                    trig,
-                );
-            }
-            self.handheld_magnitude = 0;
-            self.handheld_increment = 0.0;
+            self.shake_camera_handheld(trig, rng);
+            let l = &mut self.lakitu;
             if action == c::ACT_DIVE && l.last_frame_action != c::ACT_DIVE {
                 // SHAKE_HIT_FROM_BELOW: after this tick's interpolation/speed restore.
                 l.foc_h_speed = 0.07;
@@ -443,8 +439,76 @@ impl Rig {
         );
         self.lakitu.mode = self.camera.mode;
         self.lakitu.def_mode = self.camera.def_mode;
-        Ok(())
     }
+
+    /// shake_camera_handheld on Lakitu's position and focus. While a
+    /// magnitude is set (it lasts one tick), the offset follows a cubic
+    /// spline whose newest control point is random; the angles then settle.
+    fn shake_camera_handheld(&mut self, trig: &TrigTables, rng: &mut Rng) {
+        let offset = if self.handheld_magnitude == 0 {
+            [0.0; 3]
+        } else {
+            let spline = self.handheld_spline.map(|p| p.map(f32::from));
+            let offset = evaluate_cubic_spline(self.handheld_timer, spline);
+            self.handheld_timer += self.handheld_increment;
+            if 1.0 <= self.handheld_timer {
+                for i in 0..3 {
+                    self.handheld_spline[i] = self.handheld_spline[i + 1];
+                }
+                let magnitude = self.handheld_magnitude;
+                self.handheld_spline[3] =
+                    random_vec3s(rng, magnitude, magnitude, (i32::from(magnitude) / 2) as i16);
+                self.handheld_timer -= 1.0;
+                // Dead code in the original (cleared below), but it draws.
+                self.handheld_increment = rng.random_float() * 0.5;
+                if self.handheld_increment < 0.02 {
+                    self.handheld_increment = 0.02;
+                }
+            }
+            offset
+        };
+        for (angle, offset) in self.handheld_angles.iter_mut().zip(offset) {
+            approach_s16_asymptotic_bool(angle, offset as i32 as i16, 0x08);
+        }
+        let l = &mut self.lakitu;
+        if self.handheld_angles[0] | self.handheld_angles[1] != 0 {
+            let (dist, pitch, yaw) = get_dist_angle(l.pos, l.focus, trig);
+            l.focus = set_dist_and_angle(
+                l.pos,
+                dist,
+                pitch.wrapping_add(self.handheld_angles[0]),
+                yaw.wrapping_add(self.handheld_angles[1]),
+                trig,
+            );
+        }
+        self.handheld_magnitude = 0;
+        self.handheld_increment = 0.0;
+    }
+}
+
+/// evaluate_cubic_spline's position (a uniform cubic B-spline). Its unused
+/// derivative only writes two unused globals and is not ported.
+pub fn evaluate_cubic_spline(mut u: f32, a: [[f32; 3]; 4]) -> [f32; 3] {
+    if u > 1.0 {
+        u = 1.0;
+    }
+    let b = [
+        (1.0 - u) * (1.0 - u) * (1.0 - u) / 6.0,
+        u * u * u / 2.0 - u * u + 0.6666667,
+        -u * u * u / 2.0 + u * u / 2.0 + u / 2.0 + 0.16666667,
+        u * u * u / 6.0,
+    ];
+    std::array::from_fn(|i| b[0] * a[0][i] + b[1] * a[1][i] + b[2] * a[2][i] + b[3] * a[3][i])
+}
+
+/// random_vec3s: each component is `random * range - range / 2`, computed in
+/// f32 and truncated to s16.
+pub fn random_vec3s(rng: &mut Rng, x: i16, y: i16, z: i16) -> [i16; 3] {
+    [x, y, z].map(|range| {
+        let random = rng.random_float();
+        let range = f32::from(range);
+        (random * range - range / 2.0) as i32 as i16
+    })
 }
 
 pub fn increment_shake_offset(offset: &mut i16, increment: i16) {

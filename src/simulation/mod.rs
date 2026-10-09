@@ -2,8 +2,10 @@
 pub mod camera;
 pub mod collision;
 pub mod controller;
+pub mod game;
 pub mod mario;
 pub mod math;
+pub mod rng;
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;

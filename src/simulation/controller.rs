@@ -6,6 +6,9 @@ use super::TickInput;
 pub const A_BUTTON: u16 = 0x8000;
 pub const B_BUTTON: u16 = 0x4000;
 pub const Z_TRIG: u16 = 0x2000;
+pub const START_BUTTON: u16 = 0x1000;
+pub const L_TRIG: u16 = 0x0020;
+pub const R_TRIG: u16 = 0x0010;
 
 /// Preserve button_down across ticks, including before the first recorded tick.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]

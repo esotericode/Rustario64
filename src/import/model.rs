@@ -59,7 +59,7 @@ struct Walker<'a, 'b> {
     issues: Vec<ImportIssue>,
     background: Option<Background>,
     camera: Option<GeoCamera>,
-    perspective: Option<(i16, i16, i16)>,
+    perspective: Option<(i16, i16, i16, Option<u32>)>,
 }
 
 impl Walker<'_, '_> {
@@ -85,7 +85,7 @@ impl Walker<'_, '_> {
                 far,
                 callback,
             } => {
-                self.perspective = Some((fov, near, far));
+                self.perspective = Some((fov, near, far, callback));
                 if let Some(callback) = callback {
                     self.issue(
                         address,
@@ -99,7 +99,8 @@ impl Walker<'_, '_> {
                 focus,
                 callback,
             } => {
-                let (fov_degrees, near, far) = self.perspective.unwrap_or((45, 100, 30000));
+                let (fov_degrees, near, far, perspective_callback) =
+                    self.perspective.unwrap_or((45, 100, 30000, None));
                 self.camera = Some(GeoCamera {
                     mode,
                     position,
@@ -107,6 +108,8 @@ impl Walker<'_, '_> {
                     fov_degrees,
                     near,
                     far,
+                    callback,
+                    perspective_callback,
                 });
                 self.issue(
                     address,

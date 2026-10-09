@@ -12,6 +12,7 @@
 #include <string.h>
 #include "sm64.h"
 #include "behavior_data.h"
+#include "dialog_ids.h"
 #include "audio/external.h"
 #include "engine/graph_node.h"
 #include "engine/math_util.h"
@@ -21,6 +22,7 @@
 #include "game/camera.h"
 #include "game/debug.h"
 #include "game/game_init.h"
+#include "game/hud.h"
 #include "game/ingame_menu.h"
 #include "game/interaction.h"
 #include "game/level_update.h"
@@ -80,8 +82,12 @@ static void unreachable_without_objects(const char *what) {
 struct MarioState gMarioStates[1];
 struct MarioState *gMarioState = &gMarioStates[0];
 struct MarioBodyState gBodyStates[2];
-struct PlayerCameraState gPlayerCameraState[2];
 struct Controller gControllers[3];
+/* game_init.c points the player controllers at the first two. */
+struct Controller *gPlayer1Controller = &gControllers[0];
+struct Controller *gPlayer2Controller = &gControllers[1];
+/* No demo plays: the harness's level entry is a development entry. */
+struct DemoInput *gCurrDemoInput;
 struct SpawnInfo gPlayerSpawnInfos[1];
 struct SpawnInfo *gMarioSpawnInfo = &gPlayerSpawnInfos[0];
 struct Area *gCurrentArea;
@@ -97,7 +103,8 @@ u32 gGlobalTimer;
 u16 gAreaUpdateCounter;
 s16 gCurrLevelNum;
 s16 gCurrSaveFileNum = 1;
-s16 gCameraMovementFlags;
+s16 gCurrCourseNum;
+s16 gCurrActNum;
 u8 gSpecialTripleJump;
 u32 gAudioRandom;
 f32 gGlobalSoundSource[3];
@@ -230,13 +237,35 @@ void play_infinite_stairs_music(void) {
     }
 }
 
+/* Mario's calls into the camera. While the camera is linked (the complete
+ * camera frame harness) they also run the original camera.c functions, which
+ * camera_unit.c compiles under the native names; otherwise only the request
+ * is recorded and the camera's state is an explicit input. */
+s32 gOracleCameraLinked;
+
 void set_camera_mode(struct Camera *c, s16 mode, s16 frames) {
-    (void) c;
     oracle_event(ORACLE_EVENT_CAMERA_MODE, mode, frames);
+    if (gOracleCameraLinked) {
+        oracle_camera_native_set_mode(c, mode, frames);
+    }
 }
 
 void set_camera_shake_from_hit(s16 shake) {
     oracle_event(ORACLE_EVENT_CAMERA_SHAKE, shake, 0);
+    if (gOracleCameraLinked) {
+        oracle_camera_native_hit(shake);
+    }
+}
+
+/* Dialog boundary: no dialog system runs, so no dialog is ever open. */
+s16 get_dialog_id(void) {
+    return DIALOG_NONE;
+}
+
+/* HUD boundary: the camera's HUD icon state, kept for the snapshot. */
+s16 gOracleHudCameraStatus;
+void set_hud_camera_status(s16 status) {
+    gOracleHudCameraStatus = status;
 }
 
 /* Level runtime boundary: the request is recorded and no warp starts, so the
@@ -383,13 +412,22 @@ void *main_pool_alloc(u32 size, u32 side) {
     return p;
 }
 
-/* Graph nodes are initialized in place (pool NULL); nothing allocates. */
+/* memory.c's allocation from a pool the harness provides (create_camera's
+ * Camera). Graph nodes are initialized in place with a NULL pool, which must
+ * not allocate. */
 void *alloc_only_pool_alloc(struct AllocOnlyPool *pool, s32 size) {
-    (void) pool;
-    (void) size;
-    fprintf(stderr, "oracle: alloc-only pools are not modelled\n");
-    abort();
-    return NULL;
+    void *addr = NULL;
+    if (pool == NULL) {
+        fprintf(stderr, "oracle: allocation without a pool\n");
+        abort();
+    }
+    size = (size + 0x3) & ~0x3; /* memory.c's ALIGN4 */
+    if (size > 0 && pool->usedSpace + size <= pool->totalSpace) {
+        addr = pool->freePtr;
+        pool->freePtr += size;
+        pool->usedSpace += size;
+    }
+    return addr;
 }
 
 void *segmented_to_virtual(const void *addr) {
