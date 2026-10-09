@@ -204,3 +204,75 @@ fn local_us_rom_mario_model() {
     );
     assert!(drawer.issues.is_empty());
 }
+
+#[test]
+#[ignore = "requires a privately supplied supported ROM via RUSTARIO64_ROM"]
+fn local_us_rom_blinks_and_lod_keep_interpolating() {
+    let rom = Rom::open(std::path::Path::new(
+        &std::env::var_os("RUSTARIO64_ROM").unwrap(),
+    ))
+    .unwrap();
+    let source = mario::import(&rom).unwrap();
+    let trig = engine::trig_tables(&rom).unwrap();
+    let anims = animation::mario_animations(&rom).unwrap();
+    let imported = bob::import(&rom).unwrap();
+    let world = CollisionWorld::load_area_terrain(&imported.collision).unwrap();
+    let camera = imported.visual.as_ref().unwrap().camera.unwrap();
+    let entry = GameEntry::script_start(&imported.level, &camera).unwrap();
+    let mut session = Session::new(&world, &trig, &anims, entry);
+    let mut drawer = MarioDrawer::new(&source, &trig, &anims);
+    let mut reference = MarioDrawer::new(&source, &trig, &anims);
+    let mut previous: Option<(MarioPose, usize)> = None;
+    let mut switches = 0;
+    // Several complete 64-tick blink cycles, plus near/medium/far LOD changes.
+    for tick in 0..256 {
+        assert!(session.step(&Pad::default()));
+        let mut pose = session.mario_pose();
+        // Independently authored translation makes lost interpolation measurable
+        // even when the real idle animation is momentarily still.
+        pose.position[0] = tick as f32 * 30.0;
+        let lod = [100, 1000, 2000][(tick / 32) % 3];
+        drawer.update(&pose, Some(lod)).unwrap();
+        let current = drawer.frame(1.0, true).unwrap();
+        let build = current.build;
+        if let Some((mut old, old_build)) = previous
+            && build != old_build
+            && old.animation.map(|a| a.entry) == pose.animation.map(|a| a.entry)
+        {
+            // The earlier skeleton must pose today's discrete eye/LOD selection.
+            old.area_update_counter = pose.area_update_counter;
+            old.body.eye_state = pose.body.eye_state;
+            reference.reset();
+            reference.update(&old, Some(lod)).unwrap();
+            let expected = reference.frame(1.0, false).unwrap();
+            let halfway = drawer.frame(0.5, true).unwrap();
+            assert_eq!(
+                expected.vertices.iter().map(Vec::len).sum::<usize>(),
+                current.vertices.iter().map(Vec::len).sum::<usize>()
+            );
+            for ((a, b), half) in expected
+                .vertices
+                .iter()
+                .flatten()
+                .zip(current.vertices.iter().flatten())
+                .zip(halfway.vertices.iter().flatten())
+            {
+                for i in 0..3 {
+                    let want = (a.position[i] + b.position[i]) * 0.5;
+                    assert!(
+                        (half.position[i] - want).abs() < 0.002,
+                        "tick {tick}: build {old_build} -> {build} lost interpolation"
+                    );
+                }
+            }
+            switches += 1;
+        }
+        previous = Some((pose, build));
+    }
+    assert!(
+        switches >= 12,
+        "only {switches} geometry switches exercised"
+    );
+    assert!(drawer.issues.is_empty());
+    println!("{switches} blink/LOD switches preserve interpolation over 256 owner-ROM frames");
+}

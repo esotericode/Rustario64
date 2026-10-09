@@ -1,6 +1,6 @@
 # Provenance ledger
 
-Checked 2026-10-08; updated 2026-10-09 (session 12: complete BOB reference camera). Only the exact revisions below supplied format knowledge or
+Checked 2026-10-08; updated 2026-10-09 (session 13: desktop UI and Mario interpolation). Only the exact revisions below supplied format knowledge or
 adaptations in this increment. Full notices are retained in LICENSES/.
 No ROM, ROM-derived assets, original terrain/animation files, or full C runtime
 is tracked or published. Owner-ROM validation exports are local and ignored.
@@ -72,6 +72,8 @@ derives from CC0 sources.
 | winit | 0.30.13 | Development viewer window/input (render crate only) | Apache-2.0 |
 | pollster | 1.0.1 | Blocking on wgpu adapter/device futures | Apache-2.0/MIT |
 | png | 0.18.1 | Screenshot encoding | MIT OR Apache-2.0 |
+| egui / egui-winit / egui-wgpu | 0.36.2 | Optional launcher and pause/settings UI | MIT OR Apache-2.0; MIT notice retained |
+| rfd | 0.17.2 | Native local ROM file dialog | MIT |
 | cc | 1.6.0 | Build-time C compilation for the development oracle only | MIT OR Apache-2.0 |
 
 Cargo.lock pins transitive versions and registry checksums. A metadata scan of
@@ -134,3 +136,17 @@ uses these byte-identical pinned upstream copies only for those exact versions:
 | spirv 0.4.0+sdk-1.4.341.0 | [gfx-rs/rspirv, 8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4](https://github.com/gfx-rs/rspirv/blob/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/LICENSE), from crate .cargo_vcs_info.json | LICENSES/dependencies/spirv-0.4.0-APACHE.txt (Apache-2.0). Git blob d645695673349e3947e8e5ae42332d0ac3164cd7. |
 | gl_generator 0.14.0 | [brendanzab/gl-rs, ea503e8d5fb6d73c6030e6191ce738cd3bf3433e](https://github.com/brendanzab/gl-rs/blob/ea503e8d5fb6d73c6030e6191ce738cd3bf3433e/LICENSE), from crate .cargo_vcs_info.json | LICENSES/dependencies/gl_generator-0.14.0-APACHE.txt (Apache-2.0). |
 | khronos_api 3.1.0 | [brendanzab/gl-rs, f150967b1c44ae888e6676f93f639ebc82771bdc](https://github.com/brendanzab/gl-rs/blob/f150967b1c44ae888e6676f93f639ebc82771bdc/LICENSE), from crate .cargo_vcs_info.json | LICENSES/dependencies/khronos_api-3.1.0-APACHE.txt (Apache-2.0). |
+
+### Desktop UI notices — session 13
+
+UI integration, settings, the pause scheduler and mesh-switch interpolation are
+newly authored MIT code; no additional gameplay source or ROM content is copied.
+The crates.io packages omit some root notices. Dependency packaging therefore
+retains MIT notices from egui revision
+`49682f8baa058bf49e011035cfbd6e825f88a5ef` (0.36.2) and AccessKit revision
+`a55d3e1a18bb9ef0e4bccc9083fb13c3e0ad8969` (0.24.1), as recorded in their
+published `.cargo_vcs_info.json`, under `LICENSES/dependencies/`.
+The four published `epaint_default_fonts` 0.36.2 font notices (Hack, Noto/OFL,
+Ubuntu/UFL and emoji-icon-font/MIT) are also retained and included in runtime
+notices. These open-source UI fonts are unrelated to imported ROM assets.
+Dependency graphs for both native desktop targets are checked before packaging.

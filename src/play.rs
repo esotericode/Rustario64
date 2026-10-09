@@ -298,6 +298,13 @@ impl<'a> Session<'a> {
         self.camera_previous = None;
     }
 
+    /// Hold the latest presentation after a pause without changing gameplay,
+    /// RNG, input history, or the camera's authoritative state.
+    pub fn snap_presentation(&mut self) {
+        self.previous = None;
+        self.camera_previous = None;
+    }
+
     /// One 30 Hz frame with the held controls, unless stopped; returns
     /// whether it ran. A frame that stops the session is still logged, so a
     /// replay reaches the same stop.

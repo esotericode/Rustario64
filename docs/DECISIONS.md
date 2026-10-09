@@ -662,3 +662,34 @@ entirely Rust; generated C excerpts are development-only, with pinned hashes.
   viewer). They use the same latch as A/B/Z: a tap between two frames reaches
   the next frame.
 
+
+## Desktop launcher, pause, and Mario mesh switches — 2026-10-09 (session 13)
+
+The same winit event loop, window and wgpu device serve the launcher and play.
+The optional render crate uses egui 0.36.2 and its winit/wgpu integrations;
+wgpu remains 30.0.1. rfd 0.17.2 provides a local native file picker. Launcher
+path entry and drag/drop remain available if the desktop portal is unavailable.
+A full import must succeed before replacing the launcher; validation errors
+remain visible and recoverable. Only presentation options and an opted-in ROM
+path are persisted in the platform user config directory, outside asset caches.
+Neither the launcher nor runtime uploads ROM data. CLI diagnostics still work.
+
+This increment provides a **development pause**, not the original game's pause
+mode. Esc or lost focus freezes the complete game frame, including the camera.
+Pause, resume, mode switches and focus loss clear held input/tap latches and
+reset the presentation clock; no menu time or pending catch-up backlog reaches
+gameplay. Running stalls still retain backlog, draining up to eight ticks per
+frame. Snapshot history is snapped on resume without changing Mario, camera,
+RNG or the logged input stream. `zoom_out_if_paused_and_outside` remains ported
+but unreached. No behavior-changing option is added to the faithful profile.
+
+The reported recurring animation stutter was traced to `MarioDrawer::frame`:
+it interpolated only when consecutive poses had the same draw-list build.
+Mario's blink cycle changes those lists, so it periodically snapped his entire
+skinned model. Geometry changes now skin the newly selected mesh at both tick
+endpoints, traversing yesterday's skeleton with today's discrete switches and
+LOD. This also initializes previously inactive bones; unrelated vertex arrays
+are never blended. Animation-entry changes and level entry snap. The authoritative
+30 Hz animation advancement is unchanged. Authored switch/material/animation
+regressions and an owner-ROM test of blink cycles plus three detail levels cover
+the fix. Interpolation still adds approximately one simulation tick of delay.

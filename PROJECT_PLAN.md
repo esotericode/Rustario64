@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-09
 
-Status: M0 complete. M1 imported level works: BOB's original terrain and textures import from the ROM and render through an optional wgpu viewer with collision/placement overlays. M2 in progress: Mario's complete tick (inputs, non-object actions, his object update and animation frame advance, with the ROM's animations) matches the natively compiled decomp per tick, and BOB's original camera (radial, R/close, C-Up, boss-fight modes, shakes, FOV and graph camera) runs with it in the original frame order, matching the decomp word for word per frame. The viewer's Mario mode drives that frame from the keyboard and draws from the reference camera; recorded runs replay exactly against the decomp with its own camera. Mario's model and display lists import from the ROM and are posed from each tick as the original render pass does. Mario's shadow, objects, cutscenes, other areas' camera modes and triggers, cutscene/water actions, warps and missions remain missing.
+Status: M0 complete. M1 imported level works: BOB's original terrain and textures import from the ROM and render through an optional wgpu viewer with collision/placement overlays. M2 in progress: Mario's complete tick (inputs, non-object actions, his object update and animation frame advance, with the ROM's animations) matches the natively compiled decomp per tick, and BOB's original camera (radial, R/close, C-Up, boss-fight modes, shakes, FOV and graph camera) runs with it in the original frame order, matching the decomp word for word per frame. The viewer's Mario mode drives that frame from the keyboard and draws from the reference camera; recorded runs replay exactly against the decomp with its own camera. Mario's model and display lists import from the ROM and are posed from each tick as the original render pass does. D1 local ROM launcher and D2 development pause/settings are implemented; blink and LOD switches preserve Mario's pose interpolation. Mario's shadow, objects, cutscenes, other areas' camera modes and triggers, cutscene/water actions, warps and missions remain missing.
 Initial content target: Bob-omb Battlefield from a supported Super Mario 64 ROM.  
 Long-term intent: Support the complete original game through the same engine.
 
@@ -225,14 +225,14 @@ Every handoff should report the working result, commands actually run, missing f
 
 | Item | Status |
 | --- | --- |
-| Implementation | Headless core (ROM inspection, BOB static + visual import/export, Mario's animation table, original collision loader and queries, math utilities, Mario's physics steps, inputs, core update, non-object actions and per-frame tick, the original RNG, the reference camera for areas without camera triggers and the game frame that runs both in the original order, the play session that drives it from held controls with input logs, Mario's model import and render-pass posing, synthetic diagnostics, exact trace comparison), an optional wgpu renderer crate (offscreen PNGs, windowed inspection viewer, collision/placement overlays, Mario mode drawn from the interpolated reference camera with his skinned model), and a development-only native decomp oracle (collision, math, Mario components, complete Mario ticks, camera components, complete frames with the original camera linked, recorded-run replay) |
-| Initial platform and Rust stack | Linux x86_64; Rust 1.99.0 / edition 2024; Cargo workspace: `rustario64` (GPU-free core; sha1 0.11.0, serde 1.0.229, serde_json 1.0.151), `rustario64-render` (wgpu 30.0.1, winit 0.30.13, pollster 1.0.1, png 0.18.1), and `rustario64-oracle` (dev-only; cc 1.6.0 builds vendored CC0 C). Current stable direct dependencies, compatible SemVer requirements, committed Cargo.lock; CI reads the toolchain file |
+| Implementation | Headless core (ROM inspection, BOB static + visual import/export, Mario's animation table, original collision loader and queries, math utilities, Mario's physics steps, inputs, core update, non-object actions and per-frame tick, the original RNG, the reference camera for areas without camera triggers and the game frame that runs both in the original order, the play session that drives it from held controls with input logs, Mario's model import and render-pass posing, synthetic diagnostics, exact trace comparison), an optional wgpu renderer crate (offscreen PNGs, windowed inspection viewer, collision/placement overlays, Mario mode drawn from the interpolated reference camera with his skinned model, local ROM launcher and development pause/settings), and a development-only native decomp oracle (collision, math, Mario components, complete Mario ticks, camera components, complete frames with the original camera linked, recorded-run replay) |
+| Initial platform and Rust stack | Linux x86_64; Rust 1.99.0 / edition 2024; Cargo workspace: `rustario64` (GPU-free core; sha1 0.11.0, serde 1.0.229, serde_json 1.0.151), `rustario64-render` (wgpu 30.0.1, winit 0.30.13, pollster 1.0.1, png 0.18.1, egui/egui-winit/egui-wgpu 0.36.2, rfd 0.17.2), and `rustario64-oracle` (dev-only; cc 1.6.0 builds vendored CC0 C). Current stable direct dependencies, compatible SemVer requirements, committed Cargo.lock; CI reads the toolchain file |
 | Supported ROM revision | US v1.0, exactly 8 MiB, normalized SHA-1 `9bef1128717f958171a4afac3ed78ee2bb4e86ce`; Z64/V64/N64 normalization; supplied Z64 positive path passes |
 | Comparison implementation | Target: pinned unmodified US n64decomp/original ROM execution at `9921382a68bb0c865e5e45eb594d9c64db59b1af`; no original-execution per-tick exporter yet. Native oracle: the same decomp's collision, math_util, mario.c, mario_step.c and the five non-cutscene action files (whole files) plus verbatim excerpts, compiled natively; `oracle/c/tick.c` runs complete frames of Mario's object, optionally with camera.c's update path for areas without triggers linked (verbatim excerpts, aborting stubs for unreachable modes) |
 | Bob-omb Battlefield | Imported level: 1,101 visible area triangles (24 batches, 18 textures) from eight script-named dependent segments, plus the gate/seesaw/grate geo models; collision (570 vertices, 1,060 triangles), 17 specials, 30 script placements, 88 macros, seven warps. Every visible triangle and texture matches independent decomp-derived references. Renders in the viewer with collision and placement overlays. Collision loads into the ported original partition and answers queries identically to the decomp. Mario's complete ticks run identically to the decomp on it with the ROM's animations (64,158 compared ticks). Its camera runs from the area's camera node (validated callbacks) through BOB's surface rules, radial/close/C-Up/boss-fight modes and R/C-button controls identically to the decomp (77,112 compared frames). Mario can be moved around it in the viewer with his ROM model and animations, seen through the reference camera; recorded runs replay exactly. No skybox, objects, Mario shadow, cutscenes, warps or missions |
 | Fidelity coverage | Component checks against the natively compiled decomp, all bitwise-identical. Collision: loader and floor/ceiling/wall/water/gas queries (857k authored comparisons in CI; 4.08M on BOB). Math: ROM trig tables, sins/coss/atan2s/atan2f/approach (3.99M). Mario steps: ground/air/stationary steps, ledge grabs, gravity, wind, moving sand, bonk, velocity helpers from generated states (124k authored in CI; 1.18M on BOB with ROM tables). Exact trace comparator tested; 300 synthetic counter/input ticks identical at 30/60/120/144 Hz. Input stage: 196,608 controller/intent cases on authored and again on ROM tables; 10,009 authored and 20,000 BOB geometry cases; 1,200 chained ticks at multiple presentation rates. **Complete Mario ticks** (Mario's object only, against the native decomp): 28,158 authored ticks (69 actions) and 64,158 BOB ticks with ROM animations (60 actions), all identical, also at 15–144 Hz presentation. **Played sessions:** 3,600 CI ticks of held-control sessions replay identically in the decomp; two recorded BOB viewer runs (233 ticks) replay identically. Camera helpers/radial goals and persistent Lakitu/transition updates have exact authored and owner-ROM native comparisons. **Complete frames with the original camera** (Mario's object plus every camera.c word, the RNG seed and the graph camera, per frame): 19,512 authored frames (45 actions; radial, close, free-roam, C-Up and boss-fight modes) and 77,112 BOB frames with ROM data (62 actions; radial, close, C-Up, boss-fight), identical, also at 15–144 Hz presentation; 3,600 CI frames of played sessions with C buttons and R; a 1,800-frame built-in BOB camera program and two windowed reference-camera recordings (904 and 124 frames) replay identically. No object, cutscene, other-area camera mode, cutscene/submerged or original-N64 coverage |
-| Optional enhancements | Graphics-only options: higher resolution, 4x MSAA, culling and fog toggles, interpolation toggle, free inspection camera. Mario's skinned model and the reference camera's view interpolate between ticks at any frame rate (the view snaps across cuts). No enhanced lighting/shadows, no optional gameplay camera |
-| Immediate next task | D1 ROM launcher and D2 pause/settings (the original pause also changes the camera: `zoom_out_if_paused_and_outside` is ported but unreached), then Mario's original shadow and the first BOB objects (object list processor, coins, the first mission's actors). The camera's cutscene paths (star dance, death, dialog, doors) are needed with the first mission. D0 native Windows/Linux build/CI bundles passed again at 32e79e1. |
+| Optional enhancements | Graphics-only options: higher resolution, 4x MSAA, culling and fog toggles, interpolation toggle, free inspection camera. Mario's skinned model and the reference camera's view interpolate between ticks at any frame rate (the view snaps across cuts). Local launcher and pause/settings offer interpolation, fog, VSync and fullscreen; optional remembered path and window size. No enhanced lighting/shadows, no optional gameplay camera |
+| Immediate next task | D3 physical-GPU Windows/Linux playtests of D1/D2; then Mario's original shadow and the first BOB objects (object list processor, coins, the first mission's actors). D1 local ROM selection and D2 development pause/settings work; original pause-camera behavior (`zoom_out_if_paused_and_outside`) remains unreached. The camera's cutscene paths (star dance, death, dialog, doors) are needed with the first mission. D0 native Windows/Linux build/CI bundles passed again at 32e79e1. |
 
 ### Implementation session 1 — 2026-10-08 (M0 and early M1)
 
@@ -598,6 +598,48 @@ Every handoff should report the working result, commands actually run, missing f
   Mario's shadow, objects, warps, missions and original-N64 traces.
 - **Next:** D1 ROM launcher and D2 pause/settings for playtesting, then the
   shadow and the first BOB objects.
+
+### Implementation session 13 — 2026-10-09 (animation continuity and desktop UI)
+
+- **Base:** Latest remote main `8598367`; work on
+  `codex/animation-continuity-desktop`, continuing session 12 rather than an older branch.
+- **Animation report:** Found that each blink draw-list switch disabled the
+  entire skinned model's interpolation. The new mesh now draws from both poses,
+  with the previous skeleton evaluated under current switches/LOD. Authored
+  material/geometry regressions and a 256-frame owner-ROM blink/LOD regression
+  cover 32 switches. Animation changes and level re-entry still snap; authoritative
+  animation advancement remains at 30 Hz.
+- **D1:** Local ROM-selection window (Browse, path entry or drag/drop), supported
+  identity validation/import before play, recoverable errors, opt-in remembered
+  path, basic graphics and window-size settings. One winit loop/window/device
+  transitions into BOB. Settings live outside content caches. CLI diagnostics
+  and private input recording remain available.
+- **D2:** Esc pause/settings and explicit resume after focus loss. Held controls,
+  taps, elapsed menu/focus/inspection time and backlog are cleared. Interpolation,
+  fog, VSync and borderless fullscreen are presentation-only. Snapshot history
+  snaps without changing game state; the held-control replay suite checks it
+  every 17 frames. This freezes the complete frame; original pause-camera behavior
+  remains unimplemented.
+- **Dependencies/notices:** Optional render crate adds egui integrations 0.36.2
+  (same wgpu 30) and rfd 0.17.2; lockfile and runtime notices include all UI font
+  licenses. GPU-free core and the development-only native oracle boundaries remain.
+- **Checks:** 127 optimized core/oracle tests with every owner-ROM test enabled
+  pass, plus 10 desktop/render tests with offscreen GPU required (137 total,
+  zero failures or ignored). The ROM validates as supported US v1.0. Disabling
+  the mesh-switch re-skinning fails the regression at the first blink; restored
+  owner-ROM tests pass. Direct rustfmt and warnings-denied Clippy-driver workspace
+  checks pass; generated camera layout and three packaging checks pass. Both
+  native desktop dependency notice graphs resolve, including font licenses.
+  Windowed launcher, invalid-ROM recovery, pause/resume, input clearing and live
+  interpolation/fog/VSync changes pass under Xvfb; launcher/game close cleanly.
+  A fresh 68-frame recorded ROM-backed play run replays every Mario/camera word
+  exactly against native C. Linux checks use Xvfb and software Vulkan, not a
+  physical GPU; no human Windows/GPU validation is claimed.
+- **Still missing:** Physical-GPU/human Windows/Linux checks, input remapping and
+  gamepad, original pause behavior, shadow, objects, cutscenes, warps, missions,
+  audio, saves and original-N64 execution traces.
+- **Next:** D3 playtesting; Mario's original shadow, then object-list processing
+  and the first BOB actors with independent per-tick comparisons.
 
 ### Bob-omb Battlefield acceptance tracker
 

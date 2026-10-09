@@ -15,10 +15,13 @@ use rustario64::{
     },
     play::{self, BOB_SCRIPT_START, Pad, Session},
     presentation::{GraphicsOptions, mario::MarioDrawer},
-    simulation::{FixedClock, collision::CollisionWorld, game::GameEntry, math::TrigTables},
+    simulation::{collision::CollisionWorld, game::GameEntry, math::TrigTables},
 };
 use rustario64_render::{
-    RenderOptions, Renderer, camera, camera::FlyCamera, overlay, play as present,
+    RenderOptions, Renderer, camera,
+    camera::FlyCamera,
+    desktop::{FrameClock, Settings, Ui},
+    overlay, play as present,
 };
 use std::{
     fs,
@@ -33,16 +36,17 @@ use winit::{
     event::{DeviceEvent, DeviceId, ElementState, KeyEvent, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
-    window::{CursorGrabMode, Window, WindowId},
+    window::{CursorGrabMode, Fullscreen, Window, WindowId},
 };
 
 type AppResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 const HELP: &str = "Rustario64 development viewer (Bob-omb Battlefield, area 1)\n\n\
+  rustario64-viewer [launch]   Open the local ROM launcher and presentation settings.\n\
   rustario64-viewer screenshot /path/to/sm64.z64 --out private/bob.png [--view start|overview|summit|top] [--size 1280x960] [--msaa 4] [--no-cull] [--no-fog] [--collision] [--placements] [--mario-ticks N]\n\
   rustario64-viewer view /path/to/sm64.z64 [--view start] [--msaa 4] [--no-fog] [--frames N] [--mario] [--no-interpolation] [--record NEW_PRIVATE_DIR]\n\n\
   View controls: WASD move, Q/E down/up, Shift faster, hold right mouse or arrow keys to look,\n\
-  1-4 select presets, C collision overlay, P placement markers, F fog, M Mario mode, Esc quits.\n\
+  1-4 select presets, C collision overlay, P placement markers, F fog, M Mario mode, Esc pause/settings.\n\
   The camera is a presentation-only inspection camera, not the original camera.\n\n\
   Mario mode (--mario or M): WASD stick (hold Shift to walk), Space A, J B, K Z, arrow keys\n\
   the C buttons (Up/Down zoom and first person, Left/Right rotate), E the R button (Lakitu or\n\
@@ -53,7 +57,8 @@ const HELP: &str = "Rustario64 development viewer (Bob-omb Battlefield, area 1)\
   and at warps (falling off the course); R re-enters.\n\
   --mario-ticks N renders Mario after N frames of holding the stick up, from the original camera.\n\
   --record writes each run's tick inputs to a new directory for exact replay against the decomp:\n\
-  cargo run -p rustario64-oracle --example tick_trace -- ROM NEW_DIR --inputs RUN.inputs.json\n";
+  cargo run -p rustario64-oracle --example tick_trace -- ROM NEW_DIR --inputs RUN.inputs.json\n\
+  Presentation: --size WIDTHxHEIGHT, --fullscreen, --no-vsync; Esc pauses, resumes or opens Quit.\n";
 
 struct Options {
     view: Option<String>,
@@ -69,6 +74,8 @@ struct Options {
     mario_ticks: Option<u64>,
     interpolation: bool,
     record: Option<PathBuf>,
+    vsync: bool,
+    fullscreen: bool,
 }
 
 fn parse(args: &[String]) -> AppResult<Options> {
@@ -86,6 +93,8 @@ fn parse(args: &[String]) -> AppResult<Options> {
         mario_ticks: None,
         interpolation: true,
         record: None,
+        vsync: true,
+        fullscreen: false,
     };
     let mut i = 0;
     while i < args.len() {
@@ -100,6 +109,8 @@ fn parse(args: &[String]) -> AppResult<Options> {
             "--collision" => &mut options.collision,
             "--placements" => &mut options.placements,
             "--mario" => &mut options.mario,
+            "--no-vsync" => &mut options.vsync,
+            "--fullscreen" => &mut options.fullscreen,
             _ => {
                 match args[i].as_str() {
                     "--view" => options.view = Some(value(i)?.clone()),
@@ -394,6 +405,7 @@ struct Gpu {
     renderer: Renderer,
     depth: wgpu::TextureView,
     multisampled: Option<wgpu::TextureView>,
+    ui: Ui,
 }
 
 #[derive(Default)]
@@ -485,7 +497,7 @@ struct App {
     gpu: Option<Gpu>,
     keys: Keys,
     looking: bool,
-    clock: FixedClock,
+    clock: FrameClock,
     last: Option<Instant>,
     ticks: u64,
     frames: u64,
@@ -494,57 +506,101 @@ struct App {
     /// Mario's imported model; None draws the placeholder box instead.
     mario: Option<MarioModel>,
     error: Option<String>,
+    paused: bool,
+    focused: bool,
+    settings: Settings,
+    settings_error: Option<String>,
+    initial_overlays: (bool, bool),
+}
+
+fn create_gpu(
+    event_loop: &ActiveEventLoop,
+    options: RenderOptions,
+    size: [u32; 2],
+) -> AppResult<Gpu> {
+    let window = Arc::new(
+        event_loop.create_window(
+            Window::default_attributes()
+                .with_title("Rustario64 — Bob-omb Battlefield (development viewer)")
+                .with_inner_size(PhysicalSize::new(size[0], size[1])),
+        )?,
+    );
+    let instance = rustario64_render::instance(Some(Box::new(event_loop.owned_display_handle())));
+    let surface = instance.create_surface(window.clone())?;
+    let (adapter, device, queue) =
+        pollster::block_on(rustario64_render::device(&instance, Some(&surface)))?;
+    let size = window.inner_size();
+    let mut config = surface
+        .get_default_config(&adapter, size.width.max(1), size.height.max(1))
+        .ok_or("surface is not supported by the adapter")?;
+    let capabilities = surface.get_capabilities(&adapter);
+    // Prefer a non-sRGB target: original colors are display-referred.
+    if let Some(format) = capabilities.formats.iter().find(|f| !f.is_srgb()) {
+        config.format = *format;
+    }
+    config.present_mode = wgpu::PresentMode::AutoVsync;
+    surface.configure(&device, &config);
+    let ui = Ui::new(&window, &device, config.format);
+    let renderer = Renderer::new(device, queue, config.format, options);
+    let mut gpu = Gpu {
+        window,
+        surface,
+        depth: renderer.create_depth(config.width, config.height),
+        multisampled: None,
+        config,
+        renderer,
+        ui,
+    };
+    resize_targets(&mut gpu);
+    println!(
+        "Viewer on {} ({:?}), surface {:?}",
+        adapter.get_info().name,
+        adapter.get_info().backend,
+        gpu.config.format
+    );
+    Ok(gpu)
 }
 
 impl App {
-    fn create_gpu(&mut self, event_loop: &ActiveEventLoop) -> AppResult<Gpu> {
-        let window = Arc::new(
-            event_loop.create_window(
-                Window::default_attributes()
-                    .with_title("Rustario64 — Bob-omb Battlefield (development viewer)")
-                    .with_inner_size(PhysicalSize::new(1280, 960)),
-            )?,
-        );
-        let instance =
-            rustario64_render::instance(Some(Box::new(event_loop.owned_display_handle())));
-        let surface = instance.create_surface(window.clone())?;
-        let (adapter, device, queue) =
-            pollster::block_on(rustario64_render::device(&instance, Some(&surface)))?;
-        let size = window.inner_size();
-        let mut config = surface
-            .get_default_config(&adapter, size.width.max(1), size.height.max(1))
-            .ok_or("surface is not supported by the adapter")?;
-        let capabilities = surface.get_capabilities(&adapter);
-        // Prefer a non-sRGB target: original colors are display-referred.
-        if let Some(format) = capabilities.formats.iter().find(|f| !f.is_srgb()) {
-            config.format = *format;
-        }
-        config.present_mode = wgpu::PresentMode::AutoVsync;
-        surface.configure(&device, &config);
-        let renderer = Renderer::new(device, queue, config.format, self.options);
-        let mut gpu = Gpu {
-            window,
-            surface,
-            depth: renderer.create_depth(config.width, config.height),
-            multisampled: None,
-            config,
-            renderer,
-        };
+    fn prepare_gpu(&mut self, gpu: &mut Gpu) {
         upload(
             &mut gpu.renderer,
             &self.level,
-            false,
-            false,
+            self.initial_overlays.0,
+            self.initial_overlays.1,
             self.mario.is_none(),
         );
-        resize_targets(&mut gpu);
-        println!(
-            "Viewer on {} ({:?}), surface {:?}",
-            adapter.get_info().name,
-            adapter.get_info().backend,
-            gpu.config.format
-        );
-        Ok(gpu)
+        apply_window_settings(gpu, &self.settings);
+    }
+
+    fn pause(&mut self, paused: bool) {
+        self.paused = paused;
+        self.clock.reset();
+        self.last = None;
+        self.keys = Keys::default();
+        self.play.release_all();
+        self.play.session.snap_presentation();
+        if let Some(mario) = self.mario.as_mut() {
+            mario.drawer.snap();
+        }
+        self.looking = false;
+        if let Some(gpu) = &self.gpu {
+            let _ = gpu.window.set_cursor_grab(CursorGrabMode::None);
+            gpu.window.set_cursor_visible(true);
+        }
+    }
+
+    fn restart(&mut self) {
+        if let Err(e) = self.play.end_run(self.level.rom_sha1) {
+            eprintln!("error: {e}");
+        }
+        self.play.session.reset();
+        self.play.reported_stop = false;
+        self.play.release_all();
+        self.clock.reset();
+        if let Some(mario) = self.mario.as_mut() {
+            mario.reset(&self.play.session, &self.camera);
+        }
     }
 
     fn redraw(&mut self) {
@@ -552,14 +608,14 @@ impl App {
         let elapsed = self.last.map_or(Duration::ZERO, |last| now - last);
         self.last = Some(now);
         // Fixed 30 Hz gameplay cadence: Mario ticks only on drained clock ticks.
-        let drained = if self.clock.add_elapsed(elapsed).is_ok() {
-            self.clock.drain(8)
-        } else {
-            0
-        };
+        let running = self.play.active
+            && self.focused
+            && !self.paused
+            && self.play.session.stopped().is_none();
+        let drained = self.clock.advance(now, running);
         self.ticks += u64::from(drained);
         let play = &mut self.play;
-        if play.active {
+        if running {
             for _ in 0..drained {
                 let pad = play.next_pad();
                 if play.session.step(&pad)
@@ -585,18 +641,14 @@ impl App {
             );
         }
         // A paused or stopped session holds its latest pose.
-        let alpha = if play.active && play.session.stopped().is_none() {
-            self.clock.alpha()
-        } else {
-            1.0
-        };
+        let alpha = if running { self.clock.alpha() } else { 1.0 };
         let pose = play.session.pose(alpha, play.graphics);
         if play.active {
             self.camera = present::reference_view(
                 play.session.camera_view(alpha, play.graphics),
                 self.level.visual.camera,
             );
-        } else {
+        } else if self.focused && !self.paused {
             // The inspection camera is presentation-only, so wall-clock motion is fine.
             let seconds = elapsed.as_secs_f32().min(0.1);
             let speed = if self.keys.fast { 6000.0 } else { 1500.0 } * seconds;
@@ -640,8 +692,55 @@ impl App {
                 .renderer
                 .render(&view, None, &gpu.depth, size, &self.camera),
         }
+        let before = self.settings.clone();
+        let mut resume = false;
+        let mut restart = false;
+        let mut quit = false;
+        let input = gpu.ui.input.take_egui_input(&gpu.window);
+        let output = gpu.ui.context.run_ui(input, |root| {
+            let ctx = root.ctx();
+            if self.paused {
+                egui::Window::new("Paused")
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .resizable(false)
+                    .collapsible(false)
+                    .default_width(380.0)
+                    .show(ctx, |ui| {
+                        ui.heading("Bob-omb Battlefield");
+                        if let Some(stop) = play.session.stopped() {
+                            ui.label(format!("Play stopped: {stop}"));
+                        }
+                        self.settings.controls(ui);
+                        ui.separator();
+                        ui.label("WASD move · Space jump · J attack · K crouch");
+                        ui.label("Arrows: C buttons · E: R camera · R: restart");
+                        if let Some(error) = &self.settings_error {
+                            ui.colored_label(egui::Color32::LIGHT_RED, error);
+                        }
+                        resume = ui.button("Resume · Esc").clicked();
+                        restart = ui.button("Restart course").clicked();
+                        quit = ui.button("Quit").clicked();
+                    });
+            }
+        });
+        gpu.ui.paint(
+            &gpu.window,
+            gpu.renderer.device(),
+            gpu.renderer.queue(),
+            &view,
+            output,
+        );
+        if self.settings != before {
+            play.graphics.interpolation = self.settings.interpolation;
+            gpu.renderer.options_mut().fog = self.settings.fog;
+            self.settings_error = self.settings.save().err();
+        }
         gpu.window.pre_present_notify();
         gpu.renderer.queue().present(frame);
+        // Reconfigure only after presenting the acquired surface texture.
+        if self.settings != before {
+            apply_window_settings(gpu, &self.settings);
+        }
         self.frames += 1;
         if self.frames.is_multiple_of(10) {
             let title = if play.active {
@@ -657,6 +756,15 @@ impl App {
                 )
             };
             gpu.window.set_title(&title);
+        }
+        if restart {
+            self.restart();
+        }
+        if resume || restart {
+            self.pause(false);
+        }
+        if quit {
+            self.max_frames = Some(self.frames);
         }
     }
 
@@ -679,15 +787,7 @@ impl App {
             KeyCode::ArrowRight => (pad.c_right, taps.c_right) = (down, taps.c_right || down),
             KeyCode::KeyR => {
                 if down && !repeat {
-                    if let Err(e) = self.play.end_run(self.level.rom_sha1) {
-                        eprintln!("error: {e}");
-                    }
-                    self.play.session.reset();
-                    self.play.taps = Pad::default();
-                    self.play.reported_stop = false;
-                    if let Some(mario) = self.mario.as_mut() {
-                        mario.reset(&self.play.session, &self.camera);
-                    }
+                    self.restart();
                 }
             }
             _ => return false,
@@ -695,11 +795,23 @@ impl App {
         true
     }
 
-    fn key(&mut self, event_loop: &ActiveEventLoop, event: KeyEvent) {
+    fn key(&mut self, _: &ActiveEventLoop, event: KeyEvent) {
         let PhysicalKey::Code(code) = event.physical_key else {
             return;
         };
+        // A key held while opening a menu must not re-latch gameplay from
+        // OS repeat events after resume. egui has already received the event.
+        if event.repeat {
+            return;
+        }
         let down = event.state == ElementState::Pressed;
+        if code == KeyCode::Escape && down && !event.repeat {
+            self.pause(!self.paused);
+            return;
+        }
+        if self.paused || !self.focused {
+            return;
+        }
         if self.play.active && self.play_key(code, down, event.repeat) {
             return;
         }
@@ -716,12 +828,16 @@ impl App {
             KeyCode::ArrowUp => self.keys.pitch = v,
             KeyCode::ArrowDown => self.keys.pitch = -v,
             KeyCode::ShiftLeft | KeyCode::ShiftRight => self.keys.fast = down,
-            KeyCode::Escape if down => event_loop.exit(),
             KeyCode::KeyM if down && !event.repeat => {
                 // Held keys belong to the mode they were pressed in.
                 self.keys = Keys::default();
                 self.play.release_all();
                 self.play.active ^= true;
+                self.clock.reset();
+                self.play.session.snap_presentation();
+                if let Some(mario) = self.mario.as_mut() {
+                    mario.drawer.snap();
+                }
             }
             KeyCode::KeyC | KeyCode::KeyP if down => {
                 if let Some(gpu) = self.gpu.as_mut() {
@@ -737,6 +853,7 @@ impl App {
             KeyCode::KeyF if down => {
                 if let Some(gpu) = self.gpu.as_mut() {
                     gpu.renderer.options_mut().fog ^= true;
+                    self.settings.fog = gpu.renderer.options().fog;
                 }
             }
             KeyCode::Digit1 | KeyCode::Digit2 | KeyCode::Digit3 | KeyCode::Digit4 if down => {
@@ -752,6 +869,22 @@ impl App {
             }
             _ => {}
         }
+    }
+}
+
+fn apply_window_settings(gpu: &mut Gpu, settings: &Settings) {
+    let mode = if settings.vsync {
+        wgpu::PresentMode::AutoVsync
+    } else {
+        wgpu::PresentMode::AutoNoVsync
+    };
+    if gpu.config.present_mode != mode {
+        gpu.config.present_mode = mode;
+        gpu.surface.configure(gpu.renderer.device(), &gpu.config);
+    }
+    if gpu.window.fullscreen().is_some() != settings.fullscreen {
+        gpu.window
+            .set_fullscreen(settings.fullscreen.then_some(Fullscreen::Borderless(None)));
     }
 }
 
@@ -783,8 +916,9 @@ fn resize_targets(gpu: &mut Gpu) {
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.gpu.is_none() {
-            match self.create_gpu(event_loop) {
-                Ok(gpu) => {
+            match create_gpu(event_loop, self.options, self.settings.size) {
+                Ok(mut gpu) => {
+                    self.prepare_gpu(&mut gpu);
                     gpu.window.request_redraw();
                     self.gpu = Some(gpu);
                 }
@@ -797,6 +931,9 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        if let Some(gpu) = self.gpu.as_mut() {
+            let _ = gpu.ui.input.on_window_event(&gpu.window, &event);
+        }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
@@ -813,10 +950,9 @@ impl ApplicationHandler for App {
             // Pause tick accumulation while unfocused; resume from a fresh anchor.
             // Held keys are released, since their release may go elsewhere.
             WindowEvent::Focused(focused) => {
+                self.focused = focused;
                 if !focused {
-                    self.last = None;
-                    self.keys = Keys::default();
-                    self.play.release_all();
+                    self.pause(true);
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => self.key(event_loop, event),
@@ -824,7 +960,7 @@ impl ApplicationHandler for App {
                 state,
                 button: MouseButton::Right,
                 ..
-            } => {
+            } if !self.paused && self.focused => {
                 self.looking = state == ElementState::Pressed;
                 if let Some(gpu) = &self.gpu {
                     let mode = if self.looking {
@@ -852,6 +988,8 @@ impl ApplicationHandler for App {
         if let DeviceEvent::MouseMotion { delta } = event
             && self.looking
             && !self.play.active
+            && !self.paused
+            && self.focused
         {
             self.camera
                 .rotate(-delta.0 as f32 * 0.003, -delta.1 as f32 * 0.003);
@@ -859,7 +997,7 @@ impl ApplicationHandler for App {
     }
 }
 
-fn view(rom_path: &Path, options: &Options) -> AppResult<()> {
+fn make_app(level: Level, options: &Options) -> AppResult<App> {
     if options.mario_ticks.is_some() {
         return Err("--mario-ticks is a screenshot option; use --mario in the window".into());
     }
@@ -868,7 +1006,6 @@ fn view(rom_path: &Path, options: &Options) -> AppResult<()> {
         .as_deref()
         .map(Recorder::create)
         .transpose()?;
-    let level = load(rom_path)?;
     let camera = preset(options.view.as_deref().unwrap_or("start"), &level)?;
     let play = Play {
         session: level.session(),
@@ -880,14 +1017,15 @@ fn view(rom_path: &Path, options: &Options) -> AppResult<()> {
         reported_stop: false,
     };
     let mario = MarioModel::new(&level, &play.session, &camera);
-    let mut app = App {
+    let remembered = Settings::load().ok().and_then(|s| s.rom_path);
+    let app = App {
         level,
         options: render_options(options),
         camera,
         gpu: None,
         keys: Keys::default(),
         looking: false,
-        clock: FixedClock::default(),
+        clock: FrameClock::default(),
         last: None,
         ticks: 0,
         frames: 0,
@@ -895,13 +1033,25 @@ fn view(rom_path: &Path, options: &Options) -> AppResult<()> {
         play,
         mario,
         error: None,
+        paused: false,
+        focused: true,
+        settings: Settings {
+            interpolation: options.interpolation,
+            fog: options.fog,
+            vsync: options.vsync,
+            fullscreen: options.fullscreen,
+            size: [options.size.0, options.size.1],
+            rom_path: remembered,
+        },
+        settings_error: None,
+        initial_overlays: (options.collision, options.placements),
     };
-    let event_loop = EventLoop::new()?;
-    let result = event_loop.run_app(&mut app);
-    let saved = app.play.end_run(app.level.rom_sha1);
-    result?;
-    saved?;
-    if let Some(error) = app.error {
+    Ok(app)
+}
+
+fn finish_app(app: &mut App) -> AppResult<()> {
+    app.play.end_run(app.level.rom_sha1)?;
+    if let Some(error) = app.error.take() {
         return Err(error.into());
     }
     println!(
@@ -913,13 +1063,268 @@ fn view(rom_path: &Path, options: &Options) -> AppResult<()> {
     Ok(())
 }
 
+fn view(rom_path: &Path, options: &Options) -> AppResult<()> {
+    let mut app = make_app(load(rom_path)?, options)?;
+    let event_loop = EventLoop::new()?;
+    let result = event_loop.run_app(&mut app);
+    result?;
+    finish_app(&mut app)
+}
+
+/// One event loop and one GPU/window across launcher and play.
+struct Desktop {
+    gpu: Option<Gpu>,
+    game: Option<App>,
+    settings: Settings,
+    path: String,
+    remember: bool,
+    error: Option<String>,
+    fatal: Option<String>,
+}
+
+impl Desktop {
+    fn redraw(&mut self, event_loop: &ActiveEventLoop) {
+        let Some(gpu) = self.gpu.as_mut() else { return };
+        let frame = match gpu.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(frame)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                gpu.surface.configure(gpu.renderer.device(), &gpu.config);
+                return;
+            }
+            _ => return,
+        };
+        let input = gpu.ui.input.take_egui_input(&gpu.window);
+        let mut start = false;
+        let output = gpu.ui.context.run_ui(input, |root| {
+            egui::CentralPanel::default().show(root, |_ui| {});
+            egui::Window::new("Rustario64 launcher")
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .title_bar(false)
+                .resizable(false)
+                .collapsible(false)
+                .default_width(540.0)
+                .show(root.ctx(), |ui| {
+                    ui.set_width(540.0);
+                    ui.heading(egui::RichText::new("Rustario64").size(42.0));
+                    ui.label("Bob-omb Battlefield · development build");
+                    ui.add_space(20.0);
+                    ui.label("Choose your Super Mario 64 ROM");
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.path)
+                                .hint_text("Local .z64, .v64 or .n64 path")
+                                .desired_width(370.0),
+                        );
+                        if ui.button("Browse…").clicked()
+                            && let Some(path) = rfd::FileDialog::new()
+                                .add_filter("Nintendo 64 ROM", &["z64", "v64", "n64"])
+                                .pick_file()
+                        {
+                            self.path = path.to_string_lossy().into_owned();
+                            self.error = None;
+                        }
+                    });
+                    ui.checkbox(
+                        &mut self.remember,
+                        "Remember this ROM path on this computer",
+                    );
+                    ui.label("Original US v1.0 · ROM stays on your computer");
+                    ui.add_space(10.0);
+                    self.settings.controls(ui);
+                    egui::ComboBox::from_label("Window size")
+                        .selected_text(format!(
+                            "{} × {}",
+                            self.settings.size[0], self.settings.size[1]
+                        ))
+                        .show_ui(ui, |ui| {
+                            for size in [[960, 720], [1280, 960], [1920, 1080]] {
+                                ui.selectable_value(
+                                    &mut self.settings.size,
+                                    size,
+                                    format!("{} × {}", size[0], size[1]),
+                                );
+                            }
+                        });
+                    if let Some(error) = &self.error {
+                        ui.colored_label(egui::Color32::LIGHT_RED, error);
+                    }
+                    start = ui
+                        .add_enabled(
+                            !self.path.trim().is_empty(),
+                            egui::Button::new("Play Bob-omb Battlefield"),
+                        )
+                        .clicked();
+                    ui.small(
+                        "Early exploration: objects, stars, audio and saves are still being built.",
+                    );
+                });
+        });
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        gpu.renderer.render(
+            &view,
+            None,
+            &gpu.depth,
+            (gpu.config.width, gpu.config.height),
+            &FlyCamera::looking_at([0.0, 0.0, 1.0], [0.0; 3]),
+        );
+        gpu.ui.paint(
+            &gpu.window,
+            gpu.renderer.device(),
+            gpu.renderer.queue(),
+            &view,
+            output,
+        );
+        gpu.window.pre_present_notify();
+        gpu.renderer.queue().present(frame);
+        if start {
+            // Validate identity and complete the import before replacing the
+            // launcher; every error keeps a usable selection window.
+            let path = PathBuf::from(self.path.trim());
+            let result = load(&path).and_then(|level| {
+                let mut options = parse(&[])?;
+                options.mario = true;
+                options.interpolation = self.settings.interpolation;
+                options.fog = self.settings.fog;
+                options.vsync = self.settings.vsync;
+                options.fullscreen = self.settings.fullscreen;
+                options.size = (self.settings.size[0], self.settings.size[1]);
+                make_app(level, &options)
+            });
+            match result {
+                Ok(mut app) => {
+                    self.settings.rom_path = self.remember.then_some(path);
+                    app.settings = self.settings.clone();
+                    app.settings_error = self.settings.save().err();
+                    let mut gpu = self.gpu.take().unwrap();
+                    let _ = gpu.window.request_inner_size(PhysicalSize::new(
+                        self.settings.size[0],
+                        self.settings.size[1],
+                    ));
+                    app.prepare_gpu(&mut gpu);
+                    app.gpu = Some(gpu);
+                    self.game = Some(app);
+                }
+                Err(error) => {
+                    self.error = Some(format!(
+                        "Could not start: {error}. Choose a supported ROM and try again."
+                    ))
+                }
+            }
+        }
+        let window = self
+            .game
+            .as_ref()
+            .and_then(|a| a.gpu.as_ref())
+            .or(self.gpu.as_ref());
+        if let Some(gpu) = window {
+            gpu.window.request_redraw();
+        }
+        let _ = event_loop;
+    }
+}
+
+impl ApplicationHandler for Desktop {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(game) = self.game.as_mut() {
+            game.resumed(event_loop);
+            return;
+        }
+        if self.gpu.is_none() {
+            match create_gpu(event_loop, RenderOptions::default(), [800, 720]) {
+                Ok(gpu) => {
+                    gpu.window.set_title("Rustario64 — Select ROM");
+                    gpu.window.request_redraw();
+                    self.gpu = Some(gpu);
+                }
+                Err(error) => {
+                    self.fatal = Some(error.to_string());
+                    event_loop.exit();
+                }
+            }
+        }
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        if let Some(game) = self.game.as_mut() {
+            game.window_event(event_loop, id, event);
+            return;
+        }
+        if let Some(gpu) = self.gpu.as_mut() {
+            let _ = gpu.ui.input.on_window_event(&gpu.window, &event);
+        }
+        match event {
+            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::DroppedFile(path) => {
+                self.path = path.to_string_lossy().into_owned();
+                self.error = None;
+            }
+            WindowEvent::RedrawRequested => self.redraw(event_loop),
+            WindowEvent::Resized(size) if size.width > 0 && size.height > 0 => {
+                if let Some(gpu) = self.gpu.as_mut() {
+                    gpu.config.width = size.width;
+                    gpu.config.height = size.height;
+                    gpu.surface.configure(gpu.renderer.device(), &gpu.config);
+                    resize_targets(gpu);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn device_event(&mut self, event_loop: &ActiveEventLoop, id: DeviceId, event: DeviceEvent) {
+        if let Some(game) = self.game.as_mut() {
+            game.device_event(event_loop, id, event);
+        }
+    }
+}
+
+fn launch() -> AppResult<()> {
+    let (settings, error) = match Settings::load() {
+        Ok(settings) => (settings, None),
+        Err(error) => (
+            Settings::default(),
+            Some(format!("{error}. Using default settings.")),
+        ),
+    };
+    let path = settings
+        .rom_path
+        .as_ref()
+        .map_or(String::new(), |p| p.to_string_lossy().into_owned());
+    let mut desktop = Desktop {
+        gpu: None,
+        game: None,
+        remember: settings.rom_path.is_some(),
+        settings,
+        path,
+        error,
+        fatal: None,
+    };
+    EventLoop::new()?.run_app(&mut desktop)?;
+    if let Some(game) = desktop.game.as_mut() {
+        finish_app(game)?;
+    }
+    if let Some(error) = desktop.fatal {
+        return Err(error.into());
+    }
+    Ok(())
+}
+
 fn run(args: &[String]) -> AppResult<()> {
     match args {
+        [] => launch(),
+        [cmd] if cmd == "launch" => launch(),
         [cmd, rom, rest @ ..] if cmd == "screenshot" => screenshot(Path::new(rom), &parse(rest)?),
         [cmd, rom, rest @ ..] if cmd == "view" => view(Path::new(rom), &parse(rest)?),
         _ => {
             print!("{HELP}");
-            Ok(())
+            if args == ["--help"] || args == ["-h"] {
+                Ok(())
+            } else {
+                Err("unknown command; use --help".into())
+            }
         }
     }
 }

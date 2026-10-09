@@ -237,6 +237,9 @@ struct Walk<'a> {
     source: &'a MarioModelSource,
     trig: &'a TrigTables,
     pose: &'a MarioPose,
+    /// Discrete geometry choices for both endpoints. A blink or LOD change
+    /// selects today's mesh, but must not stop the skeleton's motion.
+    selection: &'a MarioPose,
     punch: PunchScale,
     lod_distance: i16,
     anim: Option<AnimCursor<'a>>,
@@ -247,7 +250,7 @@ struct Walk<'a> {
 
 impl Walk<'_> {
     fn select(&self, role: Option<MarioCallback>, param: i16, children: usize) -> usize {
-        let body = &self.pose.body;
+        let body = &self.selection.body;
         let case = match role {
             Some(MarioCallback::SwitchStandRun) => {
                 usize::from(body.action & ACT_FLAG_STATIONARY == 0)
@@ -256,9 +259,10 @@ impl Walk<'_> {
             Some(MarioCallback::SwitchCapOnOff) => (body.cap_state & 1) as usize,
             Some(MarioCallback::SwitchEyes) => {
                 if body.eye_state == 0 {
-                    let frame =
-                        ((i32::from(param) * 32 + i32::from(self.pose.area_update_counter)) >> 1)
-                            & 0x1F;
+                    let frame = ((i32::from(param) * 32
+                        + i32::from(self.selection.area_update_counter))
+                        >> 1)
+                        & 0x1F;
                     BLINK.get(frame as usize).copied().unwrap_or(0) as usize
                 } else {
                     (body.eye_state - 1) as usize
@@ -390,7 +394,7 @@ impl Walk<'_> {
         // sibling's active flag before they are drawn.
         let wings = nodes.iter().find_map(|&n| {
             (self.source.callback(n) == Some(MarioCallback::SwitchCapOnOff))
-                .then_some(self.pose.body.cap_state & 2 != 0)
+                .then_some(self.selection.body.cap_state & 2 != 0)
         });
         let mut pending = None;
         for &n in nodes {
@@ -540,6 +544,8 @@ struct Posed {
     /// World-space vertices per batch of the build.
     vertices: Vec<Vec<VisualVertex>>,
     epoch: u64,
+    pose: MarioPose,
+    punch: PunchScale,
 }
 
 /// What to draw for one displayed frame.
@@ -678,16 +684,32 @@ impl<'a> MarioDrawer<'a> {
         self.punch = PunchScale::default();
     }
 
+    /// Resume from the displayed tick rather than briefly blending backwards.
+    pub fn snap(&mut self) {
+        self.previous = None;
+    }
+
     /// The draw list and matrices of a render traversal for `pose`, with the
     /// level-of-detail distance (the depth of Mario's origin in front of the
     /// camera; None draws full detail).
     pub fn traverse(&self, pose: &MarioPose, lod_distance: Option<i16>) -> (Vec<Draw>, Vec<Mat4>) {
+        self.traverse_selected(pose, pose, self.punch, lod_distance)
+    }
+
+    fn traverse_selected(
+        &self,
+        pose: &MarioPose,
+        selection: &MarioPose,
+        punch: PunchScale,
+        lod_distance: Option<i16>,
+    ) -> (Vec<Draw>, Vec<Mat4>) {
         let source = self.source;
         let mut walk = Walk {
             source,
             trig: self.trig,
             pose,
-            punch: self.punch,
+            selection,
+            punch,
             lod_distance: lod_distance.unwrap_or(0),
             anim: pose.animation.and_then(|a| {
                 let animation = self.anims.get(a.entry)?;
@@ -731,8 +753,8 @@ impl<'a> MarioDrawer<'a> {
     /// fail on malformed data; the error leaves the previous frames in place.
     pub fn update(&mut self, pose: &MarioPose, lod_distance: Option<i16>) -> Result<(), String> {
         self.punch.advance(pose.body.punch_state);
-        self.previous = self.current.take();
         if !pose.visible {
+            self.previous = self.current.take();
             return Ok(());
         }
         let (draws, matrices) = self.traverse(pose, lod_distance);
@@ -747,17 +769,34 @@ impl<'a> MarioDrawer<'a> {
                 build
             }
         };
+        // Use the newly selected geometry at both endpoints. In particular,
+        // blink display lists differ, although the head keeps moving. Traversing
+        // the previous pose with today's switches also initializes bones that
+        // were inactive in yesterday's mesh (hands, cap, LOD, stand/run).
+        let mut previous = self.current.take();
+        if let Some(old) = previous.as_mut()
+            && old.build != build
+        {
+            let (_, previous_matrices) =
+                self.traverse_selected(&old.pose, pose, old.punch, lod_distance);
+            old.vertices = skin(&self.builds[build], &previous_matrices);
+            old.build = build;
+        }
+        self.previous = previous;
         self.current = Some(Posed {
             build,
             vertices: skin(&self.builds[build], &matrices),
             epoch: self.epoch,
+            pose: *pose,
+            punch: self.punch,
         });
         Ok(())
     }
 
     /// The model between the last two ticks: interpolated when both drew the
-    /// same build in the same epoch and interpolation is on, otherwise the
-    /// latest tick's.
+    /// same animation in the same epoch and interpolation is on, otherwise
+    /// the latest tick's. Geometry switches select the current mesh at both
+    /// endpoints, never unrelated vertex arrays.
     pub fn frame(&self, alpha: f32, interpolation: bool) -> Option<MarioFrame<'_>> {
         let current = self.current.as_ref()?;
         let template = &self.builds[current.build].model;
@@ -766,7 +805,9 @@ impl<'a> MarioDrawer<'a> {
                 if interpolation
                     && alpha.is_finite()
                     && previous.build == current.build
-                    && previous.epoch == current.epoch =>
+                    && previous.epoch == current.epoch
+                    && previous.pose.animation.map(|a| a.entry)
+                        == current.pose.animation.map(|a| a.entry) =>
             {
                 lerp_vertices(
                     &previous.vertices,
@@ -1017,17 +1058,43 @@ mod tests {
         };
         assert_near(at(&drawer, 0.5, true), [67.5, 3.5, -0.5]);
         assert_near(at(&drawer, 0.5, false), [82.5, 3.5, -0.5]);
-        // A different build (standing) snaps.
+        // A geometry switch uses the new geometry at the previous transform.
         drawer
             .update(&pose(ACT_IDLE, [0; 3], [0.0; 3]), None)
             .unwrap();
-        assert_near(at(&drawer, 0.0, true), [5.0, 0.0, 0.0]);
+        assert_near(at(&drawer, 0.0, true), [35.0, 0.0, 0.0]);
+        assert_near(at(&drawer, 0.5, true), [20.0, 0.0, 0.0]);
         assert_eq!(drawer.builds(), 2);
         // Not drawn: no frame.
         let mut hidden = b;
         hidden.visible = false;
         drawer.update(&hidden, None).unwrap();
         assert!(drawer.frame(1.0, true).is_none());
+    }
+
+    #[test]
+    fn material_switches_keep_motion_but_animation_changes_and_reset_snap() {
+        let source = source();
+        let trig = tables();
+        let mut anims = animations(0);
+        anims.animations.push(anims.animations[0].clone());
+        let mut drawer = MarioDrawer::new(&source, &trig, &anims);
+        let a = pose(ACT_JUMP, [0; 3], [0.0; 3]);
+        let mut b = pose(ACT_JUMP, [0; 3], [30.0, 0.0, 0.0]);
+        // MirrorSetAlpha changes the draw-list key without changing its bones.
+        b.body.model_state = 0x180;
+        drawer.update(&a, None).unwrap();
+        drawer.update(&b, None).unwrap();
+        assert_eq!(drawer.builds(), 2);
+        let at = |d: &MarioDrawer<'_>, alpha| d.frame(alpha, true).unwrap().vertices[0][1].position;
+        assert_near(at(&drawer, 0.5), [67.5, 3.5, -0.5]);
+        b.animation.as_mut().unwrap().entry = 1;
+        b.position[0] = 60.0;
+        drawer.update(&b, None).unwrap();
+        assert_near(at(&drawer, 0.0), [112.5, 3.5, -0.5]);
+        drawer.reset();
+        drawer.update(&a, None).unwrap();
+        assert_near(at(&drawer, 0.0), [52.5, 3.5, -0.5]);
     }
 
     #[test]

@@ -3,7 +3,7 @@
 This is an early Bob-omb Battlefield exploration build. Mario's non-object
 movement and the original camera (Lakitu, the R-button Mario camera, C-Up
 first person) have native decomp comparison coverage. Missions, objects
-(including the cannon lid), camera cutscenes, the pause menu, water/cutscene
+(including the cannon lid), camera cutscenes, original pause behavior, water/cutscene
 actions, warps, saves, gamepad controls and audio are missing. Play stops on
 unsupported paths; R re-enters.
 
@@ -11,8 +11,8 @@ unsupported paths; R re-enters.
 
 Windows and Linux ZIP builds are attached to successful runs of the
 [Rust foundation workflow](https://github.com/esotericode/Rustario64/actions/workflows/rust.yml).
-Choose the latest successful run for the branch under test (the original
-camera arrived on `claude/keen-maxwell-bqppaj`), then
+Choose the latest successful run for the branch under test (the camera is now on `main`; this desktop increment is on
+`codex/animation-continuity-desktop`), then
 download `rustario64-windows-x86_64` or `rustario64-linux-x86_64` under Artifacts.
 GitHub's artifact ZIP contains the runtime ZIP; extract both layers. The build
 identifier is in the runtime folder's BUILD_INFO.txt.
@@ -21,7 +21,17 @@ Extract the whole ZIP. Keep your own ROM outside this folder. Only the original
 8 MiB US v1.0 ROM is supported, identified after byte-order normalization by
 SHA-1 `9bef1128717f958171a4afac3ed78ee2bb4e86ce` (Z64, V64 or N64).
 The build contains no ROM or game assets; it imports your ROM locally at launch.
-A launcher with ROM selection and settings is planned; this build uses a terminal.
+Open `rustario64-viewer.exe` on Windows or run `./rustario64-viewer` on Linux.
+Choose Browse, enter a local path, or drag the ROM into the launcher, then select
+Play. Unsupported or unreadable ROMs show an error and allow another selection.
+Remembering the path is opt-in and happens after successful validation/import.
+The launcher offers interpolation, fog, VSync, fullscreen and window-size choices.
+Settings are stored separately from content in `%APPDATA%/rustario64/settings.json`
+or `$XDG_CONFIG_HOME/rustario64/settings.json` (default `~/.config` on Linux).
+Invalid settings fall back to defaults with an error. Linux Browse needs a desktop
+file portal; path entry and drag/drop work without it.
+
+The following terminal entry points still work and enable recording:
 
 Windows (PowerShell, in the extracted folder):
 
@@ -49,11 +59,19 @@ crouches/ground-pounds (Z). The arrow keys are the C buttons: Left/Right rotate
 Lakitu, Down zooms out and Up back in; Up again looks through Mario's eyes (A,
 B or another C button returns). E is the R button (switch between the Lakitu
 and Mario cameras). R resets, M switches to the inspection camera (Mario
-pauses), Esc exits.
+pauses). Esc opens pause/settings; Esc again resumes. The menu has Resume,
+Restart course and Quit. Losing focus pauses until resumed and clears held keys
+and pending taps. No game frames run while paused/unfocused or inspecting; elapsed
+time and catch-up backlog from those periods are discarded. A running stall keeps
+its backlog, draining at most eight fixed ticks per displayed frame. The development
+pause freezes the camera too; the original game’s pause-camera behavior is pending.
 
 Presentation flags: `--msaa 4`, `--no-fog`, `--no-cull`, `--size 1280x960`,
-`--no-interpolation`. C/P/F toggle collision, placements and fog in the window.
-Simulation stays at 30 ticks per second. The settings menu is not implemented.
+`--no-interpolation`, `--fullscreen`, `--no-vsync`. C/P/F toggle collision, placements and fog in the window.
+Simulation stays at 30 ticks per second. Pause/settings can change interpolation,
+fog, VSync and fullscreen without altering game state or logs. Smooth presentation
+uses completed-frame interpolation with about one simulation tick of delay. Blink
+and model-detail switches no longer snap the entire animation to 30 Hz.
 
 ## Report a problem
 

@@ -499,3 +499,29 @@ Limits of this evidence:
 - Camera sounds are compared as recorded events in call order with Mario's;
   no audio runs.
 
+
+## Presentation regression and development pause — session 13
+
+Mario draw-list changes (especially the 64-tick blink cycle) previously disabled
+all model interpolation. The new owner-ROM regression evaluates 256 completed
+idle frames, adds an independently authored 30-unit-per-tick presentation offset,
+and changes among three LOD distances. Across 32 mesh switches it compares the
+half-frame vertices against independently posed endpoints in the current mesh.
+The test catches the old build-equality snap. Authored tests also cover a material
+change, a switch to previously inactive bones, animation-entry changes and reset.
+These are presentation checks; the per-frame native oracle remains the authority
+for simulation, camera and animation-frame advancement.
+
+The existing 3,600-frame held-control/native replay comparison now snaps
+presentation every 17 frames, checking every authoritative word and the input
+count remain unchanged. Desktop scheduler tests discard menu/focus/inspection
+time and an existing backlog, then resume from a fresh clock anchor. The pause
+freezes all original frame stages; it does not reproduce the original pause menu
+or its camera zoom. All settings in this increment are graphics-only.
+
+The windowed Xvfb/software-Vulkan smoke also checks invalid-ROM recovery, clean
+launcher/game close, a held tick count while paused, input clearing on resume,
+and live interpolation/fog/VSync changes. A fresh 68-frame owner-ROM recording
+with movement/jump inputs and a pause replays every Mario and camera word
+exactly via `tick_trace --inputs`. ROM content and exported state traces stay
+under ignored private paths; neither is distributed or staged.

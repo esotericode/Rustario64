@@ -690,7 +690,7 @@ fn played_sessions_with_the_camera_replay_exactly_in_the_decomp() {
         let initial = capture_game(session.game());
         let controls = held_controls(seed as u64, 600);
         let mut words = vec![initial];
-        for pad in &controls {
+        for (tick, pad) in controls.iter().enumerate() {
             if !session.step(pad) {
                 break;
             }
@@ -698,6 +698,21 @@ fn played_sessions_with_the_camera_replay_exactly_in_the_decomp() {
                 break;
             }
             words.push(capture_game(session.game()));
+            if tick % 17 == 0 {
+                // A desktop pause snaps presentation, never game state or the
+                // input stream. Subsequent frames still replay in native C.
+                let before = capture_game(session.game());
+                let count = session.inputs().len();
+                session.snap_presentation();
+                assert_eq!(capture_game(session.game()), before);
+                assert_eq!(session.inputs().len(), count);
+                let graphics = rustario64::presentation::GraphicsOptions::default();
+                assert_eq!(session.pose(0.0, graphics), session.pose(1.0, graphics));
+                assert_eq!(
+                    session.camera_view(0.0, graphics),
+                    session.camera_view(1.0, graphics)
+                );
+            }
         }
         let log = session.input_log("test", "synthetic", "playground");
         let log = InputLog::from_json(&log.to_json_pretty()).unwrap();

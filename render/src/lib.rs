@@ -2,6 +2,7 @@
 //! core; the core never depends on it. Rendering reads imported content and a
 //! presentation camera only, so graphics settings cannot alter gameplay state.
 pub mod camera;
+pub mod desktop;
 pub mod math;
 pub mod overlay;
 pub mod play;

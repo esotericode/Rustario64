@@ -42,12 +42,14 @@ What works now:
   cap, torso tilt, level of detail) as the original render pass does, skinned
   on the CPU and interpolated between ticks at any frame rate. Six switch
   configurations match triangle digests rebuilt from the pinned decomp source.
+- A local ROM-selection launcher, remembered-path opt-in, and Esc pause/settings
+  (interpolation, fog, VSync and fullscreen), with paused and unfocused time discarded.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
   **full-tick** and input-stage trace pairs.
 
 This is level exploration with Mario's movement and camera, not mission
 support: Mario has no shadow yet, and there are no objects (coins, enemies,
-trees, the cannon lid), camera cutscenes, pause menu, cutscene or water
+trees, the cannon lid), camera cutscenes, original pause behavior, cutscene or water
 actions, warps, deaths, or missions. Play stops where the port stops
 (unsupported paths, falling off the course); R re-enters.
 The comparisons are against the natively compiled decomp, not N64 execution.
@@ -102,9 +104,16 @@ schedules with identical tick records. This tests scaffolding, not Mario.
 The `Desktop runtime` jobs build the two Rust runtime binaries on Linux and
 Windows and upload `rustario64-linux-x86_64` / `rustario64-windows-x86_64` ZIPs
 as workflow artifacts. The C oracle, ROMs, caches and extracted content never
-ship. These are early terminal-launched test builds; a local ROM-selection GUI
-and in-game pause/settings menu are explicit early priorities and remain pending.
+ship. Open `rustario64-viewer` (double-click on Windows, or run it without arguments)
+for the local ROM launcher. CLI entry points remain available for diagnostics and recording.
 See [docs/PLAYTEST.md](docs/PLAYTEST.md) for commands, controls and missing features.
+
+Settings live in `%APPDATA%/rustario64/settings.json` on Windows and
+`$XDG_CONFIG_HOME/rustario64/settings.json` (or `~/.config/rustario64/settings.json`)
+on Linux, outside imported content. A ROM path is saved only when the launcher’s
+remember checkbox is selected and import succeeds. A stale path or invalid settings
+file leaves a usable launcher with an error. Linux’s native Browse dialog needs a
+desktop file portal; entering a path or dropping a file also works.
 
 Local runtime-only packaging (use `windows-x86_64` on Windows):
 
@@ -147,17 +156,19 @@ animations between the Rust port and the decomp C.
 ### View Bob-omb Battlefield
 
 ```sh
+# Local ROM launcher (no terminal arguments required in desktop bundles)
+cargo run --locked --release -p rustario64-render --bin rustario64-viewer
 # Offscreen PNG (works headless): views start, overview, summit, top
 cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
   screenshot /path/to/sm64.z64 --out private/bob.png --view start --size 1280x960
 # Window: WASD move, Q/E down/up, Shift faster, hold right mouse or arrows to look,
-# 1-4 presets, Esc quits
+# 1-4 presets, Esc pauses/settings
 cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
   view /path/to/sm64.z64
 ```
 
 Graphics-only flags: `--msaa 4`, `--no-fog`, `--no-cull`, `--size WxH`,
-`--no-interpolation`; inspection overlays: `--collision` (floors blue, walls
+`--no-interpolation`, `--fullscreen`, `--no-vsync`; inspection overlays: `--collision` (floors blue, walls
 red, ceilings yellow) and `--placements` (Mario start, script objects, macro
 objects, specials). In the window, C, P, and F toggle collision, placements, and
 fog. The viewer launches straight into BOB area 1 as a development entry point.
@@ -182,7 +193,11 @@ walk), Space is A (jump), J is B (punch, dive), K is Z (crouch, ground pound),
 the arrow keys are the C buttons (Left/Right rotate Lakitu, Down zooms out and
 Up back in, then Up enters first person; A, B or another C button leaves it), E
 is the R button (Lakitu or Mario camera), R re-enters the level, and M returns
-to the free camera (Mario pauses). Mario starts at the level script's start; he
+to the free camera (Mario pauses). Esc opens the pause/settings menu; Esc again
+resumes, and the menu has Restart and Quit. Losing focus also pauses and releases
+held inputs; resume explicitly after returning. Menu/unfocused time and pending
+catch-up ticks are discarded. This is a development pause: it freezes the entire
+frame, rather than implementing the original pause-camera adjustment. Mario starts at the level script's start; he
 and the original camera run the frame that is compared with the decomp, at the
 original 30 Hz. The window draws from the camera's position, focus, roll and
 field of view, interpolated between frames and snapped across cuts; Mario's
@@ -197,6 +212,10 @@ Mario is drawn with his model from the ROM, posed from each completed tick (he
 appears from his first tick on, as in the original, whose first frame renders
 after his first update). The original's levels of detail apply: moving Mario
 switches to the medium and low-detail bodies with his distance from the camera.
+Blinks, material switches and detail changes keep interpolating the skeleton using
+the newly selected mesh at both endpoints. Animation changes and level re-entry
+snap. Interpolation presents completed frames about one 30 Hz tick behind real time;
+it does not change input processing or simulation cadence.
 If his model cannot be imported, a red placeholder box is drawn instead. With
 a clean pinned decomp checkout, `python3 -I tools/check_mario_model_reference.py
 --rom /path/to/sm64.z64 --reference /path/to/sm64` re-derives the geo
@@ -289,7 +308,7 @@ holds the owner-ROM evidence.
 
 ## Next increment
 
-The D1 ROM launcher and D2 pause/settings menu for wider playtesting; then
+Physical-GPU Windows/Linux playtesting of the launcher and pause/settings; then
 Mario's original shadow and the first objects for BOB's first mission, with the
 camera cutscenes that mission needs. Original-execution traces remain the
 eventual authority. Skybox and placement models remain M1 work.

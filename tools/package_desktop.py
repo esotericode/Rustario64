@@ -18,6 +18,11 @@ FALLBACK_LICENSES = {
     ("khronos_api", "3.1.0"): [ROOT / "LICENSES/dependencies/khronos_api-3.1.0-APACHE.txt"],
     ("profiling", "1.0.18"): [ROOT / "LICENSES/dependencies/profiling-1.0.18-MIT.txt"],
     ("spirv", "0.4.0+sdk-1.4.341.0"): [ROOT / "LICENSES/dependencies/spirv-0.4.0-APACHE.txt"],
+    ("accesskit", "0.24.1"): [ROOT / "LICENSES/dependencies/accesskit-0.24.1-MIT.txt"],
+    **{(name, "0.36.2"): [ROOT / "LICENSES/dependencies/egui-0.36.2-MIT.txt"]
+       for name in ["ecolor", "egui", "egui-wgpu", "egui-winit", "emath", "epaint"]},
+    ("epaint_default_fonts", "0.36.2"): [ROOT / "LICENSES/dependencies/egui-0.36.2-MIT.txt",
+        *sorted((ROOT / "LICENSES/dependencies").glob("egui-fonts-0.36.2-*.txt"))],
 }
 NOTICES = ["LICENSE", "PROVENANCE.md", "docs/PLAYTEST.md",
            "LICENSES/sm64-CC0.txt", "LICENSES/sm64tools-MIT.txt"]
