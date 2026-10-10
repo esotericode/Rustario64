@@ -112,10 +112,11 @@ without a GPU or window.
 
 ## Build and test
 
-The project change counter starts at **0.0.1**. It appears in the running window
+The current project version is **0.0.2**; the change counter started at 0.0.1.
+It appears in the running window
 title, ROM launcher, pause/settings and `--version` output of all three binaries.
 Every committed project change, including documentation, must advance it with
-`python3 tools/project_version.py bump`; the next version is 0.0.2. The tool
+`python3 tools/project_version.py bump`; the next version is 0.0.3. The tool
 updates Cargo.toml, Cargo.lock and the plan's current-version header together.
 Patch/minor roll over at 100:
 0.0.99 → 0.1.0 and 0.99.99 → 1.0.0. Run
@@ -151,6 +152,11 @@ with Mesa's software Vulkan, `mesa-vulkan-drivers`). The viewer needs a Vulkan,
 Metal, DX12, or GL driver; on Linux the windowed mode also needs X11 or Wayland
 libraries (for example `libxkbcommon-x11-0` on X11).
 
+For renderer changes, also run `RUSTARIO64_REQUIRE_GPU=1 cargo test --locked
+-p rustario64-render --all-targets` in the default debug profile. This exercises
+GPU drawing with dependency assertions enabled, as in CI; optimized tests alone
+can miss lifecycle errors such as unconsumed egui texture updates.
+
 `demo` decodes an independently authored MIO0/BOB-shaped fixture and runs a
 ten-second synthetic counter/input replay at 30, 60, 120, and 144 Hz presentation
 schedules with identical tick records. This tests scaffolding, not Mario.
@@ -184,7 +190,7 @@ python tools/test_package_desktop.py
 ```
 
 The runtime ZIP/folder includes its project version (for example,
-`rustario64-0.0.1-linux-x86_64.zip`). The packager includes version/commit/target/compiler
+`rustario64-0.0.2-linux-x86_64.zip`). The packager includes version/commit/target/compiler
 in `BUILD_INFO.txt` and notices
 from the target-filtered Cargo dependency graph. It refuses an existing ZIP;
 use a fresh `--output` directory for another build.

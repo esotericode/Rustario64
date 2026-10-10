@@ -4,7 +4,7 @@ Read [PROJECT_PLAN.md](PROJECT_PLAN.md) before working. It defines the project s
 
 Every committed project change, including documentation, must advance the shared
 project version in `[workspace.package]` of Cargo.toml. The versioning feature
-starts at 0.0.1; the next change is 0.0.2. Before each subsequent change checkpoint,
+started at 0.0.1; read the current version from Cargo.toml. Before each change checkpoint,
 run `python3 tools/project_version.py bump` once. It updates Cargo.toml and the
 workspace entries in Cargo.lock and the plan's current-version header. Patch and
 minor roll over at 100: 0.0.99 becomes
@@ -22,3 +22,9 @@ Preserve original movement, collision, and timing. Keep simulation at the suppor
 Reference or adapt community work instead of guessing formats or reinventing established algorithms. Check source terms, pin revisions, preserve notices, and record provenance. Keep ROMs and ROM-derived assets out of version control. Temporary C integrations must have documented boundaries and a replacement plan; the intended engine and game runtime are Rust.
 
 Choose implementation details within these goals. Deliver small, usable increments; test changes meaningfully and update PROJECT_PLAN.md, build/run instructions, and provenance records as needed. Report what works, what was tested, what remains missing, and the next useful task. Distinguish level exploration, mission completion, and complete-course support.
+
+For renderer changes, run GPU tests in the default debug profile as well as any
+optimized checks. Set `RUSTARIO64_REQUIRE_GPU=1` so a missing adapter cannot hide
+the path under test. Release tests disable dependency debug assertions and do
+not replace the debug checks used by CI. Check the pushed Windows and Linux
+jobs before describing a new desktop build as verified.

@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-10
 
-Current project version: **0.0.1** (shared change counter, introduced in session 27).
+Current project version: **0.0.2** (shared change counter, introduced in session 27).
 
 Status: M0 complete. M1 imported level works: BOB's original terrain and textures import from the ROM and render through an optional wgpu viewer with collision/placement overlays. M2 in progress: Mario's complete tick (inputs, non-object actions, his object update and animation frame advance, with the ROM's animations) matches the natively compiled decomp per tick, and BOB's original camera (radial, R/close, C-Up, boss-fight modes, shakes, FOV and graph camera) runs with it in the original frame order, matching the decomp word for word per frame. The viewer's Mario mode drives that frame from keyboard or mapped gamepads and draws from the reference camera; recorded runs replay exactly against the decomp with its own camera. Mario's model and display lists import from the ROM and are posed from each tick as the original render pass does. D1 local ROM launcher and D2 development pause/settings are implemented, with a dedicated desktop entry point and ROM reselection; basic analog gamepad input is implemented; blink, LOD and animation/action switches preserve Mario's pose interpolation. Mario's original BOB shadow is implemented and interpolated independently. The original object system (pool, lists, the ROM's behavior scripts through a ported interpreter, object collision) runs in the frame with BOB's coins (yellow coins, every formation type, sparkles, collection), matching the decomp word for word per frame including every object; coins and sparkles are drawn from the ROM in viewer play with interpolated positions and a development overlay reading the original HUD coin count. BOB's twelve Bob-ombs now run from the ROM's scripts and animations (patrol, fuse, chase, explosion with its camera shake, coin loot, respawn, lava/death-plane deaths, Mario's damage knockback and kicks), matching the decomp word for word per frame, and are drawn with their skinned ROM models, fuse smoke, explosions and death smoke. Mario picks Bob-ombs up, carries, throws and drops them: his holding actions run with the hand position (HOLP) that his render pass now writes through his ROM model with the original matrix stack, compared word for word, and the held Bob-omb is drawn in his hands. Every other object behavior, King Bob-omb, cutscenes, other areas' camera modes and triggers, cutscene/water actions, warps and missions remain missing.
 Sessions 24–25 add King Bob-omb's standard movement and shared grab/release prerequisites, including heavy-object actions checked with the ROM's Mario animations. The boss itself remains disabled. Local Linux Intel GPU startup/drawing and recorded-run replay pass.
@@ -222,8 +222,8 @@ Before each implementation session, read this file and the repository's actual s
 Develop and test locally on the owner's machine, then commit and push verified source and documentation increments to GitHub. Keep the ROM, extracted assets, local packages, screenshots and private test artifacts excluded from publication.
 
 Every committed change to project code, tests, dependencies or documentation
-requires a new project version. Start at **0.0.1** for the versioning increment;
-the next checkpoint is **0.0.2**. Run `python3 tools/project_version.py bump`
+requires a new project version. The versioning increment started at **0.0.1**;
+read the current checkpoint from the header above. Run `python3 tools/project_version.py bump`
 once per coherent change checkpoint; it updates the single workspace version
 and all three local Cargo.lock entries. Patch/minor are base-100 counters:
 **0.0.99 → 0.1.0**, then **0.99.99 → 1.0.0**. This counts project changes rather
@@ -1188,6 +1188,30 @@ Every handoff should report the working result, commands actually run, missing f
   cleanly. Gameplay scope and authoritative simulation are unchanged.
 - **Next:** The next committed project change is 0.0.2. Continue the documented
   King Bob-omb integration, bump its checkpoint and rebuild local deliveries.
+
+### Session 28 — Windows CI and debug UI texture lifecycle fix (2026-10-10)
+
+- **Version/problem:** **0.0.2**. At 6c11dba, GitHub PR run 38070679953
+  failed both the Windows desktop job and the Linux headless job in the UI
+  resize regression. egui's debug assertion reported one unapplied texture delta.
+  The renderer uploaded updates and freed textures but left the commands in
+  FullOutput, whose texture delta asserts that it is empty when dropped.
+- **Result:** The shared UI painter now drains texture uploads before drawing
+  and drains releases after submission. The existing real GPU regression also
+  creates a texture and releases it on the following frame, checking that both
+  commands reach the painter. The acquired-target scissor fix remains covered.
+- **Local validation:** The old painter reproduces the identical CI panic in
+  the default debug profile on Intel Graphics (MTL). All 26 renderer/all-target
+  debug tests then pass with physical GPU access and the private owner-ROM test
+  enabled. Four version tests and four packaging tests pass; formatting and
+  workspace warnings-denied Clippy pass.
+  Prior optimized checks disabled the dependency assertion, so AGENTS.md and
+  README now require debug GPU checks for renderer changes. Check the published
+  Windows and Linux jobs before describing this new checkpoint as CI-verified.
+- **Delivery/next:** Push the source and documentation checkpoint and rebuild
+  the local Linux runtime. The next committed change is 0.0.3. Windows human
+  playtesting remains separate from hosted tests/build/package checks. Continue
+  King Bob-omb's documented integration; ROM/assets and test artifacts stay private.
 
 ### Bob-omb Battlefield acceptance tracker
 

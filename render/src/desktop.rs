@@ -177,7 +177,7 @@ fn paint_ui(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     target: &wgpu::TextureView,
-    output: egui::FullOutput,
+    mut output: egui::FullOutput,
 ) {
     let jobs = context.tessellate(output.shapes, output.pixels_per_point);
     // Window size changes can arrive before the surface's resize event.
@@ -187,9 +187,11 @@ fn paint_ui(
         size_in_pixels: [target.texture().width(), target.texture().height()],
         pixels_per_point: output.pixels_per_point,
     };
-    for (id, deltas) in &output.textures_delta.set {
+    // Consume each applied update: egui checks for pending deltas on drop in
+    // debug builds, even when the renderer has already uploaded their data.
+    for (id, deltas) in output.textures_delta.set.drain() {
         for delta in deltas {
-            renderer.update_texture(device, queue, *id, delta);
+            renderer.update_texture(device, queue, id, &delta);
         }
     }
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -213,8 +215,8 @@ fn paint_ui(
         renderer.render(&mut pass.forget_lifetime(), &jobs, &screen);
     }
     queue.submit(commands.into_iter().chain([encoder.finish()]));
-    for id in &output.textures_delta.free {
-        renderer.free_texture(id);
+    for id in output.textures_delta.free.drain() {
+        renderer.free_texture(&id);
     }
 }
 
@@ -236,6 +238,12 @@ mod tests {
         };
         eprintln!("UI resize regression on {}", adapter.get_info().name);
         let context = egui::Context::default();
+        let mut temporary_texture = Some(context.load_texture(
+            "UI texture lifecycle regression",
+            egui::ColorImage::new([1, 1], vec![egui::Color32::WHITE]),
+            egui::TextureOptions::default(),
+        ));
+        let temporary_id = temporary_texture.as_ref().unwrap().id();
         let mut renderer = egui_wgpu::Renderer::new(
             &device,
             crate::CAPTURE_FORMAT,
@@ -280,6 +288,11 @@ mod tests {
                 },
             );
             assert!(!output.shapes.is_empty());
+            if temporary_texture.is_some() {
+                assert!(output.textures_delta.set.contains_key(&temporary_id));
+            } else if window == [800, 720] {
+                assert!(output.textures_delta.free.contains(&temporary_id));
+            }
             paint_ui(
                 &mut renderer,
                 &context,
@@ -289,6 +302,8 @@ mod tests {
                 output,
             );
             device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+            // The following frame must consume the corresponding free command.
+            drop(temporary_texture.take());
         }
     }
 
