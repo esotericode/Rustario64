@@ -204,6 +204,136 @@ fn shade_combiner_draws_vertex_colors_and_culls_back_faces() {
 }
 
 #[test]
+fn dynamic_object_batches_grow_shrink_empty_and_reappear_without_stale_geometry() {
+    let Some(mut renderer) = renderer(options()) else {
+        return;
+    };
+    let original = triangle([255, 0, 0, 255], false);
+    let model = VisualModel {
+        textures: vec![],
+        batches: vec![DrawBatch {
+            material: material(SHADE),
+            vertices: original.clone(),
+            source: 0,
+        }],
+    };
+    renderer.load_model(&model);
+    let aside: Vec<_> = original
+        .iter()
+        .map(|v| VisualVertex {
+            position: [v.position[0] + 3000.0, v.position[1], v.position[2]],
+            ..*v
+        })
+        .collect();
+    // Growing to two instances must allocate a larger buffer.
+    let mut both = aside.clone();
+    both.extend(&original);
+    renderer.update_dynamic_vertices(0, &[both]);
+    assert_eq!(
+        centre(&renderer.capture(64, 64, &camera()).unwrap(), 64),
+        [255, 0, 0, 255]
+    );
+    // The old second triangle must stop drawing when the batch shrinks.
+    renderer.update_dynamic_vertices(0, &[aside]);
+    assert_eq!(
+        centre(&renderer.capture(64, 64, &camera()).unwrap(), 64),
+        [0, 0, 255, 255]
+    );
+    renderer.update_dynamic_vertices(0, &[vec![]]);
+    assert_eq!(
+        centre(&renderer.capture(64, 64, &camera()).unwrap(), 64),
+        [0, 0, 255, 255]
+    );
+    renderer.update_dynamic_vertices(0, &[original]);
+    assert_eq!(
+        centre(&renderer.capture(64, 64, &camera()).unwrap(), 64),
+        [255, 0, 0, 255]
+    );
+}
+
+#[test]
+#[ignore = "requires RUSTARIO64_ROM and a GPU adapter; draws every ROM coin/sparkle case"]
+fn rom_coins_and_sparkles_draw_as_camera_facing_textured_cutouts() {
+    use rustario64::{
+        import::{engine, objects, rom::Rom},
+        presentation::objects::ObjectDrawer,
+        simulation::{
+            mario::constants as c,
+            object::{
+                ObjectId,
+                render::{RenderNodeKind, VisibleObject},
+            },
+        },
+    };
+    use rustario64_render::play::{ObjectModelView, billboard_basis};
+    let Some(mut renderer) = renderer(options()) else {
+        return;
+    };
+    let path = std::env::var_os("RUSTARIO64_ROM").expect("set RUSTARIO64_ROM");
+    let rom = Rom::open(std::path::Path::new(&path)).unwrap();
+    let content = objects::import(&rom).unwrap();
+    let models = content.models(&[]);
+    let trig = engine::trig_tables(&rom).unwrap();
+    let mut drawer = ObjectDrawer::new(&content, &trig);
+    let mut view = ObjectModelView::default();
+    for model in [
+        c::MODEL_YELLOW_COIN,
+        c::MODEL_YELLOW_COIN_NO_SHADOW,
+        c::MODEL_SPARKLES,
+    ] {
+        let traversal = models.traversal(model as u16).unwrap();
+        let (node, switch) = traversal
+            .nodes
+            .iter()
+            .enumerate()
+            .find(|(_, n)| matches!(n.kind, RenderNodeKind::AnimStateSwitch { .. }))
+            .unwrap();
+        for &child in &switch.children {
+            drawer
+                .update(vec![VisibleObject {
+                    id: ObjectId(1),
+                    generation: 1,
+                    behavior: 0,
+                    model: model as u16,
+                    pos: [0.0, -32.0, 0.0],
+                    angle: [0; 3],
+                    scale: [1.0; 3],
+                    billboard: true,
+                    cases: vec![(node, child)],
+                }])
+                .unwrap();
+            for camera in [
+                FlyCamera::looking_at([0.0, 0.0, 400.0], [0.0; 3]),
+                FlyCamera::looking_at([400.0, 0.0, 0.0], [0.0; 3]),
+            ] {
+                view.show(
+                    &mut renderer,
+                    drawer.frame(1.0, false, billboard_basis(&camera)),
+                );
+                let pixels = renderer.capture(128, 128, &camera).unwrap();
+                let changed = pixels
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .filter(|p| **p != [0, 0, 255, 255])
+                    .count();
+                assert!(
+                    changed > 0 && changed < 1600,
+                    "model {model}, child {child}: {changed} pixels"
+                );
+                // Transparent corners must leave the background visible.
+                assert_eq!(&pixels[..4], &[0, 0, 255, 255]);
+            }
+        }
+    }
+    view.show(&mut renderer, vec![]);
+    assert_eq!(
+        centre(&renderer.capture(128, 128, &camera()).unwrap(), 128),
+        [0, 0, 255, 255]
+    );
+}
+
+#[test]
 fn modulate_combiner_multiplies_texture_by_shade_and_cutout_discards() {
     let Some(mut renderer) = renderer(options()) else {
         return;

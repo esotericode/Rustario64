@@ -1,6 +1,6 @@
 # Provenance ledger
 
-Checked 2026-10-08; updated 2026-10-10 (session 17: object system and BOB coins). Only the exact revisions below supplied format knowledge or
+Checked 2026-10-08; updated 2026-10-10 (session 18: coin/sparkle presentation). Only the exact revisions below supplied format knowledge or
 adaptations in this increment. Full notices are retained in LICENSES/.
 No ROM, ROM-derived assets, original terrain/animation files, or full C runtime
 is tracked or published. Owner-ROM validation exports are local and ignored.
@@ -182,3 +182,19 @@ behavior-data, object-render and boundary units, the snapshot of every object,
 and the two checkers. Behavior scripts, presets and models are read from the
 owner ROM at import and never written to disk; the repository stores only
 ranges, addresses, counts and SHA-1s. No new dependency is added.
+
+
+### Coin and sparkle drawing — session 18
+
+`src/presentation/objects.rs` follows the same pinned CC0
+`src/game/rendering_graph_node.c` object placement/switch traversal and
+`src/engine/math_util.c` billboard/scale conventions, using the imported
+`actors/coin/geo.inc.c`, `actors/sparkle/geo.inc.c` and their display lists and
+textures from the owner's ROM. No additional upstream source is vendored.
+`render/src/play.rs` supplies the displayed camera axes and authored egui coin
+counter; `render/src/renderer.rs` supplies authored dynamic-buffer updates.
+The HUD counter reads the original values already translated from
+`src/game/level_update.c`; the typography is authored and does not reproduce
+`hud.c` or its glyph assets. Pool lifetime tokens and interpolation/cache logic
+are authored presentation bookkeeping. Existing CC0/MIT notices apply; all ROM
+models, decoded pixels, test images and recordings remain private.

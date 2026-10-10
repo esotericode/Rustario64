@@ -57,7 +57,8 @@ What works now:
   sparkles, and coin collection. **Complete frames with objects match the decomp
   word for word**, including every object's fields, the lists and the free list
   (5,400 authored frames in CI, 9,600 on BOB's coins with your ROM). In the
-  viewer, Mario collects BOB's act-1 coins, but they are not drawn yet.
+  viewer, Mario sees and collects BOB's act-1 coins with their ROM models,
+  animated sparkles and a coin counter.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
   **full-tick** and input-stage trace pairs.
 
@@ -199,9 +200,13 @@ objects, specials). In the window, C, P, and F toggle collision, placements, and
 fog. The viewer launches straight into BOB area 1 as a development entry point.
 The free camera is a presentation-only inspection camera, not the original game
 camera. The sky is a placeholder color until the skybox is imported; trees,
-coins, enemies, and other objects are not drawn yet (their painted ground
-shadows are terrain). In Mario mode BOB's act-1 coins are simulated and can
-be collected; they are not drawn yet.
+enemies, and other unported objects are not drawn yet (their painted ground
+shadows are terrain). In Mario mode BOB's act-1 coins and collection sparkles
+are drawn from their ROM models, facing the displayed camera. Coin positions
+interpolate between completed ticks; the original texture-frame switches stay
+at 30 Hz. The window shows the original HUD coin value in a development text
+overlay. Coin shadows and original HUD glyphs remain pending. Offscreen
+`--mario-ticks` images include coins/sparkles; the text overlay is window-only.
 
 #### Move Mario
 
@@ -344,9 +349,9 @@ is never spawned; it is listed in `AreaObjects::skipped` with the reason.
 
 ## Next increment
 
-Physical-GPU Windows/Linux playtesting continues. Draw the coins (their ROM
-models, billboarded by animation state) and a coin counter in the viewer,
-then port the first mission's actors (King Bob-omb, Bob-ombs, the star) with
+Physical-GPU Windows/Linux playtesting continues. Coin/sparkle drawing and the
+coin counter now work. Port the first mission's actors (King Bob-omb, Bob-ombs,
+the star) with
 the camera cutscenes that mission needs. Original-execution traces remain the
 eventual authority. Skybox and placement models remain M1 work.
 

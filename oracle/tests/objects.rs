@@ -459,3 +459,64 @@ fn bob_coins_match_the_decomp_with_rom_data() {
     );
     assert!(cov.golden_sparkles > 0 && cov.coin_sparkles > 0);
 }
+
+#[test]
+#[ignore = "requires RUSTARIO64_ROM; drawing cannot change any compared frame word"]
+fn drawing_bob_coins_and_sparkles_preserves_every_authoritative_word() {
+    use rustario64::{
+        content::Act,
+        import::{animation, bob, engine, objects, rom::Rom},
+        play::{Pad, Session},
+        presentation::objects::{BillboardBasis, ObjectDrawer},
+        simulation::object::render::visible_objects,
+    };
+    let path = std::env::var_os("RUSTARIO64_ROM").expect("set RUSTARIO64_ROM");
+    let rom = Rom::open(std::path::Path::new(&path)).unwrap();
+    let imported = bob::import(&rom).unwrap();
+    let world =
+        rustario64::simulation::collision::CollisionWorld::load_area_terrain(&imported.collision)
+            .unwrap();
+    let trig = engine::trig_tables(&rom).unwrap();
+    let anims = animation::mario_animations(&rom).unwrap();
+    let content = objects::bob(&rom, &imported.level, Act::new(1).unwrap()).unwrap();
+    let node = imported.visual.as_ref().unwrap().camera.unwrap();
+    let mut entry = GameEntry::script_start(&imported.level, &node).unwrap();
+    let coin = content
+        .area
+        .macros
+        .iter()
+        .find(|e| e.behavior == content.content.scripts.address(Behavior::YellowCoin))
+        .unwrap();
+    entry.mario.spawn =
+        rustario64::simulation::mario::core::SpawnPoint::from_level_script(1, 1, 0, coin.pos);
+    let mut session = Session::new(&world, &trig, &anims, content.level_objects(), entry);
+    let mut drawer = ObjectDrawer::new(&content.content, &trig);
+    let basis = BillboardBasis {
+        right: [1.0, 0.0, 0.0],
+        up: [0.0, 1.0, 0.0],
+        toward: [0.0, 0.0, 1.0],
+    };
+    let mut visible = 0;
+    for tick in 0..120 {
+        assert!(session.step(&Pad::default()), "{:?}", session.stopped());
+        let before = rustario64_oracle::camera_trace::capture_game(session.game());
+        let objects = visible_objects(session.world(), &session.game().camera.graph);
+        visible += objects.len();
+        drawer.update(objects).unwrap();
+        for alpha in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            for interpolation in [false, true] {
+                let _ = drawer.frame(alpha, interpolation, basis);
+            }
+        }
+        if tick % 17 == 0 {
+            drawer.snap();
+        }
+        assert_eq!(
+            before,
+            rustario64_oracle::camera_trace::capture_game(session.game())
+        );
+    }
+    assert!(visible > 0, "no visible objects drawn");
+    assert!(session.world().hud.coins >= 1);
+    assert_eq!(session.world().hud.coins, session.mario().num_coins);
+}

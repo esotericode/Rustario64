@@ -10,6 +10,7 @@ use rustario64::{
     },
     play::CameraView,
     presentation::mario::MarioFrame,
+    presentation::objects::{BillboardBasis, ObjectFrame},
     presentation::shadow::ShadowFrame,
 };
 use std::{collections::HashMap, f32::consts::PI};
@@ -102,6 +103,70 @@ impl ShadowModelView {
     }
 }
 
+/// Camera axes before projection/screen roll, for mtxf_billboard's roll 0.
+pub fn billboard_basis(camera: &FlyCamera) -> BillboardBasis {
+    let right = camera.right();
+    let f = camera.forward();
+    BillboardBasis {
+        right,
+        up: [
+            right[1] * f[2] - right[2] * f[1],
+            right[2] * f[0] - right[0] * f[2],
+            right[0] * f[1] - right[1] * f[0],
+        ],
+        toward: f.map(|v| -v),
+    }
+}
+
+#[derive(Default)]
+pub struct ObjectModelView {
+    uploaded: HashMap<usize, usize>,
+}
+
+impl ObjectModelView {
+    pub fn show(&mut self, renderer: &mut Renderer, frames: Vec<ObjectFrame<'_>>) {
+        for &index in self.uploaded.values() {
+            renderer.set_visible(index, false);
+        }
+        for frame in frames {
+            let index = *self
+                .uploaded
+                .entry(frame.build)
+                .or_insert_with(|| renderer.add_model(frame.template));
+            renderer.update_dynamic_vertices(index, &frame.vertices);
+            renderer.set_visible(index, true);
+        }
+    }
+}
+
+/// The simulated HUD value, including its original every-other-frame count-up.
+pub fn coin_count(hud: &rustario64::simulation::hud::HudDisplay) -> Option<i16> {
+    use rustario64::simulation::mario::constants::HUD_DISPLAY_FLAG_COIN_COUNT;
+    (hud.flags & HUD_DISPLAY_FLAG_COIN_COUNT as i16 != 0).then_some(hud.coins)
+}
+
+/// Development HUD typography; original glyphs and the rest of hud.c are pending.
+pub fn show_coin_counter(ctx: &egui::Context, hud: &rustario64::simulation::hud::HudDisplay) {
+    if let Some(coins) = coin_count(hud) {
+        egui::Area::new(egui::Id::new("coin counter"))
+            .anchor(egui::Align2::RIGHT_TOP, [-24.0, 20.0])
+            .interactable(false)
+            .show(ctx, |ui| {
+                egui::Frame::new()
+                    .fill(egui::Color32::from_black_alpha(150))
+                    .corner_radius(8.0)
+                    .inner_margin(10.0)
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(format!("Coins × {coins}"))
+                                .size(26.0)
+                                .color(egui::Color32::from_rgb(255, 222, 64)),
+                        );
+                    });
+            });
+    }
+}
+
 /// A placeholder for Mario until his model is imported: a box the size of his
 /// hitbox (radius 37, height 160), red with a blue front and nose so his
 /// facing shows. Model space: feet at the origin, facing +Z.
@@ -170,6 +235,48 @@ pub fn marker() -> VisualModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn coin_overlay_reads_the_hud_flags_and_count_and_billboards_ignore_screen_roll() {
+        use rustario64::simulation::{
+            hud::HudDisplay, mario::constants::HUD_DISPLAY_FLAG_COIN_COUNT,
+        };
+        let mut hud = HudDisplay {
+            coins: 7,
+            ..Default::default()
+        };
+        assert_eq!(coin_count(&hud), None);
+        hud.flags = HUD_DISPLAY_FLAG_COIN_COUNT as i16;
+        assert_eq!(coin_count(&hud), Some(7));
+        let ctx = egui::Context::default();
+        let mut text = String::new();
+        // An Area establishes its anchored position on the first UI frame.
+        for _ in 0..2 {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |root| {
+                show_coin_counter(root.ctx(), &hud);
+            });
+            output.textures_delta.clear();
+            for shape in output.shapes {
+                if let egui::epaint::Shape::Text(t) = shape.shape {
+                    text.push_str(t.galley.text());
+                }
+            }
+        }
+        assert!(text.contains("Coins × 7"), "HUD text: {text}");
+
+        let camera = FlyCamera::looking_at([1000.0, 500.0, 200.0], [0.0; 3]);
+        let base = billboard_basis(&camera);
+        let rolled = billboard_basis(&FlyCamera {
+            roll: 1.3,
+            ..camera
+        });
+        assert_eq!(base.right, rolled.right);
+        assert_eq!(base.up, rolled.up);
+        let dot = |a: [f32; 3], b: [f32; 3]| (0..3).map(|i| a[i] * b[i]).sum::<f32>();
+        assert!(dot(base.up, base.right).abs() < 1e-5);
+        assert!(dot(base.up, camera.forward()).abs() < 1e-5);
+        assert!((dot(base.up, base.up) - 1.0).abs() < 1e-5);
+    }
 
     #[test]
     fn reference_view_looks_from_lakitu_at_the_focus_with_the_frustum() {

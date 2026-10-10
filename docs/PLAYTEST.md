@@ -3,8 +3,11 @@
 This is an early Bob-omb Battlefield exploration build. Mario's non-object
 movement and the original camera (Lakitu, the R-button Mario camera, C-Up
 first person) have native decomp comparison coverage. BOB's act-1 coins
-(yellow coins and coin formations) are simulated and can be collected, but are
-not drawn yet. Missions, every other object (including the cannon lid), camera
+(yellow coins and coin formations) are drawn from the ROM and can be collected.
+Collection sparkles animate, and the upper-right development counter reads the
+original HUD value (which counts up every other tick). Coin positions interpolate;
+texture animation stays at 30 Hz. Coin shadows and original HUD typography are
+pending. Missions, every other object (including the cannon lid), camera
 cutscenes, original pause behavior, water/cutscene actions, warps, saves,
 gamepad controls and audio are missing. Play stops on
 unsupported paths; R re-enters.
@@ -13,8 +16,8 @@ unsupported paths; R re-enters.
 
 Windows and Linux ZIP builds are attached to successful runs of the
 [Rust foundation workflow](https://github.com/esotericode/Rustario64/actions/workflows/rust.yml).
-Choose the latest successful run for the branch under test (the camera is now on `main`; this desktop increment is on
-`codex/animation-continuity-desktop`), then
+Choose the latest successful run for the branch under test (this coin drawing
+increment is on `codex/bob-coin-presentation`), then
 download `rustario64-windows-x86_64` or `rustario64-linux-x86_64` under Artifacts.
 GitHub's artifact ZIP contains the runtime ZIP; extract both layers. The build
 identifier is in the runtime folder's BUILD_INFO.txt.
@@ -87,3 +90,12 @@ that developers can replay against the reference. Review a log before sharing;
 it contains player controls and ROM identity. Do not share your ROM, extracted
 assets, import caches, or ROM-derived state traces.
 Original-execution traces remain necessary before claiming N64 fidelity.
+
+## Coin drawing checks
+
+In Mario mode, approach a yellow coin or a ground coin formation. The coin
+vanishes on collection, sparkles briefly appear, and the displayed counter
+counts up. Check at 60 Hz and higher with interpolation on/off, then pause,
+resume, change focus, toggle M and restart: objects must not streak from old
+positions or reappear after collection. Missing actors are listed by the
+importer; this remains exploration, not a completed mission.

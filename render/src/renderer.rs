@@ -306,6 +306,30 @@ impl Renderer {
         }
     }
 
+    /// Repeat a cached object template for a variable number of instances.
+    /// Buffers grow when needed and retain capacity when objects disappear.
+    pub fn update_dynamic_vertices(&mut self, model: usize, vertices: &[Vec<VisualVertex>]) {
+        let Some((_, batches)) = self.models.get_mut(model) else {
+            return;
+        };
+        for batch in batches {
+            let list = vertices.get(batch.source).map_or(&[][..], Vec::as_slice);
+            let bytes = pack_vertices(list);
+            if bytes.len() as u64 > batch.vertices.size() {
+                batch.vertices = self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("object instances"),
+                    size: (bytes.len() as u64).next_power_of_two(),
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+            }
+            if !bytes.is_empty() {
+                self.queue.write_buffer(&batch.vertices, 0, &bytes);
+            }
+            batch.count = list.len() as u32;
+        }
+    }
+
     /// Upload a model's textures and batches; returns its index (initially visible).
     pub fn add_model(&mut self, model: &VisualModel) -> usize {
         let views: Vec<_> = model

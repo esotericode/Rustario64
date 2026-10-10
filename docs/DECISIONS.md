@@ -760,3 +760,34 @@ original view test has no aspect term).
 compared, but `spawn_particle` and the particle behaviors are not ported, on
 either side. The 100-coin star is recorded as an unsupported event, like
 other unported outside calls.
+
+
+## Coin presentation — 2026-10-10 (session 18)
+
+`presentation::objects::ObjectDrawer` reads `visible_objects` after the
+simulation's authoritative render traversal. Switch children stay at the
+original tick phase; only position, scale and wrapped angles interpolate.
+Coin and sparkle geo layouts/display lists/textures build from the already
+mapped main-script segments. Unsupported drawing callbacks produce an import
+error; coin GEO_SHADOW is explicitly deferred. No additional render-frame
+callbacks or animation-state writes enter gameplay.
+
+Templates are cached by model and selected switch children; all instances of
+each cutout template share an upload. Dynamic vertex buffers grow and update
+their actual draw counts on shrink/empty frames. This grouping is intended for
+the current alpha-tested coin/sparkle subset; ordered translucent actors will
+need their own draw ordering. Billboards use the displayed camera's unrolled
+axes, equivalent to the original object's `mtxf_billboard` with camera-node
+roll 0, then receive screen roll through the projection/view as the scene does.
+
+Pool allocation increments a separate presentation lifetime token per slot.
+It never feeds scripts, collision, RNG, gameplay handles or reference state
+words. It prevents interpolation between two objects of the same behavior
+allocated in the same slot. Missing/reappearing objects snap; entry clears the
+snapshot history, and pause/focus/inspection boundaries hold the current pose.
+
+The window overlay reads `StepWorld::hud.coins` and
+`HUD_DISPLAY_FLAG_COIN_COUNT`, preserving the simulated counter's original
+count-up. Its egui typography is development presentation; original HUD glyphs,
+coin shadows, remaining HUD elements and audio playback are still pending.
+Offscreen screenshots draw the same objects but omit the window text overlay.

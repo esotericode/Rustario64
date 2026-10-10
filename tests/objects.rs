@@ -163,3 +163,72 @@ fn bob_act_1_spawns_its_coins_and_records_the_rest() {
     // The HUD's counter has caught up (one step every other frame).
     assert_eq!(session.world().hud.coins, 1);
 }
+
+#[test]
+#[ignore = "requires RUSTARIO64_ROM; ROM coin/sparkle display lists and textures"]
+fn every_coin_and_sparkle_case_builds_from_the_rom() {
+    use rustario64::{
+        presentation::objects::{BillboardBasis, ObjectDrawer},
+        simulation::object::{
+            ObjectId,
+            render::{RenderNodeKind, VisibleObject},
+        },
+    };
+    let rom = rom().expect("set RUSTARIO64_ROM");
+    let content = objects::import(&rom).unwrap();
+    let models = content.models(&[]);
+    let trig = engine::trig_tables(&rom).unwrap();
+    let mut drawer = ObjectDrawer::new(&content, &trig);
+    let basis = BillboardBasis {
+        right: [1.0, 0.0, 0.0],
+        up: [0.0, 1.0, 0.0],
+        toward: [0.0, 0.0, 1.0],
+    };
+    for (model, cases, textures) in [
+        (c::MODEL_YELLOW_COIN, 8, 4),
+        (c::MODEL_YELLOW_COIN_NO_SHADOW, 8, 4),
+        (c::MODEL_SPARKLES, 12, 6),
+    ] {
+        let traversal = models.traversal(model as u16).unwrap();
+        let (node, switch) = traversal
+            .nodes
+            .iter()
+            .enumerate()
+            .find(|(_, n)| matches!(n.kind, RenderNodeKind::AnimStateSwitch { .. }))
+            .unwrap();
+        assert_eq!(switch.children.len(), cases);
+        let mut sources = std::collections::BTreeSet::new();
+        for &child in &switch.children {
+            drawer
+                .update(vec![VisibleObject {
+                    id: ObjectId(1),
+                    generation: 1,
+                    behavior: 0,
+                    model: model as u16,
+                    pos: [0.0; 3],
+                    angle: [0; 3],
+                    scale: [1.0; 3],
+                    billboard: true,
+                    cases: vec![(node, child)],
+                }])
+                .unwrap();
+            let frames = drawer.frame(1.0, false, basis);
+            assert_eq!(frames.len(), 1);
+            let template = frames[0].template;
+            assert_eq!(template.triangle_count(), 2);
+            assert_eq!(template.textures.len(), 1);
+            sources.insert(template.textures[0].source);
+            assert!(template.batches.iter().all(|b| b.material.depth_test));
+            if model != c::MODEL_SPARKLES {
+                assert!(template.batches.iter().all(|b| b.material.lights.is_none()));
+            }
+            assert_eq!(frames[0].vertices[0], template.batches[0].vertices);
+        }
+        assert_eq!(
+            sources.len(),
+            textures,
+            "distinct texture frames for model {model}"
+        );
+    }
+    assert_eq!(drawer.builds(), 28);
+}

@@ -220,6 +220,7 @@ pub fn render_objects(w: &mut StepWorld<'_>, camera: &GraphCamera) {
 #[derive(Debug, Clone, PartialEq)]
 pub struct VisibleObject {
     pub id: ObjectId,
+    pub generation: u64,
     /// The object's behavior script (segmented), to tell a reused slot apart.
     pub behavior: u32,
     pub model: u16,
@@ -301,6 +302,7 @@ pub fn visible_objects(w: &StepWorld<'_>, camera: &GraphCamera) -> Vec<VisibleOb
             }
             out.push(VisibleObject {
                 id,
+                generation: w.objects.generation(id),
                 behavior: o.behavior,
                 model,
                 pos: o.gfx.pos,

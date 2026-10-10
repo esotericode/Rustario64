@@ -306,6 +306,8 @@ pub struct Links {
 #[derive(Debug, Clone)]
 pub struct ObjectPool {
     slots: Vec<Object>,
+    /// Presentation lifetime tokens. Never read by gameplay or reference traces.
+    generations: Vec<u64>,
     links: Vec<Links>,
     heads: [Links; OBJECT_LIST_COUNT],
     /// gFreeObjectList.next.
@@ -353,6 +355,7 @@ impl ObjectPool {
         }
         Self {
             slots: vec![slot; OBJECT_POOL_CAPACITY],
+            generations: vec![0; OBJECT_POOL_CAPACITY],
             links,
             heads,
             free: Some(ObjectId(0)),
@@ -446,6 +449,7 @@ impl ObjectPool {
     /// children only orders drawing.)
     fn try_allocate(&mut self, list: ObjectList) -> Option<ObjectId> {
         let id = self.free?;
+        self.generations[id.slot()] = self.generations[id.slot()].wrapping_add(1);
         self.free = match self.links[id.slot()].next {
             Some(Node::Slot(next)) => Some(next),
             None => None,
@@ -460,6 +464,11 @@ impl ObjectPool {
         self.links_mut(last).next = Some(Node::Slot(id));
         self.links_mut(head).prev = Some(Node::Slot(id));
         Some(id)
+    }
+
+    /// Distinguish successive occupants of the same slot when interpolating.
+    pub fn generation(&self, id: ObjectId) -> u64 {
+        self.generations[id.slot()]
     }
 
     /// deallocate_object: unlink the slot and push it on the free list.

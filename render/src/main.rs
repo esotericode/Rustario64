@@ -19,9 +19,13 @@ use rustario64::{
     presentation::{
         GraphicsOptions,
         mario::{MarioDrawer, shadow_origin},
+        objects::ObjectDrawer,
         shadow::{ShadowDrawer, player_shadow},
     },
-    simulation::{collision::CollisionWorld, game::GameEntry, math::TrigTables},
+    simulation::{
+        collision::CollisionWorld, game::GameEntry, math::TrigTables,
+        object::render::visible_objects,
+    },
 };
 use rustario64_render::{
     RenderOptions, Renderer, camera,
@@ -263,6 +267,54 @@ impl MarioModel {
     }
 }
 
+/// Coin and sparkle models share cached templates across all instances.
+struct ObjectDrawing {
+    drawer: ObjectDrawer<'static>,
+    view: present::ObjectModelView,
+}
+
+impl ObjectDrawing {
+    fn new(level: &Level, session: &Session<'_>) -> Self {
+        let mut drawing = Self {
+            drawer: ObjectDrawer::new(&level.objects.content, level.trig),
+            view: present::ObjectModelView::default(),
+        };
+        drawing.tick(session);
+        drawing
+    }
+
+    fn tick(&mut self, session: &Session<'_>) {
+        let objects = visible_objects(session.world(), &session.game().camera.graph);
+        if let Err(error) = self.drawer.update(objects) {
+            eprintln!("warning: object models could not be built: {error}");
+            // Avoid retaining stale coins after a failed presentation import.
+            self.drawer.reset();
+        }
+    }
+
+    fn reset(&mut self, session: &Session<'_>) {
+        self.drawer.reset();
+        self.tick(session);
+    }
+
+    fn show(
+        &mut self,
+        renderer: &mut Renderer,
+        camera: &FlyCamera,
+        alpha: f32,
+        graphics: GraphicsOptions,
+    ) {
+        self.view.show(
+            renderer,
+            self.drawer.frame(
+                alpha,
+                graphics.interpolation,
+                present::billboard_basis(camera),
+            ),
+        );
+    }
+}
+
 /// Model indices in the renderer: terrain, collision overlay, placement
 /// markers, Mario.
 const TERRAIN: usize = 0;
@@ -398,6 +450,7 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
                 }
             };
             let mut model = MarioModel::new(&level, &session, &follow(&session)?);
+            let mut objects = ObjectDrawing::new(&level, &session);
             let hold_up = Pad {
                 up: true,
                 ..Pad::default()
@@ -406,6 +459,7 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
                 if !session.step(&hold_up) {
                     break;
                 }
+                objects.tick(&session);
                 if let Some(model) = model.as_mut() {
                     model.tick(&session, &follow(&session)?);
                 }
@@ -422,6 +476,12 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
                 );
             }
             println!("Mario: {}", describe(&session));
+            objects.show(&mut renderer, &follow(&session)?, 1.0, graphics);
+            println!(
+                "Objects: {} cached builds; HUD coins: {} (window overlay)",
+                objects.drawer.builds(),
+                session.world().hud.coins
+            );
             if let Some(stop) = session.stopped() {
                 println!("Play stopped: {stop}");
             }
@@ -469,7 +529,9 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
         (true, None) => println!("Mario is a placeholder box (red, blue front)."),
         _ => {}
     }
-    println!("Skybox and objects are not drawn yet; the sky is a placeholder clear color.");
+    println!(
+        "Mario mode draws the simulated coins and sparkles. Other objects and the skybox remain missing; the sky is a placeholder clear color."
+    );
     Ok(())
 }
 
@@ -580,6 +642,7 @@ struct App {
     play: Play,
     /// Mario's imported model; None draws the placeholder box instead.
     mario: Option<MarioModel>,
+    objects: ObjectDrawing,
     error: Option<String>,
     paused: bool,
     focused: bool,
@@ -655,6 +718,7 @@ impl App {
         self.keys = Keys::default();
         self.play.release_all();
         self.play.session.snap_presentation();
+        self.objects.drawer.snap();
         if let Some(mario) = self.mario.as_mut() {
             mario.snap();
         }
@@ -670,6 +734,7 @@ impl App {
             eprintln!("error: {e}");
         }
         self.play.session.reset();
+        self.objects.reset(&self.play.session);
         self.play.reported_stop = false;
         self.play.release_all();
         self.clock.reset();
@@ -693,16 +758,17 @@ impl App {
         if running {
             for _ in 0..drained {
                 let pad = play.next_pad();
-                if play.session.step(&pad)
-                    && let Some(mario) = self.mario.as_mut()
-                {
+                if play.session.step(&pad) {
+                    self.objects.tick(&play.session);
                     // The render pass picks the level of detail from the
                     // camera of the frame it draws.
                     let camera = present::reference_view(
                         play.session.camera_view(1.0, play.graphics),
                         self.level.visual.camera,
                     );
-                    mario.tick(&play.session, &camera);
+                    if let Some(mario) = self.mario.as_mut() {
+                        mario.tick(&play.session, &camera);
+                    }
                 }
             }
         }
@@ -746,6 +812,8 @@ impl App {
                 .renderer
                 .set_transform(MARIO, pose.position, present::radians(pose.yaw)),
         }
+        self.objects
+            .show(&mut gpu.renderer, &self.camera, alpha, play.graphics);
         let frame = match gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
@@ -774,6 +842,9 @@ impl App {
         let input = gpu.ui.input.take_egui_input(&gpu.window);
         let output = gpu.ui.context.run_ui(input, |root| {
             let ctx = root.ctx();
+            if play.active {
+                present::show_coin_counter(ctx, &play.session.world().hud);
+            }
             if self.paused {
                 egui::Window::new("Paused")
                     .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -910,6 +981,7 @@ impl App {
                 self.play.active ^= true;
                 self.clock.reset();
                 self.play.session.snap_presentation();
+                self.objects.drawer.snap();
                 if let Some(mario) = self.mario.as_mut() {
                     mario.snap();
                 }
@@ -1092,6 +1164,7 @@ fn make_app(level: Level, options: &Options) -> AppResult<App> {
         reported_stop: false,
     };
     let mario = MarioModel::new(&level, &play.session, &camera);
+    let objects = ObjectDrawing::new(&level, &play.session);
     let remembered = Settings::load().ok().and_then(|s| s.rom_path);
     let app = App {
         level,
@@ -1107,6 +1180,7 @@ fn make_app(level: Level, options: &Options) -> AppResult<App> {
         max_frames: options.frames,
         play,
         mario,
+        objects,
         error: None,
         paused: false,
         focused: true,

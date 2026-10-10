@@ -634,5 +634,28 @@ Limits of this evidence:
   compared); object animations, object collision models, platforms, held
   objects and every other interaction handler are unported and abort or are
   never spawned.
-- The render pass's object writes are compared; drawing is not (coins are not
-  drawn by the viewer yet).
+- The render pass's object writes are compared. Session 18 draws the coins
+  and sparkles; its visual checks are not original-N64 image comparisons.
+
+
+## Coin presentation (session 18, 2026-10-10)
+
+The viewer now reads the completed object traversal to build and draw ROM
+coin/sparkle models. The importer builds all 28 switch cases (eight yellow
+coin, eight shadowless yellow coin, twelve sparkle), yielding the original
+four coin and six sparkle texture frames, each repeated by its geo layout.
+Authored tests cover selected geometry changes while positions interpolate,
+billboard axes, despawn/reappearance, pool-slot reuse, reset and multiple
+instances sharing a template. The GPU regression checks buffer growth,
+shrink, empty frames and reappearance without stale triangles. An ignored
+owner-ROM GPU test draws every case from two camera directions and checks
+visible textured pixels and transparent background.
+
+`drawing_bob_coins_and_sparkles_preserves_every_authoritative_word` draws a
+120-frame BOB coin-collection session at five interpolation fractions with
+interpolation on/off, snapping history every 17 frames. Every compared Mario,
+camera, HUD, object, list, free-list and RNG word remains unchanged. The
+existing independent native frame comparisons remain the simulation evidence;
+these new drawing tests establish read-only presentation and exercised visual
+paths, not pixel equivalence with the original renderer. Coin shadows and
+original HUD typography remain absent.

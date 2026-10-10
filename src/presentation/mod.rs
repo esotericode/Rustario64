@@ -1,5 +1,6 @@
 //! Read-only snapshots. Graphics configuration cannot enter the tick scheduler.
 pub mod mario;
+pub mod objects;
 pub mod shadow;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Snapshot {
