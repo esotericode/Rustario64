@@ -240,3 +240,103 @@ pub fn bit_shift_left(a0: i32) -> i32 {
 pub fn cur_obj_scale(o: &mut Object, scale: f32) {
     obj_scale(o, scale);
 }
+
+/// approach_s16_symmetric: s16 arithmetic promoted to int, stored back
+/// truncated.
+pub fn approach_s16_symmetric(value: i16, target: i16, increment: i16) -> i16 {
+    let dist = i32::from(target.wrapping_sub(value));
+    let increment = i32::from(increment);
+    if dist >= 0 {
+        if dist > increment {
+            (i32::from(value) + increment) as i16
+        } else {
+            target
+        }
+    } else if dist < -increment {
+        (i32::from(value) - increment) as i16
+    } else {
+        target
+    }
+}
+
+/// obj_turn_toward_object with `obj` the current object (every ported
+/// caller passes `o`): the angle at raw index `angle_index` turns toward the
+/// target's position. The original writes gCurrentObject's word, reading it
+/// as s16 and storing the s16 result sign-extended.
+pub fn obj_turn_toward_object(
+    o: &mut Object,
+    trig: &TrigTables,
+    target: [f32; 3],
+    angle_index: usize,
+    turn_amount: i16,
+) -> i16 {
+    let target_angle = match angle_index {
+        O_MOVE_ANGLE_PITCH | O_FACE_ANGLE_PITCH => {
+            let a = target[0] - o.raw.f32(O_POS_X);
+            let c = target[2] - o.raw.f32(O_POS_Z);
+            let a = (a * a + c * c).sqrt();
+            let b = -o.raw.f32(O_POS_Y);
+            let d = -target[1];
+            trig.atan2s(a, d - b)
+        }
+        O_MOVE_ANGLE_YAW | O_FACE_ANGLE_YAW => {
+            let (a, c) = (o.raw.f32(O_POS_Z), target[2]);
+            let (b, d) = (o.raw.f32(O_POS_X), target[0]);
+            trig.atan2s(c - a, d - b)
+        }
+        other => {
+            panic!("obj_turn_toward_object index {other:#X} leaves the target angle uninitialized")
+        }
+    };
+    let start = o.raw.u32(angle_index) as i16;
+    o.raw.set_s32(
+        angle_index,
+        i32::from(approach_s16_symmetric(start, target_angle, turn_amount)),
+    );
+    target_angle
+}
+
+/// cur_obj_set_pos_relative: `dleft`/`dforward` along `other`'s move yaw.
+pub fn cur_obj_set_pos_relative(
+    o: &mut Object,
+    trig: &TrigTables,
+    other: &Object,
+    dleft: f32,
+    dy: f32,
+    dforward: f32,
+) {
+    let facing_z = trig.coss(other.raw.s32(O_MOVE_ANGLE_YAW));
+    let facing_x = trig.sins(other.raw.s32(O_MOVE_ANGLE_YAW));
+    let dz = dforward * facing_z - dleft * facing_x;
+    let dx = dforward * facing_x + dleft * facing_z;
+    o.raw
+        .set_s32(O_MOVE_ANGLE_YAW, other.raw.s32(O_MOVE_ANGLE_YAW));
+    o.raw.set_f32(O_POS_X, other.raw.f32(O_POS_X) + dx);
+    o.raw.set_f32(O_POS_Y, other.raw.f32(O_POS_Y) + dy);
+    o.raw.set_f32(O_POS_Z, other.raw.f32(O_POS_Z) + dz);
+}
+
+/// cur_obj_enable_rendering (and cur_obj_enable_rendering_2).
+pub fn cur_obj_enable_rendering(o: &mut Object) {
+    o.gfx.node_flags |= GRAPH_RENDER_ACTIVE;
+}
+
+/// obj_scale_xyz.
+pub fn obj_scale_xyz(o: &mut Object, x: f32, y: f32, z: f32) {
+    o.gfx.scale = [x, y, z];
+}
+
+/// bhv_dust_smoke_loop: drift by the velocity, gone after ten frames.
+pub fn bhv_dust_smoke_loop(o: &mut Object) {
+    o.raw
+        .set_f32(O_POS_X, o.raw.f32(O_POS_X) + o.raw.f32(O_VEL_X));
+    o.raw
+        .set_f32(O_POS_Y, o.raw.f32(O_POS_Y) + o.raw.f32(O_VEL_Y));
+    o.raw
+        .set_f32(O_POS_Z, o.raw.f32(O_POS_Z) + o.raw.f32(O_VEL_Z));
+    if o.raw.s32(O_SMOKE_TIMER) == 10 {
+        obj_mark_for_deletion(o);
+    }
+    o.raw
+        .set_s32(O_SMOKE_TIMER, o.raw.s32(O_SMOKE_TIMER).wrapping_add(1));
+}

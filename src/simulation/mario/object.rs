@@ -48,7 +48,7 @@ pub fn mario_update_punch_sequence(m: &mut MarioState, w: &mut StepWorld<'_>) ->
             set_mario_animation(m, w, MARIO_ANIM_FIRST_PUNCH);
             m.action_arg = if is_anim_past_end(m, w) { 2 } else { 1 };
             if m.obj.gfx.anim.anim_frame >= 2 {
-                if mario_check_object_grab(m) {
+                if mario_check_object_grab(m, w) {
                     return 1;
                 }
                 m.flags |= MARIO_PUNCHING;
@@ -198,7 +198,8 @@ pub fn mario_execute_object_action(m: &mut MarioState, w: &mut StepWorld<'_>) ->
         | ACT_PICKING_UP_BOWSER
         | ACT_HOLDING_BOWSER
         | ACT_RELEASING_BOWSER => panic!(
-            "object action {:#X} holds or uses an object; objects are not simulated yet",
+            "object action {:#X}: holding objects (Mario's hold actions and the hand position) \
+             is not ported yet",
             m.action
         ),
         action => panic!("object action {action:#X} is not in the original table"),

@@ -87,23 +87,34 @@ pub const BEHAVIOR_SEGMENT: u8 = 0x13;
 
 /// The segmented addresses of the behavior scripts the port names, from the
 /// same layout (the checker verifies each entry).
-pub const BEHAVIOR_SCRIPTS: [(&str, u32); 10] = [
+pub const BEHAVIOR_SCRIPTS: [(&str, u32); 20] = [
     ("bhvCoinFormationSpawn", 0x130008D0),
     ("bhvCoinFormation", 0x130008EC),
     ("bhvYellowCoin", 0x1300091C),
     ("bhvCoinSparkles", 0x130009E0),
     ("bhvGoldenCoinSparkles", 0x13000A14),
+    ("bhvSoundSpawner", 0x1300229C),
     ("bhvMario", 0x13002EC0),
     ("bhvSpinAirborneWarp", 0x13002F74),
+    ("bhvMovingYellowCoin", 0x13003068),
+    ("bhvBobomb", 0x13003174),
+    ("bhvBobombFuseSmoke", 0x130031AC),
     ("bhvMessagePanel", 0x130032E0),
+    ("bhvCarrySomething3", 0x13003464),
+    ("bhvCarrySomething4", 0x1300346C),
+    ("bhvCarrySomething5", 0x13003474),
+    ("bhvExplosion", 0x13003510),
+    ("bhvBobombBullyDeathSmoke", 0x13003558),
+    ("bhvRespawner", 0x13003614),
     ("bhvHauntedChair", 0x13004FD4),
     ("bhvMadPiano", 0x13005024),
 ];
 
 /// The CALL_NATIVE targets the port translates, by decomp name and address
 /// in this revision: the words that follow CALL_NATIVE in the layout above.
-pub const BEHAVIOR_NATIVES: [(&str, u32); 10] = [
+pub const BEHAVIOR_NATIVES: [(&str, u32); 21] = [
     ("bhv_mario_update", 0x8029CA58),
+    ("bhv_dust_smoke_loop", 0x802A399C),
     ("bhv_yellow_coin_init", 0x802AB650),
     ("bhv_yellow_coin_loop", 0x802AB70C),
     ("bhv_coin_formation_spawn_loop", 0x802ABA40),
@@ -111,8 +122,18 @@ pub const BEHAVIOR_NATIVES: [(&str, u32); 10] = [
     ("bhv_coin_formation_loop", 0x802ABF0C),
     ("bhv_coin_sparkles_loop", 0x802AC2C0),
     ("bhv_golden_coin_sparkles_loop", 0x802AC2EC),
+    ("bhv_sound_spawner_init", 0x802C19FC),
     ("try_print_debug_mario_level_info", 0x802CB1C0),
     ("try_do_mario_debug_object_spawn", 0x802CB264),
+    ("bhv_moving_yellow_coin_init", 0x802E5EE8),
+    ("bhv_moving_yellow_coin_loop", 0x802E5F64),
+    ("bhv_bobomb_init", 0x802E6A2C),
+    ("bhv_bobomb_loop", 0x802E742C),
+    ("bhv_bobomb_fuse_smoke_init", 0x802E75A0),
+    ("bhv_explosion_init", 0x802EAA8C),
+    ("bhv_explosion_loop", 0x802EAAD0),
+    ("bhv_bobomb_bully_death_smoke_init", 0x802EABF0),
+    ("bhv_respawner_loop", 0x802EAEF8),
 ];
 
 /// sMacroObjectPresets (pinned include/macro_presets.inc.c): 366 entries of

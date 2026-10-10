@@ -650,7 +650,7 @@ fn act_dive(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
         play_mario_sound(m, w, TERRAIN_JUMP, 0);
     }
     set_mario_animation(m, w, MARIO_ANIM_DIVE);
-    if mario_check_object_grab(m) {
+    if mario_check_object_grab(m, w) {
         mario_grab_used_object(m);
         m.body.grab_pos = GRAB_POS_LIGHT_OBJ;
         if m.action != ACT_DIVE {

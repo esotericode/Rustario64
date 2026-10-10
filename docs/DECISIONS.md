@@ -877,3 +877,80 @@ the application keeps running with keyboard input. Reconnection does not change
 pause state. Start, focus-loss and existing menu/neutral boundaries retain their
 behavior. Final tick inputs remain recorded in schema-2 logs, so existing logs
 and reference comparisons require no migration. No simulation rule is changed.
+
+## Bob-ombs, explosions and object animations — 2026-10-10 (session 22)
+
+**Object animations are segmented data read in place.** LOAD_ANIMATIONS
+keeps the script's segmented table address in oAnimations (the original
+stores the same word and converts it on use); `curAnim` names the struct
+Animation by its segmented address (`AnimRef::Object`). The importer decodes
+every table a runnable behavior's LOAD_ANIMATIONS reaches from the segments
+that hold it (the main scripts' or the level's), bounding each animation's
+index by its part count and its values by the furthest frame the index
+names. The frame advance stays the render pass's (`geo_set_animation_globals`,
+run before the view test for every active object in the area), exactly where
+the original runs it. The oracle builds host copies of the same tables
+(`object_anims_unit.c`) from the Rust decode.
+
+**Pointer-valued object fields share the raw words.** On the N64 a pointer
+field aliases its raw word; the 64-bit oracle keeps pointers in a separate
+`ptrData`. Rust stores the segmented address in the raw word, and the oracle's
+snapshot maps a `ptrData` pointer to the same word (an animation table's or a
+behavior script's segmented address), failing if a field were used as both a
+pointer and a number.
+
+**Object throw matrices are object-owned.** obj_orient_graph builds a terrain
+matrix in display-list memory each object_step; `ThrowMatrix::Terrain` holds
+it until the render pass places the object with it (it feeds `obj_is_in_view`)
+and clears it, as the original does. Mario's floor-align matrices remain
+indices. The oracle allocates these from a per-frame arena reset where the
+game selects a new display-list pool. Presentation reads the matrices the pass
+used from `Game::rendered_matrices`, never from the objects.
+
+**Deferred camera requests.** Explosions call set_environmental_camera_shake
+during the object update. It is recorded as `Event::EnvironmentalCameraShake`
+and applied to the camera after the object update in call order with Mario's
+requests, as Mario's already were. This is equivalent because no request
+draws randomness and nothing in the object update reads the shake state. A
+shock shake (`SHAKE_SHOCK`, which draws twice from the shared random sequence)
+would be reordered after later objects' draws; the frame asserts it never
+arrives deferred (no ported object causes one). The oracle records the same
+event and runs the verbatim function at the call.
+
+**Runtime-conditional unported branches.** A behavior is spawnable when every
+command, native and statically spawned script it can reach is ported. Three
+branches spawn water particles that are not ported and are unreachable in
+BOB: obj_splash's waves and bubbles and an underwater explosion's bubbles.
+They are not listed as spawns; reaching one panics with its name, so play
+stops and comparisons end at the previous frame. bhv_respawner_loop spawns the
+behavior its creator stored; `create_respawner`'s callers list it themselves.
+
+**Holding is the next boundary.** Punching or diving into a Bob-omb reaches
+the grab request (`mario_check_object_grab`) and then picking up. Holding
+needs Mario's hold actions and the held object's last position (HOLP), which
+the render pass writes from Mario's animated hand matrix
+(`geo_switch_mario_hand_grab_pos`). That pass is not yet authoritative in the
+simulation, so the port stops at `mario_grab_used_object`/the picking-up
+actions with a message naming the missing system rather than approximating a
+hand position. Kicks, jump kicks and trips launch Bob-ombs as in the original.
+
+**Oracle build flags.** `cc::Build::warnings(false)` passes `-w`, which with
+GCC 13 also silenced `-Werror=implicit-function-declaration`, so the
+documented guard against implicitly declared functions was inactive. The
+oracle now keeps compiler warnings out of cargo's output without `-w`; the
+guard is active and two existing excerpts gained the includes they lacked
+(both calls had integer arguments, so no value had been corrupted).
+
+**Presentation of animated objects.** Models with GEO_ANIMATED_PART nodes are
+built once per draw list with each vertex's bone and posed per completed frame
+as geo_process_animated_part does (the object's placement, its animation's
+translation mode and values, scale nodes), then interpolated between the last
+two frames. A GEO_BILLBOARD part keeps only its transformed position, as
+mtxf_billboard does, and faces the displayed camera. Models without animated
+parts keep the baked per-switch-case path. Unsupported model nodes (levels of
+detail, generated or held-object callbacks) are drawing errors, not guesses.
+Object shadows remain undrawn.
+
+**Development start point.** The viewer's `--start X,Y,Z[,YAW]` enters the
+level with Mario spawned elsewhere in the area through the same entry; it is
+a development inspection aid like the free camera, not an original warp.

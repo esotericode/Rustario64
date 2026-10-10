@@ -19,7 +19,7 @@ use rustario64::{
     presentation::{
         GraphicsOptions,
         mario::{MarioDrawer, shadow_origin},
-        objects::ObjectDrawer,
+        objects::{LevelModels, ObjectDrawer},
         shadow::{ShadowDrawer, player_shadow},
     },
     simulation::{
@@ -54,8 +54,8 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 const HELP: &str = "Rustario64 development viewer (Bob-omb Battlefield, area 1)\n\n\
   rustario64-viewer [launch]   Open the local ROM launcher and presentation settings.\n\
-  rustario64-viewer screenshot /path/to/sm64.z64 --out private/bob.png [--view start|overview|summit|top] [--size 1280x960] [--msaa 4] [--no-cull] [--no-fog] [--collision] [--placements] [--mario-ticks N]\n\
-  rustario64-viewer view /path/to/sm64.z64 [--view start] [--msaa 4] [--no-fog] [--frames N] [--mario] [--no-interpolation] [--record NEW_PRIVATE_DIR]\n\n\
+  rustario64-viewer screenshot /path/to/sm64.z64 --out private/bob.png [--view start|overview|summit|top] [--size 1280x960] [--msaa 4] [--no-cull] [--no-fog] [--collision] [--placements] [--mario-ticks N] [--start X,Y,Z[,YAW]]\n\
+  rustario64-viewer view /path/to/sm64.z64 [--view start] [--msaa 4] [--no-fog] [--frames N] [--mario] [--no-interpolation] [--record NEW_PRIVATE_DIR] [--start X,Y,Z[,YAW]]\n\n\
   View controls: WASD move, Q/E down/up, Shift faster, hold right mouse or arrow keys to look,\n\
   1-4 select presets, C collision overlay, P placement markers, F fog, M Mario mode, Esc pause/settings.\n\
   The camera is a presentation-only inspection camera, not the original camera.\n\n\
@@ -67,6 +67,7 @@ const HELP: &str = "Rustario64 development viewer (Bob-omb Battlefield, area 1)\
   placeholder box if they cannot be imported). Play stops at paths the port does not support\n\
   and at warps (falling off the course); R re-enters.\n\
   --mario-ticks N renders Mario after N frames of holding the stick up, from the original camera.\n\
+  --start X,Y,Z[,YAW] enters the level with Mario at another point (development entry; yaw in degrees).\n\
   --record writes each run's tick inputs to a new directory for exact replay against the decomp:\n\
   cargo run -p rustario64-oracle --example tick_trace -- ROM NEW_DIR --inputs RUN.inputs.json\n\
   Presentation: --size WIDTHxHEIGHT, --fullscreen, --no-vsync; Esc pauses, resumes or opens Quit.\n";
@@ -87,6 +88,8 @@ struct Options {
     record: Option<PathBuf>,
     vsync: bool,
     fullscreen: bool,
+    /// A development start point for Mario: position and yaw in degrees.
+    start: Option<([i16; 3], i16)>,
 }
 
 fn parse(args: &[String]) -> AppResult<Options> {
@@ -106,6 +109,7 @@ fn parse(args: &[String]) -> AppResult<Options> {
         record: None,
         vsync: true,
         fullscreen: false,
+        start: None,
     };
     let mut i = 0;
     while i < args.len() {
@@ -136,6 +140,17 @@ fn parse(args: &[String]) -> AppResult<Options> {
                     "--frames" => options.frames = Some(value(i)?.parse()?),
                     "--mario-ticks" => options.mario_ticks = Some(value(i)?.parse()?),
                     "--record" => options.record = Some(value(i)?.into()),
+                    "--start" => {
+                        let parts: Vec<i16> = value(i)?
+                            .split(',')
+                            .map(str::parse)
+                            .collect::<Result<_, _>>()?;
+                        options.start = match parts[..] {
+                            [x, y, z] => Some(([x, y, z], 0)),
+                            [x, y, z, yaw] => Some(([x, y, z], yaw)),
+                            _ => return Err("--start takes X,Y,Z or X,Y,Z,YAW".into()),
+                        };
+                    }
                     other => return Err(format!("unknown option {other}\n\n{HELP}").into()),
                 }
                 i += 2;
@@ -268,7 +283,8 @@ impl MarioModel {
     }
 }
 
-/// Coin and sparkle models share cached templates across all instances.
+/// Object models share cached templates across all instances (coins,
+/// sparkles, explosions and smoke baked per switch case; Bob-ombs skinned).
 struct ObjectDrawing {
     drawer: ObjectDrawer<'static>,
     view: present::ObjectModelView,
@@ -277,7 +293,15 @@ struct ObjectDrawing {
 impl ObjectDrawing {
     fn new(level: &Level, session: &Session<'_>) -> Self {
         let mut drawing = Self {
-            drawer: ObjectDrawer::new(&level.objects.content, level.trig),
+            drawer: ObjectDrawer::for_level(
+                &level.objects.content,
+                LevelModels {
+                    segments: &level.objects.level_segments,
+                    registrations: &level.objects.level_models,
+                    animations: &level.objects.animations,
+                },
+                level.trig,
+            ),
             view: present::ObjectModelView::default(),
         };
         drawing.tick(session);
@@ -285,7 +309,11 @@ impl ObjectDrawing {
     }
 
     fn tick(&mut self, session: &Session<'_>) {
-        let objects = visible_objects(session.world(), &session.game().camera.graph);
+        let objects = visible_objects(
+            session.world(),
+            &session.game().camera.graph,
+            &session.game().rendered_matrices,
+        );
         if let Err(error) = self.drawer.update(objects) {
             eprintln!("warning: object models could not be built: {error}");
             // Avoid retaining stale coins after a failed presentation import.
@@ -424,7 +452,8 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
     if options.record.is_some() || options.mario {
         return Err("--mario and --record are window options; use --mario-ticks N".into());
     }
-    let level = load(rom_path)?;
+    let mut level = load(rom_path)?;
+    start_at(&mut level, options);
     let (info, mut renderer) = rustario64_render::headless(render_options(options))?;
     let mario = options.mario_ticks.is_some();
     upload(
@@ -1236,8 +1265,20 @@ fn finish_app(app: &mut App) -> AppResult<()> {
     Ok(())
 }
 
+/// The development `--start` entry: the level script's entry with Mario
+/// spawned elsewhere in the same area.
+fn start_at(level: &mut Level, options: &Options) {
+    if let Some((pos, yaw)) = options.start {
+        let area = level.entry.mario.spawn.area_index as u8;
+        level.entry.mario.spawn =
+            rustario64::simulation::mario::core::SpawnPoint::from_level_script(1, area, yaw, pos);
+    }
+}
+
 fn view(rom_path: &Path, options: &Options) -> AppResult<()> {
-    let mut app = make_app(load(rom_path)?, options)?;
+    let mut level = load(rom_path)?;
+    start_at(&mut level, options);
+    let mut app = make_app(level, options)?;
     app.controllers = Controllers::new();
     let mut desktop = Desktop {
         gpu: None,

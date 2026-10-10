@@ -2,8 +2,9 @@
  * state for objects other than Mario, around verbatim functions: the camera
  * node's transform (mtxf_lookat with the node's roll, applied to the root's
  * identity, as geo_process_camera does), geo_process_object's matrix
- * (mtxf_billboard or mtxf_rotate_zxy_and_translate, mtxf_mul,
- * mtxf_scale_vec3f), the verbatim obj_is_in_view (excerpts/rendering_view.c)
+ * (the throw matrix, mtxf_billboard or mtxf_rotate_zxy_and_translate,
+ * mtxf_mul, mtxf_scale_vec3f), the verbatim geo_set_animation_globals for
+ * animated objects, the verbatim obj_is_in_view (excerpts/rendering_view.c)
  * and, for objects in view, the model's switch callbacks (the verbatim
  * geo_switch_anim_state) with geo_process_switch's child selection. The
  * models' node trees come from the Rust importer's ROM decode
@@ -22,6 +23,7 @@ struct GraphNodePerspective *gCurGraphNodeCamFrustum;
 #include "excerpts/rendering_view.c"
 
 Gfx *geo_switch_anim_state(s32 callContext, struct GraphNode *node, void *context);
+void geo_set_animation_globals(struct AnimInfo *node, s32 hasAnimation);
 void oracle_camera_graph_nodes(struct GraphNodeCamera **camera, struct GraphNodePerspective **perspective);
 extern struct GraphNode **gLoadedGraphNodes;
 
@@ -178,6 +180,7 @@ static void process_node(struct Object *obj, RenderModel *m, s32 node) {
 /* geo_process_object's state changes for one object other than Mario. */
 void oracle_render_object(struct Object *obj, s8 rootAreaIndex) {
     struct GraphNodeObject *node = &obj->header.gfx;
+    s32 hasAnimation = (node->node.flags & GRAPH_RENDER_HAS_ANIMATION) != 0;
     Mat4 placed, matrix;
     if (!(node->node.flags & GRAPH_RENDER_ACTIVE)) {
         node->throwMatrix = NULL;
@@ -187,9 +190,8 @@ void oracle_render_object(struct Object *obj, s8 rootAreaIndex) {
         return;
     }
     if (node->throwMatrix != NULL) {
-        fail("object throw matrices are not modelled");
-    }
-    if (node->node.flags & GRAPH_RENDER_BILLBOARD) {
+        mtxf_mul(placed, *node->throwMatrix, sCameraMatrix);
+    } else if (node->node.flags & GRAPH_RENDER_BILLBOARD) {
         struct GraphNodeCamera *camera;
         struct GraphNodePerspective *perspective;
         oracle_camera_graph_nodes(&camera, &perspective);
@@ -201,7 +203,7 @@ void oracle_render_object(struct Object *obj, s8 rootAreaIndex) {
     }
     mtxf_scale_vec3f(matrix, placed, node->scale);
     if (node->animInfo.curAnim != NULL) {
-        fail("object animations are not modelled");
+        geo_set_animation_globals(&node->animInfo, hasAnimation);
     }
     if (obj_is_in_view(node, matrix) && node->sharedChild != NULL) {
         s32 model = oracle_render_model_of(node->sharedChild);

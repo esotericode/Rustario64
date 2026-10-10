@@ -91,7 +91,7 @@ impl MarioPose {
 }
 
 /// mtxf_rotate_zxy_and_translate.
-fn rotate_zxy_and_translate(trig: &TrigTables, t: [f32; 3], r: [i16; 3]) -> Mat4 {
+pub(crate) fn rotate_zxy_and_translate(trig: &TrigTables, t: [f32; 3], r: [i16; 3]) -> Mat4 {
     let [rx, ry, rz] = r.map(i32::from);
     let (sx, cx) = (trig.sins(rx), trig.coss(rx));
     let (sy, cy) = (trig.sins(ry), trig.coss(ry));
@@ -115,7 +115,7 @@ fn rotate_zxy_and_translate(trig: &TrigTables, t: [f32; 3], r: [i16; 3]) -> Mat4
 }
 
 /// mtxf_rotate_xyz_and_translate.
-fn rotate_xyz_and_translate(trig: &TrigTables, t: [f32; 3], r: [i16; 3]) -> Mat4 {
+pub(crate) fn rotate_xyz_and_translate(trig: &TrigTables, t: [f32; 3], r: [i16; 3]) -> Mat4 {
     let [rx, ry, rz] = r.map(i32::from);
     let (sx, cx) = (trig.sins(rx), trig.coss(rx));
     let (sy, cy) = (trig.sins(ry), trig.coss(ry));
@@ -129,7 +129,7 @@ fn rotate_xyz_and_translate(trig: &TrigTables, t: [f32; 3], r: [i16; 3]) -> Mat4
 }
 
 /// mtxf_scale_vec3f: scales the first three rows.
-fn scale_rows(m: &Mat4, s: [f32; 3]) -> Mat4 {
+pub(crate) fn scale_rows(m: &Mat4, s: [f32; 3]) -> Mat4 {
     let mut out = *m;
     for (row, factor) in out.iter_mut().zip(s) {
         for value in row.iter_mut() {
@@ -180,7 +180,7 @@ impl PunchScale {
 
 /// geo_set_animation_globals' gCurrAnimType.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AnimType {
+pub(crate) enum AnimType {
     Translation,
     LateralTranslation,
     VerticalTranslation,
@@ -188,20 +188,20 @@ enum AnimType {
     Rotation,
 }
 
-struct AnimCursor<'a> {
-    animation: &'a Animation,
-    frame: i32,
-    multiplier: f32,
-    kind: AnimType,
+pub(crate) struct AnimCursor<'a> {
+    pub(crate) animation: &'a Animation,
+    pub(crate) frame: i32,
+    pub(crate) multiplier: f32,
+    pub(crate) kind: AnimType,
     /// Attribute (index pair) to read next.
-    attribute: usize,
+    pub(crate) attribute: usize,
 }
 
 impl AnimCursor<'_> {
     /// retrieve_animation_index and the value it selects. Reads the original
     /// would make outside the tables (a negative frame, more parts than
     /// attributes) draw as zero instead.
-    fn next(&mut self) -> i16 {
+    pub(crate) fn next(&mut self) -> i16 {
         let attribute = self.attribute;
         self.attribute += 1;
         let index = &self.animation.index;
@@ -616,7 +616,7 @@ pub struct MarioDrawer<'a> {
 }
 
 /// A unit normal as the signed bytes a lit vertex carries in its color.
-fn quantize_normal(n: [f32; 3], color: &mut [u8; 4]) {
+pub(crate) fn quantize_normal(n: [f32; 3], color: &mut [u8; 4]) {
     let length = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
     if length > 0.0 {
         for (byte, value) in color.iter_mut().zip(n) {

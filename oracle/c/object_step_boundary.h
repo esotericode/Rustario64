@@ -31,6 +31,20 @@ void *oracle_step_alloc(u32 size);
 struct Object *oracle_step_spawn(struct Object *parent, s32 model, const BehaviorScript *behavior);
 void oracle_step_sound(s32 sound);
 
+/* The frame harness compiles the same functions with their real calls
+ * (obj_behaviors_unit.c); this component copy takes prefixed names. */
+#define turn_obj_away_from_surface oracle_component_turn_obj_away_from_surface
+#define obj_find_wall oracle_component_obj_find_wall
+#define turn_obj_away_from_steep_floor oracle_component_turn_obj_away_from_steep_floor
+#define obj_orient_graph oracle_component_obj_orient_graph
+#define calc_obj_friction oracle_component_calc_obj_friction
+#define calc_new_obj_vel_and_pos_y oracle_component_calc_new_obj_vel_and_pos_y
+#define calc_new_obj_vel_and_pos_y_underwater oracle_component_calc_new_obj_vel_and_pos_y_underwater
+#define obj_update_pos_vel_xz oracle_component_obj_update_pos_vel_xz
+#define obj_splash oracle_component_obj_splash
+#define object_step oracle_component_object_step
+#define object_step_without_floor_orient oracle_component_object_step_without_floor_orient
+
 /* These substitutions affect only the component excerpt's boundary calls. */
 #define alloc_display_list oracle_step_alloc
 #define spawn_object oracle_step_spawn

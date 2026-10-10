@@ -6,11 +6,14 @@
 use crate::tick_trace::Words;
 use rustario64::simulation::{
     mario::{MarioState, StepWorld, tick::LevelObjects},
-    object::{Object, ObjectId, ObjectList, RespawnInfo, render::RenderNodeKind, script::Behavior},
+    object::{
+        AnimRef, Object, ObjectId, ObjectList, RespawnInfo, ThrowMatrix, render::RenderNodeKind,
+        script::Behavior,
+    },
 };
 
 /// The verbatim scripts c/behavior_data_unit.c compiles, in its order.
-pub const VERBATIM_SCRIPTS: [Behavior; 7] = [
+pub const VERBATIM_SCRIPTS: [Behavior; 17] = [
     Behavior::CoinFormationSpawn,
     Behavior::CoinFormation,
     Behavior::YellowCoin,
@@ -18,7 +21,31 @@ pub const VERBATIM_SCRIPTS: [Behavior; 7] = [
     Behavior::GoldenCoinSparkles,
     Behavior::Mario,
     Behavior::SpinAirborneWarp,
+    Behavior::SoundSpawner,
+    Behavior::MovingYellowCoin,
+    Behavior::Bobomb,
+    Behavior::BobombFuseSmoke,
+    Behavior::CarrySomething3,
+    Behavior::CarrySomething4,
+    Behavior::CarrySomething5,
+    Behavior::Explosion,
+    Behavior::BobombBullyDeathSmoke,
+    Behavior::Respawner,
 ];
+
+/// One animation of a host table (c/object_anims_unit.c's OracleAnimation).
+#[derive(Debug, Clone, Default)]
+pub struct NativeAnimation {
+    pub segmented: u32,
+    pub flags: i16,
+    pub y_trans_divisor: i16,
+    pub start_frame: i16,
+    pub loop_start: i16,
+    pub loop_end: i16,
+    pub bone_count: i16,
+    pub index: Vec<u16>,
+    pub values: Vec<i16>,
+}
 
 /// One model's flattened render traversal.
 #[derive(Debug, Clone, Default)]
@@ -44,6 +71,11 @@ pub struct NativeObjects {
     pub preset_models: Vec<i16>,
     pub preset_params: Vec<i16>,
     pub spawn_infos: Vec<crate::OracleSpawnInfo>,
+    /// bhvBobomb's LOAD_ANIMATIONS table (its segmented address in the
+    /// Rust side's script) and its animations, for the host copy of
+    /// bobomb_seg8_anims_0802396C.
+    pub bobomb_table: u32,
+    pub bobomb_animations: Vec<NativeAnimation>,
 }
 
 impl NativeObjects {
@@ -83,6 +115,30 @@ impl NativeObjects {
                 }
             }
             out.models.push(native);
+        }
+        let bobomb = scripts.address(Behavior::Bobomb);
+        if let Ok(tables) = scripts.animation_tables(bobomb) {
+            let table = *tables
+                .iter()
+                .next()
+                .expect("bhvBobomb loads one animation table");
+            out.bobomb_table = table;
+            if let Some(entries) = objects.animations.tables.get(&table) {
+                for address in entries {
+                    let a = &objects.animations.animations[address];
+                    out.bobomb_animations.push(NativeAnimation {
+                        segmented: *address,
+                        flags: a.flags,
+                        y_trans_divisor: a.y_trans_divisor,
+                        start_frame: a.start_frame,
+                        loop_start: a.loop_start,
+                        loop_end: a.loop_end,
+                        bone_count: a.bone_count,
+                        index: a.index.clone(),
+                        values: a.values.clone(),
+                    });
+                }
+            }
         }
         for (index, entry) in objects.area.macros.iter().enumerate() {
             if scripts.check(entry.behavior).is_err() {
@@ -159,9 +215,13 @@ pub fn put_object(o: &mut Words, prefix: &str, obj: &Object) {
         name("gfx.anim.animYTrans"),
         i32::from(gfx.anim.anim_y_trans),
     );
-    o.i(
+    o.put(
         name("gfx.anim.curAnim"),
-        i32::from(gfx.anim.cur_anim.is_some()),
+        match gfx.anim.cur_anim {
+            None => 0,
+            Some(AnimRef::MarioDmaBuffer) => 1,
+            Some(AnimRef::Object(address)) => address,
+        },
     );
     o.i(name("gfx.anim.animFrame"), i32::from(gfx.anim.anim_frame));
     o.put(name("gfx.anim.animTimer"), u32::from(gfx.anim.anim_timer));
@@ -170,10 +230,16 @@ pub fn put_object(o: &mut Words, prefix: &str, obj: &Object) {
         gfx.anim.anim_frame_accel_assist,
     );
     o.i(name("gfx.anim.animAccel"), gfx.anim.anim_accel);
-    o.i(
-        name("gfx.throwMatrix"),
-        gfx.throw_matrix.map_or(-1, |m| m as i32),
-    );
+    match gfx.throw_matrix {
+        None => o.i(name("gfx.throwMatrix"), -1),
+        Some(ThrowMatrix::FloorAlign(index)) => o.i(name("gfx.throwMatrix"), index as i32),
+        Some(ThrowMatrix::Terrain(matrix)) => {
+            o.i(name("gfx.throwMatrix"), 2);
+            for (i, value) in matrix.as_flattened().iter().enumerate() {
+                o.f(name(&format!("gfx.throwMatrixWords[{i}]")), *value);
+            }
+        }
+    }
     o.put(
         name("collidedObjInteractTypes"),
         obj.collided_obj_interact_types,

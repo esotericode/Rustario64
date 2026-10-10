@@ -14,6 +14,10 @@ fn main() {
         "c/behavior_data_unit.c",
         "c/object_render_unit.c",
         "c/object_step_unit.c",
+        "c/obj_behaviors_unit.c",
+        "c/object_anims_unit.c",
+        "c/excerpts/spawn_sound.c",
+        "c/excerpts/sound_spawner.c",
         "c/excerpts/coin.c",
         "c/excerpts/geo_layout.c",
         "c/excerpts/game_init.c",
@@ -67,7 +71,8 @@ fn main() {
         .flag("-Werror=implicit-int")
         // The decomp is not written for host compilers' default warnings;
         // keep them out of cargo's output (errors still fail the build).
-        .warnings(false)
+        // Not `warnings(false)`: its -w also silences the -Werror
+        // diagnostics above, so implicit declarations would compile.
         .cargo_warnings(false);
     for file in files {
         build.file(file);
@@ -81,6 +86,7 @@ fn main() {
         "c/constants.inc.c",
         "c/lakitu_state.inc.c",
         "c/object_step_boundary.h",
+        "c/obj_behaviors_boundary.h",
     ] {
         println!("cargo:rerun-if-changed={dir}");
     }

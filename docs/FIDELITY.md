@@ -726,3 +726,55 @@ and neutral reconnection. Run them with
 The raw conversion and simulation controller are unchanged; recorded final
 tick bytes still replay through the reference controller. This is host-input
 behavior coverage, not physical USB/Bluetooth or native-window validation.
+
+## Bob-ombs, explosions and object animations (session 22, 2026-10-10)
+
+Complete frames now include Bob-ombs. Each frame compares every named word of
+the previous object suites (Mario, the linked camera, every object's graph
+node, raw words, behavior stack, hitboxes and collisions, the lists, the
+RNG seed and the frame's events) plus each object's animation state
+(`curAnim` as a segmented address, frame, acceleration, translation) and its
+throw-matrix words. There is no tolerance; a mismatch reports the first
+differing word.
+
+```sh
+cargo test --locked --release -p rustario64-oracle --test bobombs -- --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test bobombs -- --include-ignored --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release --test objects -- --ignored --nocapture
+```
+
+| Suite | Data | Identical frames | Coverage |
+| --- | --- | --- | --- |
+| Authored Bob-ombs (CI) | Authored field with ramp, block, lava tile and death-plane pit; 12 Bob-ombs (one stationary); invented Bob-omb-shaped animations; 10 seeded runs of 900 frames | 9,000 | 793 lit-fuse and 757 chase Bob-omb frames, 37 explosions with environmental shakes, 123 lava and 35 death-plane deaths, 170 respawns, a loot coin collected, a knockback |
+| Authored encounters (CI) | The stationary Bob-omb, jump kicks from four distances and a punch | 1,284 | 92 launched frames, 24 explosions; the punch stops at the grab (frame 13) |
+| BOB Bob-ombs (owner ROM) | BOB's collision, the ROM's scripts, presets, animation table (0x0802396C, two 13-part animations) and models; Mario beside each of the 12 act-1 Bob-ombs at four yaws, 600 frames each | 27,055 | 7,275 lit-fuse and 6,975 chase frames, 52 explosions, 29 respawns, 14 loot coins, 23 knockbacks; three runs stop at grabs |
+
+The existing coin suites (5,400 authored and 9,600 BOB frames) and the BOB
+camera frames now run with Bob-ombs present and stay identical. A core test
+(`tests/objects.rs`, owner ROM) plays BOB until a Bob-omb chases Mario,
+explodes, drops a coin and its respawner brings it back, and checks that the
+viewer's object drawer builds every model drawn (Bob-omb, explosion, smoke,
+yellow coin).
+
+**Seeded mutations.** Thirteen single-point changes were applied one at a
+time and the authored suites re-run (development helper, not committed):
+the chase turn rate, the blink threshold, the fuse length, the knockback
+strength table, the push-out padding, the explosion growth, the respawn
+distance, the Bob-omb's touch attack type, an animation's start side, the
+frame advance moved behind the view test, the loot coin's intangible frames
+and the chase step-sound frame were each rejected at a named word and frame.
+Changing the facing test's `coss(d) > 0` to `>= 0` was not rejected; it is
+equivalent for every range the ported behaviors pass (0x2000: the cosine is
+zero only where the sine is ±1, outside the range), so no test can tell them
+apart.
+
+**Not covered.** Holding, carrying, dropping and throwing (Mario's
+picking-up/hold/throw actions, the hand position the render pass writes, the
+held/dropped/thrown Bob-omb loops beyond their entry), underwater explosions
+and water particles, shock camera shakes deferred from objects (asserted
+absent), object shadows, dynamic object surfaces and original N64 execution.
+The authored animation values are invented; ROM animation decoding is checked
+by its shape and by the BOB comparisons, not by an independent reference
+checker. Presentation (skinned object models, billboards, explosion and smoke
+textures) is inspected in local screenshots only and needs a human comparison
+with the original.

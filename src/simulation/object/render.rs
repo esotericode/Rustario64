@@ -6,11 +6,12 @@
 //! The render pass is not presentation-only: a model's switch callback
 //! `geo_switch_anim_state` resets an object's oAnimState when it reaches the
 //! switch's case count, and it only runs while the object is inside the
-//! camera's view. So the simulation runs the pass's object traversal each
+//! camera's view; and geo_set_animation_globals advances an animated
+//! object's frame (which behaviors read) whenever its node is processed. So the simulation runs the pass's object traversal each
 //! frame from the authoritative camera (Lakitu's graph camera and field of
 //! view), with the original matrices. Matrices, display lists and the rest of
 //! the drawing stay in presentation.
-use super::{Object, ObjectId};
+use super::{Object, ObjectId, ThrowMatrix};
 use crate::simulation::{
     camera::system::GraphCamera,
     mario::{StepWorld, constants::*},
@@ -157,31 +158,46 @@ fn process_model(o: &mut Object, model: &ObjectModel, node: usize) {
     }
 }
 
+/// geo_process_object's placement of an object other than Mario under the
+/// camera transform: its throw matrix, a billboard at its position, or its
+/// position and angles; then its scale.
+pub fn placement(trig: &TrigTables, o: &Object, camera: &Mat4) -> Mat4 {
+    let placed = match o.gfx.throw_matrix {
+        Some(ThrowMatrix::Terrain(matrix)) => mtxf_mul(&matrix, camera),
+        Some(ThrowMatrix::FloorAlign(_)) => {
+            panic!("only Mario's object uses the floor-align matrices")
+        }
+        None if o.gfx.node_flags & GRAPH_RENDER_BILLBOARD != 0 => {
+            mtxf_billboard(trig, camera, o.gfx.pos, 0)
+        }
+        None => {
+            let local = mtxf_rotate_zxy_and_translate(trig, o.gfx.pos, o.gfx.angle);
+            mtxf_mul(&local, camera)
+        }
+    };
+    mtxf_scale_vec3f(&placed, o.gfx.scale)
+}
+
 /// geo_process_object's state changes for one object other than Mario
-/// under the camera transform `camera`.
-pub fn render_object(o: &mut Object, w: &StepWorld<'_>, camera: &Mat4, fov: f32) {
+/// under the camera transform `camera`. Returns the terrain matrix the pass
+/// placed the object with (it clears it), for presentation.
+pub fn render_object(o: &mut Object, w: &StepWorld<'_>, camera: &Mat4, fov: f32) -> Option<Mat4> {
     if o.gfx.node_flags & GRAPH_RENDER_ACTIVE == 0 {
         o.gfx.throw_matrix = None;
-        return;
+        return None;
     }
     if o.gfx.area_index != w.area_index {
-        return;
+        return None;
     }
-    assert!(
-        o.gfx.throw_matrix.is_none(),
-        "object throw matrices need object transforms, which are not ported"
-    );
-    let placed = if o.gfx.node_flags & GRAPH_RENDER_BILLBOARD != 0 {
-        mtxf_billboard(w.trig, camera, o.gfx.pos, 0)
-    } else {
-        let local = mtxf_rotate_zxy_and_translate(w.trig, o.gfx.pos, o.gfx.angle);
-        mtxf_mul(&local, camera)
+    let used = match o.gfx.throw_matrix {
+        Some(ThrowMatrix::Terrain(matrix)) => Some(matrix),
+        _ => None,
     };
-    let matrix = mtxf_scale_vec3f(&placed, o.gfx.scale);
-    assert!(
-        o.gfx.anim.cur_anim.is_none(),
-        "object animations are not ported"
-    );
+    let matrix = placement(w.trig, o, camera);
+    // geo_set_animation_globals, before (and regardless of) the view test.
+    if o.gfx.anim.cur_anim.is_some() {
+        crate::simulation::mario::animation::update_animation_frame(o, w);
+    }
     if obj_is_in_view(w.trig, o, w.models, &matrix, fov)
         && let Some(model) = o.gfx.shared_child
     {
@@ -192,26 +208,35 @@ pub fn render_object(o: &mut Object, w: &StepWorld<'_>, camera: &Mat4, fov: f32)
         process_model(o, traversal, traversal.root);
     }
     o.gfx.throw_matrix = None;
+    used
 }
+
+/// The terrain matrices the last render pass placed objects with, by
+/// object. Presentation only: the pass cleared them from the objects.
+pub type RenderedMatrices = BTreeMap<ObjectId, Mat4>;
 
 /// The render pass for every object node but Mario's, which
 /// `mario::tick::render_mario_object` processes. The original walks
 /// gObjParentGraphNode's children in allocation order; no ported write
 /// depends on another object, so list order gives the same state.
-pub fn render_objects(w: &mut StepWorld<'_>, camera: &GraphCamera) {
+pub fn render_objects(w: &mut StepWorld<'_>, camera: &GraphCamera) -> RenderedMatrices {
     let matrix = camera_matrix(w.trig, camera);
     let mut ids: Vec<ObjectId> = vec![];
     for list in super::UPDATE_ORDER {
         ids.extend(w.objects.list(list));
     }
+    let mut used = RenderedMatrices::new();
     for id in ids {
         if w.objects.mario == Some(id) {
             continue;
         }
         let mut o = std::mem::take(w.objects.slot_mut(id));
-        render_object(&mut o, w, &matrix, camera.fov);
+        if let Some(m) = render_object(&mut o, w, &matrix, camera.fov) {
+            used.insert(id, m);
+        }
         *w.objects.slot_mut(id) = o;
     }
+    used
 }
 
 /// An object the render pass draws this frame, after its writes: where
@@ -229,6 +254,11 @@ pub struct VisibleObject {
     pub scale: [f32; 3],
     /// GRAPH_RENDER_BILLBOARD: drawn facing the camera (mtxf_billboard).
     pub billboard: bool,
+    /// The terrain matrix the pass placed the object with, if any.
+    pub throw_matrix: Option<Mat4>,
+    /// The animation the pass posed the object with: curAnim's segmented
+    /// address, the frame and the vertical-translation multiplier.
+    pub animation: Option<(u32, i16, i16)>,
     /// (switch node, selected child node), in traversal order.
     pub cases: Vec<(usize, usize)>,
 }
@@ -265,9 +295,14 @@ fn selected_cases(o: &Object, model: &ObjectModel, node: usize, out: &mut Vec<(u
 
 /// The objects other than Mario that the render pass at `camera` draws, in
 /// `render_objects`' order: the same conditions (active, in the rendered
-/// area, `obj_is_in_view` with the original matrices), read without writing.
+/// area, `obj_is_in_view` with the original matrices, and the terrain
+/// matrices the pass used, from `render_objects`), read without writing.
 /// Run after the frame, the switches select what the pass selected.
-pub fn visible_objects(w: &StepWorld<'_>, camera: &GraphCamera) -> Vec<VisibleObject> {
+pub fn visible_objects(
+    w: &StepWorld<'_>,
+    camera: &GraphCamera,
+    matrices: &RenderedMatrices,
+) -> Vec<VisibleObject> {
     let matrix = camera_matrix(w.trig, camera);
     let mut out = vec![];
     for list in super::UPDATE_ORDER {
@@ -275,21 +310,15 @@ pub fn visible_objects(w: &StepWorld<'_>, camera: &GraphCamera) -> Vec<VisibleOb
             if w.objects.mario == Some(id) {
                 continue;
             }
-            let o = w.objects.slot(id);
-            if o.gfx.node_flags & GRAPH_RENDER_ACTIVE == 0
-                || o.gfx.area_index != w.area_index
-                || o.gfx.throw_matrix.is_some()
-            {
+            let mut o = w.objects.slot(id).clone();
+            if o.gfx.node_flags & GRAPH_RENDER_ACTIVE == 0 || o.gfx.area_index != w.area_index {
                 continue;
             }
             let billboard = o.gfx.node_flags & GRAPH_RENDER_BILLBOARD != 0;
-            let placed = if billboard {
-                mtxf_billboard(w.trig, &matrix, o.gfx.pos, 0)
-            } else {
-                let local = mtxf_rotate_zxy_and_translate(w.trig, o.gfx.pos, o.gfx.angle);
-                mtxf_mul(&local, &matrix)
-            };
-            let placed = mtxf_scale_vec3f(&placed, o.gfx.scale);
+            let throw_matrix = matrices.get(&id).copied();
+            o.gfx.throw_matrix = throw_matrix.map(ThrowMatrix::Terrain);
+            let placed = placement(w.trig, &o, &matrix);
+            let o = &o;
             let Some(model) = o.gfx.shared_child else {
                 continue;
             };
@@ -309,6 +338,13 @@ pub fn visible_objects(w: &StepWorld<'_>, camera: &GraphCamera) -> Vec<VisibleOb
                 angle: o.gfx.angle,
                 scale: o.gfx.scale,
                 billboard,
+                throw_matrix,
+                animation: match o.gfx.anim.cur_anim {
+                    Some(super::AnimRef::Object(address)) => {
+                        Some((address, o.gfx.anim.anim_frame, o.gfx.anim.anim_y_trans))
+                    }
+                    _ => None,
+                },
                 cases,
             });
         }
@@ -317,9 +353,10 @@ pub fn visible_objects(w: &StepWorld<'_>, camera: &GraphCamera) -> Vec<VisibleOb
 }
 
 /// An authored model table for ROM-free tests: MODEL_MARIO loaded, and the
-/// coin and sparkle models with the traversal structure of the pinned
-/// actors/coin and actors/sparkle layouts (a shadow over an 8-case
-/// geo_switch_anim_state switch, and a 12-case switch). Not ROM content.
+/// coin, sparkle, Bob-omb, explosion and smoke models with the switch
+/// structure of the pinned actors' layouts (a shadow over an 8-case
+/// geo_switch_anim_state switch, a 12-case switch, the Bob-omb's 2-case eye
+/// switch, the explosion's 9 and the smoke's 7). Not ROM content.
 pub fn authored_models() -> ObjectModels {
     let switch = |num_cases: i16, wrapped: bool| {
         let base = usize::from(wrapped);
@@ -356,5 +393,10 @@ pub fn authored_models() -> ObjectModels {
     models.insert(MODEL_YELLOW_COIN as u16, Some(switch(8, true)));
     models.insert(MODEL_YELLOW_COIN_NO_SHADOW as u16, Some(switch(8, true)));
     models.insert(MODEL_SPARKLES as u16, Some(switch(12, false)));
+    // The Bob-omb's eyes (a 2-case switch under its parts), the explosion's
+    // nine frames under a start node, and the smoke's seven.
+    models.insert(MODEL_BLACK_BOBOMB as u16, Some(switch(2, true)));
+    models.insert(MODEL_EXPLOSION as u16, Some(switch(9, true)));
+    models.insert(MODEL_SMOKE as u16, Some(switch(7, false)));
     models
 }

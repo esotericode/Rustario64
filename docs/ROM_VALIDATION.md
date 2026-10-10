@@ -299,7 +299,8 @@ scripts (5,552 words, 700 pointers of which 546 are natives) against ROM
 `0x219E00..0x21F4C0` (SHA-1 `6a828ee7f66f5bde4778bd21b65857ca56ae980c`). It
 locates `sMacroObjectPresets` as the only matching run at `0xEC7E0..0xED350`
 (SHA-1 `30e066cc1ed9ee9b24c657afaf6f021d5e932677`) and checks the version
-adapter's 20 script and native entries. `tools/check_object_model_reference.py`
+adapter's 41 script and native entries (20 scripts and 21 natives since
+session 22). `tools/check_object_model_reference.py`
 (same arguments) walks `yellow_coin_geo` (0x1600013C),
 `yellow_coin_no_shadow_geo` (0x160001A0) and `sparkles_geo` (0x170001BC)
 alongside the pinned actors sources (46 geo commands) and confirms
@@ -310,6 +311,10 @@ ranges. BOB act 1 resolves to 88 macro entries and 21 spawn infos; its 14 coin
 placements (five `macro_yellow_coin_1`, three `macro_coin_line_horizontal`,
 one `macro_coin_ring_horizontal`, five `macro_coin_ring_vertical_flying`, as
 the pinned `levels/bob/areas/1/macro.inc.c` places them) and the spin airborne
-warp spawn; 94 placements are recorded as unported (`tests/objects.rs`). With
-these scripts, presets and models, 9,600 BOB frames of objects and the 77,112
-BOB camera frames match the native decomp word for word.
+warp spawn; since session 22 its 12 `macro_bobomb`/`macro_bobomb_stationary`
+placements spawn too, with the Bob-omb's animation table (segmented
+0x0802396C: two animations of 13 animated parts) decoded from the level's
+common0 segment, and 82 placements are recorded as unported
+(`tests/objects.rs`). With these scripts, presets, animations and models,
+9,600 BOB frames of objects, 27,055 BOB frames of Bob-omb encounters and the
+77,112 BOB camera frames match the native decomp word for word.

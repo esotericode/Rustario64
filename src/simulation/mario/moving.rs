@@ -2,7 +2,7 @@
 //! src/game/mario_actions_moving.c. Actions that hold or ride an object panic
 //! until objects are simulated.
 use super::{
-    MarioState, Mat4, StepWorld,
+    MarioState, Mat4, StepWorld, ThrowMatrix,
     animation::{
         is_anim_at_end, is_anim_past_frame, set_mario_anim_with_accel, set_mario_animation,
     },
@@ -16,7 +16,7 @@ use super::{
     },
     f32_to_s16, f32_to_s32,
     inputs::{mario_floor_is_slippery, mario_get_floor_class},
-    interaction::{mario_check_object_grab, mario_drop_held_object},
+    interaction::{mario_check_object_grab, mario_drop_held_object, mario_grab_used_object},
     object::mario_update_punch_sequence,
     step::{
         mario_bonk_reflection, mario_push_off_steep_floor, mario_set_forward_vel,
@@ -193,7 +193,7 @@ pub fn align_with_floor(m: &mut MarioState, w: &mut StepWorld<'_>) {
     m.pos[1] = m.floor_height;
     let index = usize::from(m.unk00);
     w.floor_align_matrix[index] = mtxf_align_terrain_triangle(w, m.pos, m.face_angle[1], 40.0);
-    m.obj.gfx.throw_matrix = Some(index);
+    m.obj.gfx.throw_matrix = Some(ThrowMatrix::FloorAlign(index));
 }
 
 /// begin_walking_action.
@@ -1142,8 +1142,10 @@ fn act_dive_slide(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
         mario_set_forward_vel(m, w, 0.0);
         set_mario_action(m, w, ACT_STOMACH_SLIDE_STOP, 0);
     }
-    if mario_check_object_grab(m) {
-        unreachable!("object grabs need objects");
+    if mario_check_object_grab(m, w) {
+        mario_grab_used_object(m);
+        m.body.grab_pos = GRAB_POS_LIGHT_OBJ;
+        return 1;
     }
     common_slide_action(m, w, ACT_STOMACH_SLIDE_STOP, ACT_FREEFALL, MARIO_ANIM_DIVE);
     0

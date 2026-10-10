@@ -8,8 +8,8 @@
 //! header, followed by the arrays. Two IDs may share arrays (the original's
 //! anim_01_02); each entry is decoded from its own DMA range, as the game
 //! loads it. The ROM range comes from the version adapter.
-use super::{ImportError, Result, reader::Reader, rom::Rom, version};
-use crate::content::animation::{Animation, MarioAnimations};
+use super::{ImportError, Result, reader::Reader, rom::Rom, segments::Segments, version};
+use crate::content::animation::{Animation, MarioAnimations, ObjectAnimations};
 
 const HEADER_BYTES: usize = 0x18;
 /// The US table has 209 entries; anything above this is rejected as corrupt.
@@ -140,4 +140,115 @@ pub fn mario_animations(rom: &Rom) -> Result<MarioAnimations> {
         ));
     }
     Ok(animations)
+}
+
+/// Object animation tables hold a few entries before their NULL; anything
+/// longer is rejected as corrupt.
+pub const MAX_OBJECT_TABLE_ENTRIES: usize = 64;
+const OBJECT_CONTEXT: &str = "object animation";
+
+/// Decode the struct Animation at a segmented address: a 0x18-byte header
+/// whose `values` and `index` are segmented pointers (`length` is 0 outside
+/// Mario's DMA table). The index holds (part count + 1) * 3 attributes, as
+/// the pinned ANIMINDEX_NUMPARTS sizes `unusedBoneCount`; each attribute's
+/// frames must lie inside the mapped values, so later frame lookups are
+/// bounded for non-negative frames.
+pub fn decode_object_animation(segments: &Segments, address: u32) -> Result<Animation> {
+    let fail = |detail: String| ImportError::new(OBJECT_CONTEXT, address as usize, detail);
+    let header = Reader::new(segments.read(address, HEADER_BYTES)?, OBJECT_CONTEXT);
+    let bone_count = header.i16(0x0A)?;
+    let values_address = header.u32(0x0C)?;
+    let index_address = header.u32(0x10)?;
+    let length = header.u32(0x14)?;
+    if length != 0 {
+        return Err(fail(format!(
+            "length {length:#X}; object animations are not DMA entries"
+        )));
+    }
+    let attributes = usize::try_from(bone_count)
+        .ok()
+        .and_then(|parts| parts.checked_add(1))
+        .map(|parts| parts * 3)
+        .ok_or_else(|| fail(format!("part count {bone_count}")))?;
+    let index: Vec<u16> = segments
+        .read(index_address, attributes * 4)?
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|b| u16::from_be_bytes(*b))
+        .collect();
+    let used = index
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|[frames, offset]| {
+            if *frames == 0 {
+                Err(fail("an attribute with no frames".into()))
+            } else {
+                Ok(usize::from(*offset) + usize::from(*frames))
+            }
+        })
+        .try_fold(0, |end, used| used.map(|u| end.max(u)))?;
+    let values: Vec<i16> = segments
+        .read(values_address, used * 2)?
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|b| i16::from_be_bytes(*b))
+        .collect();
+    Ok(Animation {
+        flags: header.i16(0)?,
+        y_trans_divisor: header.i16(2)?,
+        start_frame: header.i16(4)?,
+        loop_start: header.i16(6)?,
+        loop_end: header.i16(8)?,
+        bone_count,
+        index,
+        values,
+    })
+}
+
+/// Decode an object animation pointer table at a segmented address (its
+/// entries up to the NULL) and every animation it names into `out`.
+pub fn decode_object_table(
+    segments: &Segments,
+    table: u32,
+    out: &mut ObjectAnimations,
+) -> Result<()> {
+    if out.tables.contains_key(&table) {
+        return Ok(());
+    }
+    let mut entries = vec![];
+    for i in 0..=MAX_OBJECT_TABLE_ENTRIES {
+        let entry = u32::from_be_bytes(
+            segments
+                .read(table + 4 * i as u32, 4)?
+                .try_into()
+                .expect("four bytes"),
+        );
+        if entry == 0 {
+            if entries.is_empty() {
+                return Err(ImportError::new(
+                    OBJECT_CONTEXT,
+                    table as usize,
+                    "empty animation table",
+                ));
+            }
+            for &address in &entries {
+                if let std::collections::btree_map::Entry::Vacant(entry) =
+                    out.animations.entry(address)
+                {
+                    entry.insert(decode_object_animation(segments, address)?);
+                }
+            }
+            out.tables.insert(table, entries);
+            return Ok(());
+        }
+        entries.push(entry);
+    }
+    Err(ImportError::new(
+        OBJECT_CONTEXT,
+        table as usize,
+        format!("no NULL within {MAX_OBJECT_TABLE_ENTRIES} entries"),
+    ))
 }

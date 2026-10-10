@@ -20,6 +20,22 @@ use std::{
     sync::{Mutex, MutexGuard},
 };
 
+/// c/object_anims_unit.c's OracleAnimation.
+#[repr(C)]
+struct OracleAnimation {
+    segmented: u32,
+    flags: i16,
+    y_trans_divisor: i16,
+    start_frame: i16,
+    loop_start: i16,
+    loop_end: i16,
+    bone_count: i16,
+    index: *const u16,
+    index_count: i32,
+    values: *const i16,
+    value_count: i32,
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 struct OracleSurface {
@@ -98,6 +114,7 @@ unsafe extern "C" {
         preset_params: *const i16,
     );
     fn oracle_tick_set_spawn_infos(infos: *const OracleSpawnInfo, count: i32);
+    fn oracle_set_bobomb_animations(table: u32, anims: *const OracleAnimation, count: i32);
     fn oracle_tick_run(input: *const OracleTickInput);
     fn oracle_tick_snapshot(
         names: *mut *const *const std::ffi::c_char,
@@ -561,6 +578,31 @@ impl Oracle {
             );
             oracle_tick_set_spawn_infos(o.spawn_infos.as_ptr(), o.spawn_infos.len() as i32);
         }
+        let animations: Vec<OracleAnimation> = o
+            .bobomb_animations
+            .iter()
+            .map(|a| OracleAnimation {
+                segmented: a.segmented,
+                flags: a.flags,
+                y_trans_divisor: a.y_trans_divisor,
+                start_frame: a.start_frame,
+                loop_start: a.loop_start,
+                loop_end: a.loop_end,
+                bone_count: a.bone_count,
+                index: a.index.as_ptr(),
+                index_count: a.index.len() as i32,
+                values: a.values.as_ptr(),
+                value_count: a.values.len() as i32,
+            })
+            .collect();
+        // SAFETY: as above; the C side copies the arrays.
+        unsafe {
+            oracle_set_bobomb_animations(
+                o.bobomb_table,
+                animations.as_ptr(),
+                animations.len() as i32,
+            )
+        };
     }
 
     /// Enter a level as c/tick.c's oracle_tick_begin does. Requires the

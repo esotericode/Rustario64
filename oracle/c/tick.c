@@ -85,6 +85,10 @@ extern struct Surface gWaterSurfacePseudoFloor;
 extern u32 gOracleSaveFlags;
 extern s32 gOracleCapPosValid;
 extern s32 gOracleTotalStars;
+void oracle_frame_arena_reset(void);
+const f32 *oracle_frame_matrix(const void *p);
+u32 oracle_object_animation_address(const void *p);
+u32 oracle_object_animation_table_address(const void *p);
 
 typedef struct {
     s32 startPos[3];
@@ -150,7 +154,7 @@ typedef struct {
 } OracleScript;
 s32 oracle_script_count(void);
 const OracleScript *oracle_script(s32 i);
-#define MAX_SCRIPTS 16
+#define MAX_SCRIPTS 32
 static u32 sScriptAddresses[MAX_SCRIPTS];
 
 void oracle_tick_set_scripts(const u32 *segmented, s32 count) {
@@ -455,6 +459,8 @@ void oracle_tick_run(const OracleTickInput *in) {
         fail("oracle_tick_begin was not called");
     }
     oracle_clear_events();
+    /* select_gfx_pool: this frame's display-list allocations start over. */
+    oracle_frame_arena_reset();
     /* read_controller_inputs, connected controller */
     controller->rawStickX = (s16) in->stick[0];
     controller->rawStickY = (s16) in->stick[1];
@@ -639,21 +645,27 @@ static void put_object(const char *prefix, struct Object *o) {
     s32 throwMatrix;
     s32 model = -1;
 #define NAME(field) (snprintf(buf, sizeof(buf), "%s.%s", prefix, field), buf)
+    /* curAnim: 0 for NULL, 1 for Mario's DMA buffer, otherwise the
+     * animation's segmented address. */
     if (gfx->animInfo.curAnim == NULL) {
         curAnim = 0;
     } else if (o == gMarioObject && (void *) gfx->animInfo.curAnim == gMarioAnimsBuf.bufTarget) {
         curAnim = 1;
-    } else {
-        fail("curAnim points outside Mario's animation buffer");
+    } else if ((curAnim = (s32) oracle_object_animation_address(gfx->animInfo.curAnim)) == 0) {
+        fail("curAnim points outside the loaded animations");
     }
+    /* throwMatrix: -1 for NULL, a floor-align matrix's index, or 2 for a
+     * display-list matrix (obj_orient_graph's), whose words follow. */
     if (gfx->throwMatrix == NULL) {
         throwMatrix = -1;
     } else if (gfx->throwMatrix == &sFloorAlignMatrix[0]) {
         throwMatrix = 0;
     } else if (gfx->throwMatrix == &sFloorAlignMatrix[1]) {
         throwMatrix = 1;
+    } else if (oracle_frame_matrix(gfx->throwMatrix) != NULL) {
+        throwMatrix = 2;
     } else {
-        fail("throwMatrix points outside the floor-align matrices");
+        fail("throwMatrix points outside the floor-align matrices and the frame arena");
     }
     if (gfx->sharedChild != NULL) {
         model = oracle_render_model_of(gfx->sharedChild);
@@ -673,6 +685,14 @@ static void put_object(const char *prefix, struct Object *o) {
     put_i(NAME("gfx.anim.animFrameAccelAssist"), gfx->animInfo.animFrameAccelAssist);
     put_i(NAME("gfx.anim.animAccel"), gfx->animInfo.animAccel);
     put_i(NAME("gfx.throwMatrix"), throwMatrix);
+    if (throwMatrix == 2) {
+        const f32 *words = oracle_frame_matrix(gfx->throwMatrix);
+        for (i = 0; i < 16; i++) {
+            char field[32];
+            snprintf(field, sizeof(field), "gfx.throwMatrixWords[%d]", i);
+            put_f(NAME(field), words[i]);
+        }
+    }
     put(NAME("collidedObjInteractTypes"), o->collidedObjInteractTypes);
     put_i(NAME("activeFlags"), o->activeFlags);
     put_i(NAME("numCollidedObjs"), o->numCollidedObjs);
@@ -681,10 +701,24 @@ static void put_object(const char *prefix, struct Object *o) {
         snprintf(field, sizeof(field), "collidedObjs[%d]", i);
         put_i(NAME(field), i < o->numCollidedObjs ? object_id(o->collidedObjs[i]) : -1);
     }
+    /* The N64's pointer fields share the raw words; on the host they are
+     * ptrData. A pointer becomes the segmented address the Rust side stores:
+     * an animation table's or a behavior script's. */
     for (i = 0; i < 0x50; i++) {
         char field[32];
+        u32 word = o->rawData.asU32[i];
+        const void *pointer = o->ptrData.asVoidPtr[i];
+        if (pointer != NULL) {
+            if (word != 0) {
+                fail("an object field used as both a pointer and a number");
+            }
+            word = oracle_object_animation_table_address(pointer);
+            if (word == 0) {
+                word = script_address((const BehaviorScript *) pointer);
+            }
+        }
         snprintf(field, sizeof(field), "raw[0x%02X]", i);
-        put(NAME(field), o->rawData.asU32[i]);
+        put(NAME(field), word);
     }
     put(NAME("unused1"), o->unused1);
     put(NAME("bhvStackIndex"), o->bhvStackIndex);

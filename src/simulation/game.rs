@@ -22,14 +22,17 @@ use crate::{
         hud::update_hud_values,
         mario::{
             Event, MarioState, PlayerCameraState, StepWorld,
-            constants::{ACTIVE_FLAG_MOVE_THROUGH_GRATE, MARIO_VANISH_CAP},
+            constants::{ACTIVE_FLAG_MOVE_THROUGH_GRATE, MARIO_VANISH_CAP, SHAKE_SHOCK},
             tick::{
                 LevelEntry, LevelObjects, RenderedFrame, enter_level_with, render_mario_object,
                 update_objects,
             },
         },
         math::TrigTables,
-        object::{object, render::render_objects},
+        object::{
+            object,
+            render::{RenderedMatrices, render_objects},
+        },
         rng::Rng,
     },
 };
@@ -97,6 +100,9 @@ pub struct Game<'a> {
     pub mario: MarioState,
     pub world: StepWorld<'a>,
     pub camera: CameraSystem,
+    /// The terrain matrices the last render pass placed objects with
+    /// (presentation only; the pass cleared them).
+    pub rendered_matrices: RenderedMatrices,
 }
 
 impl<'a> Game<'a> {
@@ -134,6 +140,7 @@ impl<'a> Game<'a> {
             mario,
             world,
             camera,
+            rendered_matrices: RenderedMatrices::new(),
         }
     }
 
@@ -156,13 +163,24 @@ impl<'a> Game<'a> {
         let reported = m.camera_status;
         update_objects(m, w);
         camera.rig.movement = w.camera_movement_flags as u16;
-        // Mario's requests, in call order, each followed by what it produced.
+        // The objects' camera requests (Mario's and the environmental shakes
+        // of explosions), in call order, each followed by what it produced.
+        // Applying them after the update is equivalent while no request draws
+        // from the random sequence other objects share (see DECISIONS.md).
         let mario_events = std::mem::take(&mut w.events);
         for event in mario_events {
             w.events.push(event);
+            if let Event::EnvironmentalCameraShake(shake) = event {
+                camera.rig.environmental_shake(shake);
+                continue;
+            }
             if !matches!(event, Event::CameraMode { .. } | Event::CameraShake(_)) {
                 continue;
             }
+            assert!(
+                event != Event::CameraShake(SHAKE_SHOCK),
+                "a deferred shock shake would draw randomness after later objects' draws"
+            );
             let mut status = PlayerCameraState {
                 action: reported.action,
                 pos: reported.pos,
@@ -216,7 +234,7 @@ impl<'a> Game<'a> {
         // render_game: the camera nodes enclose the object nodes, Mario's first.
         camera.render(m.action, m.camera_status.pos, w.trig);
         let rendered = render_mario_object(&mut m.obj, w);
-        render_objects(w, &camera.graph);
+        self.rendered_matrices = render_objects(w, &camera.graph);
         // display_and_vsync.
         w.global_timer = w.global_timer.wrapping_add(1);
         (

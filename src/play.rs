@@ -467,6 +467,7 @@ impl<'a> Session<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::animation::NO_OBJECT_ANIMATIONS;
     use crate::simulation::object::{render::authored_models, script::authored_scripts};
     use crate::{
         content::{CollisionMesh, Triangle, animation::Animation},
@@ -662,7 +663,7 @@ mod tests {
         let trig = tables();
         let anims = still_animations();
         let (scripts, models) = (authored_scripts(), authored_models());
-        let objects = LevelObjects::mario_only(&scripts, &models);
+        let objects = LevelObjects::mario_only(&scripts, &models, &NO_OBJECT_ANIMATIONS);
         let mut session = Session::new(&world, &trig, &anims, objects, entry(90));
         assert_eq!(session.mario().action, ACT_IDLE);
         // create_camera's yaw is 0 until the first update initializes the camera.
@@ -729,7 +730,7 @@ mod tests {
         let trig = tables();
         let anims = still_animations();
         let (scripts, models) = (authored_scripts(), authored_models());
-        let objects = LevelObjects::mario_only(&scripts, &models);
+        let objects = LevelObjects::mario_only(&scripts, &models, &NO_OBJECT_ANIMATIONS);
         let mut session = Session::new(&world, &trig, &anims, objects, entry(0));
         let mut ticks = 0;
         while session.step(&Pad::default()) {

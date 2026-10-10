@@ -6,9 +6,14 @@ first person) have native decomp comparison coverage. BOB's act-1 coins
 (yellow coins and coin formations) are drawn from the ROM and can be collected.
 Collection sparkles animate, and the upper-right development counter reads the
 original HUD value (which counts up every other tick). Coin positions interpolate;
-texture animation stays at 30 Hz. Coin shadows and original HUD typography are
-pending. Missions, every other object (including the cannon lid), camera
-cutscenes, original pause behavior, water/cutscene actions, warps, saves,
+texture animation stays at 30 Hz. BOB's twelve act-1 Bob-ombs walk, light their
+fuses and chase Mario, explode (shaking the camera and knocking Mario back),
+drop a coin the first time they explode, and respawn once Mario is far away;
+they are drawn with their animated ROM model, fuse smoke, explosions and smoke.
+Punching or diving into a Bob-omb (picking it up) stops play with a message:
+holding is not ported yet. Object shadows and original HUD typography are
+pending. Missions, King Bob-omb and every other object (including the cannon
+lid), camera cutscenes, original pause behavior, water/cutscene actions, warps, saves,
 audio are missing. Basic controller input is available; remapping, calibration,
 rumble and controller-driven menu navigation are pending. Play stops on
 unsupported paths; R re-enters.
@@ -17,16 +22,16 @@ unsupported paths; R re-enters.
 
 Windows and Linux ZIP builds are attached to successful runs of the
 [Rust foundation workflow](https://github.com/esotericode/Rustario64/actions/workflows/rust.yml).
-Choose the latest successful run for the branch under test (the latest enemy
-physics foundation is on `codex/object-step-physics`, stacked on the controller
-and desktop launcher), then
+Choose the latest successful run for the branch under test (Bob-ombs are on
+`claude/jolly-noether-2tta72`, stacked on the controller and desktop launcher
+changes), then
 download `rustario64-windows-x86_64` or `rustario64-linux-x86_64` under Artifacts.
 GitHub's artifact ZIP contains the runtime ZIP; extract both layers. The build
 identifier is in the runtime folder's BUILD_INFO.txt.
 
-The enemy physics increment has component comparisons but does not enable
-additional actors in play. The launcher, controller and coin exploration flow
-remains the current manual test target.
+The Bob-omb increment enables BOB's Bob-ombs in play with per-frame decomp
+comparisons. The launcher, controller, coin and Bob-omb exploration flow is the
+current manual test target.
 
 Extract the whole ZIP. Keep your own ROM outside this folder. Only the original
 8 MiB US v1.0 ROM is supported, identified after byte-order normalization by
@@ -144,6 +149,21 @@ counts up. Check at 60 Hz and higher with interpolation on/off, then pause,
 resume, change focus, toggle M and restart: objects must not streak from old
 positions or reappear after collection. Missing actors are listed by the
 importer; this remains exploration, not a completed mission.
+
+## Bob-omb checks
+
+From the start, walk toward the Bob-ombs on the path ahead (or launch with
+`--start X,Y,Z[,YAW]` near one in development builds). Check that a Bob-omb
+walks with a smooth animation, blinks, turns to face Mario, lights its fuse
+(smoke puffs) and chases at a faster walk, then explodes after about five
+seconds: a bright expanding explosion, the camera shake, a puff of dark smoke
+and, when Mario is close, a knockback with health loss. The first explosion
+drops a yellow coin that can be collected. Jump-kick a Bob-omb (A, then B in
+the air): it flies off and explodes when it lands. Walk away and return:
+it respawns at its home. Compare the explosion and smoke look with the original
+game at 30, 60 and 144 Hz with interpolation on and off; report any part that
+pops, faces the wrong way or flickers. Punching or diving into one ends play
+with a "holding objects" message; that is the expected current boundary.
 
 ## Controller and launcher checks
 

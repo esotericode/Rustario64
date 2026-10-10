@@ -9,7 +9,7 @@
 //! decomp; the importer additionally requires the main scripts to load
 //! exactly the adapter's segment ranges.
 use super::{
-    ImportError, Result,
+    ImportError, Result, animation,
     bob::load_segment,
     geo::{self, GeoNodeKind},
     level,
@@ -19,7 +19,7 @@ use super::{
     version,
 };
 use crate::{
-    content::{Act, ImportedArea, SegmentLoad},
+    content::{Act, ImportedArea, SegmentLoad, animation::ObjectAnimations},
     simulation::{
         mario::tick::LevelObjects,
         object::{
@@ -338,9 +338,14 @@ pub fn level_models(
 
 impl ObjectContent {
     /// gLoadedGraphNodes after the main scripts and a level's registrations,
-    /// with traversals for the main scripts' geo models (whose segments are
-    /// loaded); the level's own models are loaded without a traversal.
-    pub fn models(&self, level: &[(u16, ModelRegistration)]) -> ObjectModels {
+    /// with traversals for the main scripts' geo models and, given the
+    /// level's own loaded segments, the level's geo models; a model whose
+    /// layout cannot be decoded from those segments is loaded without one.
+    pub fn models(
+        &self,
+        level: &[(u16, ModelRegistration)],
+        level_segments: Option<&Segments>,
+    ) -> ObjectModels {
         let mut models = ObjectModels::default();
         for (&model, registration) in &self.main_models {
             let traversal = if registration.geometry_layout {
@@ -356,10 +361,40 @@ impl ObjectContent {
             };
             models.insert(model, traversal);
         }
-        for (model, _) in level {
-            models.insert(*model, None);
+        for (model, registration) in level {
+            let traversal = level_segments
+                .filter(|_| registration.geometry_layout)
+                .and_then(|segments| traversal(segments, registration.pointer).ok());
+            models.insert(*model, traversal);
         }
         models
+    }
+
+    /// The animation tables of every LOAD_ANIMATIONS the port's runnable
+    /// behaviors reach, decoded from whichever of the main scripts' or the
+    /// level's segments holds them. A table in a segment this level does not
+    /// load is left out; an object that animates from it cannot spawn here
+    /// (its model is not loaded either) and would stop with a clear panic.
+    pub fn animations(&self, level_segments: Option<&Segments>) -> Result<ObjectAnimations> {
+        let mut out = ObjectAnimations::default();
+        for behavior in Behavior::ALL {
+            let script = self.scripts.address(behavior);
+            let Ok(tables) = self.scripts.animation_tables(script) else {
+                continue;
+            };
+            for table in tables {
+                let segment = (table >> 24) as u8;
+                let segments = if self.segments.is_mapped(segment) {
+                    &self.segments
+                } else if let Some(level) = level_segments.filter(|l| l.is_mapped(segment)) {
+                    level
+                } else {
+                    continue;
+                };
+                animation::decode_object_table(segments, table, &mut out)?;
+            }
+        }
+        Ok(out)
     }
 
     /// An area's placements for an act: the macro list with presets
@@ -422,10 +457,16 @@ impl ObjectContent {
 }
 
 /// A level's object content: the main scripts' content, gLoadedGraphNodes
-/// after the level's registrations, and the entered area's placements.
+/// after the level's registrations, the object animations its runnable
+/// behaviors use, the level's own loaded segments (for drawing its models)
+/// and the entered area's placements.
 pub struct LevelObjectContent {
     pub content: ObjectContent,
     pub models: ObjectModels,
+    pub animations: ObjectAnimations,
+    pub level_segments: Segments,
+    /// The level's model registrations (gLoadedGraphNodes entries it adds).
+    pub level_models: Vec<(u16, ModelRegistration)>,
     pub area: AreaObjects,
 }
 
@@ -435,13 +476,14 @@ impl LevelObjectContent {
         LevelObjects {
             scripts: &self.content.scripts,
             models: &self.models,
+            animations: &self.animations,
             area: self.area.clone(),
         }
     }
 
     /// The same scripts and models with no placements: Mario alone.
     pub fn mario_only(&self) -> LevelObjects<'_> {
-        LevelObjects::mario_only(&self.content.scripts, &self.models)
+        LevelObjects::mario_only(&self.content.scripts, &self.models, &self.animations)
     }
 }
 
@@ -458,7 +500,17 @@ pub fn bob(
     let main = version::MAIN_LEVEL_SCRIPTS;
     let main = rom.reader().slice(main.start, main.len())?;
     let registrations = level_models(script, entry, main)?;
-    let models = content.models(&registrations);
+    // The level's script segment also holds its own geo layouts.
+    let mut level_segments = Segments::default();
+    level_segments.insert(version::SCRIPT_SEGMENT, script.to_vec())?;
+    for load in &level.segment_loads {
+        let bytes = load_segment(rom, load)?;
+        level_segments
+            .insert(load.segment, bytes)
+            .map_err(|e| ImportError::new("segment load", load.address as usize, e.to_string()))?;
+    }
+    let models = content.models(&registrations, Some(&level_segments));
+    let animations = content.animations(Some(&level_segments))?;
     let (area_id, ..) = level
         .mario_start
         .ok_or_else(|| ImportError::new("BOB", 0, "no Mario start"))?;
@@ -471,6 +523,9 @@ pub fn bob(
     Ok(LevelObjectContent {
         content,
         models,
+        animations,
+        level_segments,
+        level_models: registrations,
         area,
     })
 }

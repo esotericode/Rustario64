@@ -30,7 +30,7 @@ pub mod step;
 pub mod tick;
 
 use crate::{
-    content::animation::MarioAnimations,
+    content::animation::{MarioAnimations, NO_OBJECT_ANIMATIONS, ObjectAnimations},
     simulation::{
         collision::{CollisionFlags, CollisionWorld, Surface, SurfaceIndex},
         controller::Controller,
@@ -56,7 +56,7 @@ pub enum SurfaceRef {
 /// Mario's object is an ordinary `struct Object`; it lives in MarioState
 /// (m->marioObj) rather than in the object pool's slot data.
 pub use crate::simulation::object::{
-    AnimInfo, AnimRef, GfxState, Object as MarioObject, ObjectFields, ObjectId,
+    AnimInfo, AnimRef, GfxState, Object as MarioObject, ObjectFields, ObjectId, ThrowMatrix,
 };
 
 /// struct MarioBodyState (gBodyStates[0]): model presentation state that the
@@ -223,6 +223,8 @@ pub enum Event {
         frames: i16,
     },
     CameraShake(i16),
+    /// set_environmental_camera_shake from an object (an explosion).
+    EnvironmentalCameraShake(i16),
     /// A level warp request (warp operation). No level runtime handles it yet.
     Warp(i32),
     LevelInitText(u32),
@@ -246,6 +248,7 @@ impl Event {
             Event::FadeoutCapMusic => (7, 0, 0),
             Event::CameraMode { mode, frames } => (8, i32::from(mode), i32::from(frames)),
             Event::CameraShake(shake) => (9, i32::from(shake), 0),
+            Event::EnvironmentalCameraShake(shake) => (14, i32::from(shake), 0),
             Event::Warp(op) => (10, op, 0),
             Event::LevelInitText(arg) => (11, arg as i32, 0),
             Event::WindParticles { pitch, yaw } => (12, i32::from(pitch), i32::from(yaw)),
@@ -310,6 +313,8 @@ pub struct StepWorld<'a> {
     pub behaviors: &'a BehaviorScripts,
     /// gLoadedGraphNodes, with the render traversal of spawned models.
     pub models: &'a ObjectModels,
+    /// The object animation tables the level's loaded segments hold.
+    pub object_anims: &'a ObjectAnimations,
     /// The object pool and lists (Mario's object data stays in MarioState).
     pub objects: ObjectPool,
     /// The loaded area's placements and their respawn records.
@@ -356,6 +361,7 @@ impl<'a> StepWorld<'a> {
             events: Vec::new(),
             behaviors: &NO_SCRIPTS,
             models: &NO_MODELS,
+            object_anims: &NO_OBJECT_ANIMATIONS,
             objects: ObjectPool::new(),
             area: AreaObjects::default(),
             rng: Rng::default(),

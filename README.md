@@ -3,7 +3,8 @@
 A new Rust engine that imports Super Mario 64 content from a user-supplied ROM.
 Bob-omb Battlefield is the first playable **target**; today it is an imported,
 viewable level where Mario, with his model and animations from your ROM, can be
-moved around by the compared simulation; it is not yet a playable course. Read
+moved around by the compared simulation among its coins and Bob-ombs; it is not
+yet a playable course (no missions, stars or King Bob-omb). Read
 [PROJECT_PLAN.md](PROJECT_PLAN.md) for scope, milestones, and the live status.
 
 What works now:
@@ -59,17 +60,26 @@ What works now:
   (5,400 authored frames in CI, 9,600 on BOB's coins with your ROM). In the
   viewer, Mario sees and collects BOB's act-1 coins with their ROM models,
   animated sparkles and a coin counter.
+- **BOB's Bob-ombs**: the ROM's Bob-omb script and animation table run the
+  original patrol, blink, fuse, chase, kick launch, explosion (with its camera
+  shake and death smoke), lava and death-plane deaths, yellow-coin loot and
+  respawner, with the original `object_step` movement and Mario's damage
+  knockback. **Complete frames with Bob-ombs match the decomp word for word**
+  (9,000 authored frames and 1,284 kick encounter frames in CI, 27,055 on BOB's
+  twelve Bob-ombs with your ROM). The viewer draws them with their skinned,
+  animated ROM model, fuse smoke and explosions. Picking a Bob-omb up (punch or
+  dive into it) is not ported yet: play stops with a message there.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
   **full-tick** and input-stage trace pairs.
-- The original enemy `object_step` physics, ready for actor integration:
-  wall reflection, slopes/friction, bouncing, water motion and terrain alignment.
-  63,174 authored and 123,200 local BOB component calls match native C bit for bit.
-  This does not yet spawn Bob-ombs or run their behaviors.
+- The original enemy `object_step` physics (wall reflection, slopes/friction,
+  bouncing, water motion and terrain alignment): 63,174 authored and 123,200
+  local BOB component calls match native C bit for bit, and Bob-ombs use it.
 
 This is level exploration with Mario's movement and camera, not mission
-support: of the objects only the coins are simulated. Enemies, trees, signs,
-red coins, the cannon lid and every other placement are recorded as unported
-and not spawned. There are no camera cutscenes, original pause behavior, cutscene or water
+support: of the objects only the coins and Bob-ombs are simulated. King
+Bob-omb, other enemies, trees, signs, red coins, the cannon lid and every other
+placement are recorded as unported and not spawned. Holding and throwing
+objects are not ported. There are no camera cutscenes, original pause behavior, cutscene or water
 actions, warps, deaths, or missions. Play stops where the port stops
 (unsupported paths, falling off the course); R re-enters.
 The comparisons are against the natively compiled decomp, not N64 execution.
@@ -174,6 +184,7 @@ RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release --test mario_mode
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test mario_tick bob_ticks -- --ignored --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release --test objects -- --ignored --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test objects -- --include-ignored --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test bobombs -- --include-ignored --nocapture
 ```
 
 With a clean pinned decomp checkout, two checkers re-derive the object
@@ -182,7 +193,10 @@ content the importer relies on: `python3 -I tools/check_behavior_reference.py
 `behavior_data.c` over the ROM's segment 0x13 and checks every word, the
 macro preset table and the version adapter's script and native addresses;
 `tools/check_object_model_reference.py` (same arguments) checks the coin and
-sparkle geo layouts and the object geo callback address.
+sparkle geo layouts and the object geo callback address. The Bob-omb's
+animation table and geo layout are decoded from the ROM; the ROM tests above
+assert their shape and compare their use against the decomp, but no independent
+reference checker covers them yet.
 
 The oracle tests compare BOB's real collision (about four million queries), the
 ROM's trig tables (about four million lookups), Mario's physics steps on BOB
@@ -210,13 +224,18 @@ objects, specials). In the window, C, P, and F toggle collision, placements, and
 fog. The viewer launches straight into BOB area 1 as a development entry point.
 The free camera is a presentation-only inspection camera, not the original game
 camera. The sky is a placeholder color until the skybox is imported; trees,
-enemies, and other unported objects are not drawn yet (their painted ground
+other enemies, and other unported objects are not drawn yet (their painted ground
 shadows are terrain). In Mario mode BOB's act-1 coins and collection sparkles
-are drawn from their ROM models, facing the displayed camera. Coin positions
+are drawn from their ROM models, facing the displayed camera, and Bob-ombs,
+fuse smoke, explosions and death smoke are drawn from theirs, the Bob-omb posed
+from its ROM animation each tick and interpolated between ticks. Coin positions
 interpolate between completed ticks; the original texture-frame switches stay
 at 30 Hz. The window shows the original HUD coin value in a development text
-overlay. Coin shadows and original HUD glyphs remain pending. Offscreen
-`--mario-ticks` images include coins/sparkles; the text overlay is window-only.
+overlay. Object shadows and original HUD glyphs remain pending. Offscreen
+`--mario-ticks` images include objects; the text overlay is window-only.
+`--start X,Y,Z[,YAW]` (Mario mode, window or screenshot) spawns Mario elsewhere
+in area 1 through the normal level entry, a development aid for reaching an
+object quickly; it is not an original warp.
 
 #### Move Mario
 
@@ -362,16 +381,17 @@ reuse, and dependency terms; [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md)
 holds the owner-ROM evidence.
 
 The object system lives in `simulation::object` (pool, lists, interpreter,
-collision, processor, render-pass writes, coin behaviors) and
-`import::objects` (behavior segment, macro presets, model registrations and
-traversals, area placements). A placement whose script the port does not run
+collision, processor, render-pass writes, animations, coin, Bob-omb, explosion
+and respawner behaviors) and `import::objects` (behavior segment, macro presets,
+model registrations and traversals, object animation tables, area placements). A placement whose script the port does not run
 is never spawned; it is listed in `AreaObjects::skipped` with the reason.
 
 ## Next increment
 
-Physical-GPU Windows/Linux playtesting continues. Coin/sparkle drawing and the
-coin counter now work. Port the first mission's actors (King Bob-omb, Bob-ombs,
-the star) with
+Physical-GPU Windows/Linux playtesting continues. Coins and Bob-ombs now work.
+Next is holding: Mario's hand position (HOLP) from an authoritative render
+pass and the picking-up, hold and throw actions, so Bob-ombs can be carried and
+thrown. Then the first mission's remaining actors (King Bob-omb, the star) with
 the camera cutscenes that mission needs. Original-execution traces remain the
 eventual authority. Skybox and placement models remain M1 work.
 

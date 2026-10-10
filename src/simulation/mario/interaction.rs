@@ -1,10 +1,11 @@
 //! Mario's interaction hooks, translated from pinned CC0
 //! src/game/interaction.c (the items vendored as oracle excerpts).
 //!
-//! The handler dispatch runs in the original table order; interact_coin is
-//! ported, and objects with other interaction types are not spawned (their
-//! behaviors are not ported), so the other handlers are unreachable and
-//! panic. Code that would dereference a held, ridden or used object panics,
+//! The handler dispatch runs in the original table order; interact_coin,
+//! interact_damage and interact_grabbable (with the attack, knockback and
+//! push-out helpers they use) are ported, and objects with other interaction
+//! types are not spawned (their behaviors are not ported), so the other
+//! handlers are unreachable and panic. Code that would dereference a held, ridden or used object panics,
 //! as the original would crash without one. Special floors, the death
 //! barrier, lava boosts and punch/kick wall hits are fully ported.
 use super::{
@@ -18,6 +19,12 @@ fn needs_objects(what: &str) -> ! {
     panic!("{what} needs objects, which are not simulated yet")
 }
 
+/// Holding an object needs Mario's held-object actions and the render
+/// pass's hand position (HOLP), which are not ported yet.
+fn needs_holding(what: &str) -> ! {
+    panic!("{what}: holding objects (Mario's hold actions and the hand position) is not ported yet")
+}
+
 /// mario_stop_riding_object.
 pub fn mario_stop_riding_object(m: &mut MarioState) {
     if m.ridden_obj.is_some() {
@@ -28,21 +35,21 @@ pub fn mario_stop_riding_object(m: &mut MarioState) {
 /// mario_grab_used_object.
 pub fn mario_grab_used_object(m: &mut MarioState) {
     if m.held_obj.is_none() {
-        needs_objects("mario_grab_used_object");
+        needs_holding("mario_grab_used_object");
     }
 }
 
 /// mario_drop_held_object.
 pub fn mario_drop_held_object(m: &mut MarioState) {
     if m.held_obj.is_some() {
-        needs_objects("mario_drop_held_object");
+        needs_holding("mario_drop_held_object");
     }
 }
 
 /// mario_throw_held_object.
 pub fn mario_throw_held_object(m: &mut MarioState) {
     if m.held_obj.is_some() {
-        needs_objects("mario_throw_held_object");
+        needs_holding("mario_throw_held_object");
     }
 }
 
@@ -67,10 +74,348 @@ pub fn mario_blow_off_cap(m: &mut MarioState, _cap_speed: f32) {
     }
 }
 
-/// mario_check_object_grab: only objects set INPUT_INTERACT_OBJ_GRABBABLE.
-pub fn mario_check_object_grab(m: &mut MarioState) -> bool {
+/// mario_check_object_grab: a grabbable object in front of Mario becomes
+/// his used object, and on the ground he starts picking it up. No ported
+/// object is Bowser, whose branch is therefore unreachable.
+pub fn mario_check_object_grab(m: &mut MarioState, w: &mut StepWorld<'_>) -> bool {
+    let mut result = false;
     if m.input & INPUT_INTERACT_OBJ_GRABBABLE != 0 {
-        needs_objects("mario_check_object_grab");
+        let object = m
+            .interact_obj
+            .expect("INPUT_INTERACT_OBJ_GRABBABLE without interactObj");
+        let facing_d_yaw = mario_obj_angle_to_object(m, w, object).wrapping_sub(m.face_angle[1]);
+        if (-0x2AAA..=0x2AAA).contains(&facing_d_yaw) {
+            m.used_obj = Some(object);
+            if m.action & ACT_FLAG_AIR == 0 {
+                let action = if m.action & ACT_FLAG_DIVING != 0 {
+                    ACT_DIVE_PICKING_UP
+                } else {
+                    ACT_PICKING_UP
+                };
+                core::set_mario_action(m, w, action, 0);
+            }
+            result = true;
+        }
+    }
+    result
+}
+
+// interaction.c's file-local interaction kinds.
+const INT_GROUND_POUND_OR_TWIRL: u32 = 1 << 0;
+const INT_PUNCH: u32 = 1 << 1;
+const INT_KICK: u32 = 1 << 2;
+const INT_TRIP: u32 = 1 << 3;
+const INT_SLIDE_KICK: u32 = 1 << 4;
+const INT_FAST_ATTACK_OR_SHELL: u32 = 1 << 5;
+const INT_HIT_FROM_ABOVE: u32 = 1 << 6;
+const INT_HIT_FROM_BELOW: u32 = 1 << 7;
+
+/// sForwardKnockbackActions, by terrain (ground, air, water) and strength.
+const FORWARD_KNOCKBACK_ACTIONS: [[u32; 3]; 3] = [
+    [
+        ACT_SOFT_FORWARD_GROUND_KB,
+        ACT_FORWARD_GROUND_KB,
+        ACT_HARD_FORWARD_GROUND_KB,
+    ],
+    [
+        ACT_FORWARD_AIR_KB,
+        ACT_FORWARD_AIR_KB,
+        ACT_HARD_FORWARD_AIR_KB,
+    ],
+    [
+        ACT_FORWARD_WATER_KB,
+        ACT_FORWARD_WATER_KB,
+        ACT_FORWARD_WATER_KB,
+    ],
+];
+
+/// sBackwardKnockbackActions.
+const BACKWARD_KNOCKBACK_ACTIONS: [[u32; 3]; 3] = [
+    [
+        ACT_SOFT_BACKWARD_GROUND_KB,
+        ACT_BACKWARD_GROUND_KB,
+        ACT_HARD_BACKWARD_GROUND_KB,
+    ],
+    [
+        ACT_BACKWARD_AIR_KB,
+        ACT_BACKWARD_AIR_KB,
+        ACT_HARD_BACKWARD_AIR_KB,
+    ],
+    [
+        ACT_BACKWARD_WATER_KB,
+        ACT_BACKWARD_WATER_KB,
+        ACT_BACKWARD_WATER_KB,
+    ],
+];
+
+/// mario_obj_angle_to_object.
+pub fn mario_obj_angle_to_object(m: &MarioState, w: &StepWorld<'_>, o: ObjectId) -> i16 {
+    let o = w.objects.slot(o);
+    let dx = o.raw.f32(O_POS_X) - m.pos[0];
+    let dz = o.raw.f32(O_POS_Z) - m.pos[2];
+    w.trig.atan2s(dz, dx)
+}
+
+/// determine_interaction: how Mario's current action meets the object. The
+/// riding-shell and fast-attack branches stay separate, as written.
+#[allow(clippy::if_same_then_else)]
+fn determine_interaction(m: &MarioState, w: &StepWorld<'_>, o: ObjectId) -> u32 {
+    let mut interaction = 0;
+    let action = m.action;
+    if action & ACT_FLAG_ATTACKING != 0 {
+        if action == ACT_PUNCHING || action == ACT_MOVE_PUNCHING || action == ACT_JUMP_KICK {
+            let d_yaw_to_object = mario_obj_angle_to_object(m, w, o).wrapping_sub(m.face_angle[1]);
+            if m.flags & MARIO_PUNCHING != 0 && (-0x2AAA..=0x2AAA).contains(&d_yaw_to_object) {
+                interaction = INT_PUNCH;
+            }
+            if m.flags & MARIO_KICKING != 0 && (-0x2AAA..=0x2AAA).contains(&d_yaw_to_object) {
+                interaction = INT_KICK;
+            }
+            if m.flags & MARIO_TRIPPING != 0 && (-0x4000..=0x4000).contains(&d_yaw_to_object) {
+                interaction = INT_TRIP;
+            }
+        } else if action == ACT_GROUND_POUND || action == ACT_TWIRLING {
+            if m.vel[1] < 0.0 {
+                interaction = INT_GROUND_POUND_OR_TWIRL;
+            }
+        } else if action == ACT_GROUND_POUND_LAND || action == ACT_TWIRL_LAND {
+            if m.vel[1] < 0.0 && m.action_state == 0 {
+                interaction = INT_GROUND_POUND_OR_TWIRL;
+            }
+        } else if action == ACT_SLIDE_KICK || action == ACT_SLIDE_KICK_SLIDE {
+            interaction = INT_SLIDE_KICK;
+        } else if action & ACT_FLAG_RIDING_SHELL != 0 {
+            interaction = INT_FAST_ATTACK_OR_SHELL;
+        } else if m.forward_vel <= -26.0 || 26.0 <= m.forward_vel {
+            interaction = INT_FAST_ATTACK_OR_SHELL;
+        }
+    }
+    if interaction == 0 && action & ACT_FLAG_AIR != 0 {
+        let object_y = w.objects.slot(o).raw.f32(O_POS_Y);
+        if m.vel[1] < 0.0 {
+            if m.pos[1] > object_y {
+                interaction = INT_HIT_FROM_ABOVE;
+            }
+        } else if m.pos[1] < object_y {
+            interaction = INT_HIT_FROM_BELOW;
+        }
+    }
+    interaction
+}
+
+/// attack_object: the object learns how it was attacked.
+fn attack_object(w: &mut StepWorld<'_>, o: ObjectId, interaction: u32) -> u32 {
+    let attack_type = match interaction {
+        INT_GROUND_POUND_OR_TWIRL => ATTACK_GROUND_POUND_OR_TWIRL,
+        INT_PUNCH => ATTACK_PUNCH,
+        INT_KICK | INT_TRIP => ATTACK_KICK_OR_TRIP,
+        INT_SLIDE_KICK | INT_FAST_ATTACK_OR_SHELL => ATTACK_FAST_ATTACK,
+        INT_HIT_FROM_ABOVE => ATTACK_FROM_ABOVE,
+        INT_HIT_FROM_BELOW => ATTACK_FROM_BELOW,
+        _ => 0,
+    };
+    w.objects.slot_mut(o).raw.set_u32(
+        O_INTERACT_STATUS,
+        attack_type + (INT_STATUS_INTERACTED | INT_STATUS_WAS_ATTACKED),
+    );
+    attack_type
+}
+
+/// bounce_back_from_attack.
+fn bounce_back_from_attack(m: &mut MarioState, w: &mut StepWorld<'_>, interaction: u32) {
+    if interaction & (INT_PUNCH | INT_KICK | INT_TRIP) != 0 {
+        if m.action == ACT_PUNCHING {
+            m.action = ACT_MOVE_PUNCHING;
+        }
+        if m.action & ACT_FLAG_AIR != 0 {
+            mario_set_forward_vel(m, w, -16.0);
+        } else {
+            mario_set_forward_vel(m, w, -48.0);
+        }
+        w.event(Event::CameraShake(SHAKE_ATTACK));
+        m.particle_flags |= PARTICLE_TRIANGLE;
+    }
+    if interaction & (INT_PUNCH | INT_KICK | INT_TRIP | INT_FAST_ATTACK_OR_SHELL) != 0 {
+        w.play_sound(SOUND_ACTION_HIT_2);
+    }
+}
+
+/// push_mario_out_of_object: out to the combined hitbox radius plus
+/// `padding`, through walls, and only onto a floor (Mario's floor reference
+/// is not updated, as in the original).
+fn push_mario_out_of_object(m: &mut MarioState, w: &mut StepWorld<'_>, o: ObjectId, padding: f32) {
+    let object = w.objects.slot(o);
+    let min_distance = object.hitbox_radius + m.obj.hitbox_radius + padding;
+    let offset_x = m.pos[0] - object.raw.f32(O_POS_X);
+    let offset_z = m.pos[2] - object.raw.f32(O_POS_Z);
+    let distance = (offset_x * offset_x + offset_z * offset_z).sqrt();
+    if distance < min_distance {
+        let push_angle = if distance == 0.0 {
+            m.face_angle[1]
+        } else {
+            w.trig.atan2s(offset_z, offset_x)
+        };
+        let new_x = object.raw.f32(O_POS_X) + min_distance * w.trig.sins(i32::from(push_angle));
+        let new_z = object.raw.f32(O_POS_Z) + min_distance * w.trig.coss(i32::from(push_angle));
+        let mut position = [new_x, m.pos[1], new_z];
+        w.collision.f32_find_wall_collision(
+            &mut position,
+            60.0,
+            50.0,
+            w.collision_flags,
+            m.flags & MARIO_VANISH_CAP != 0,
+        );
+        let [new_x, y, new_z] = position;
+        m.pos[1] = y;
+        let (_, floor) = w
+            .collision
+            .find_floor(new_x, m.pos[1], new_z, &mut w.collision_flags);
+        if floor.is_some() {
+            m.pos[0] = new_x;
+            m.pos[2] = new_z;
+        }
+    }
+}
+
+/// able_to_grab_object.
+fn able_to_grab_object(m: &MarioState, w: &StepWorld<'_>, o: ObjectId) -> bool {
+    let action = m.action;
+    if action == ACT_DIVE_SLIDE || action == ACT_DIVE {
+        if w.objects.slot(o).raw.u32(O_INTERACTION_SUBTYPE) & INT_SUBTYPE_GRABS_MARIO == 0 {
+            return true;
+        }
+    } else if (action == ACT_PUNCHING || action == ACT_MOVE_PUNCHING) && m.action_arg < 2 {
+        return true;
+    }
+    false
+}
+
+/// interact_grabbable: a kick or trip launches a kickable object; a grab
+/// attempt marks it for mario_check_object_grab; otherwise Mario is pushed
+/// out (every ported object is not Bowser).
+fn interact_grabbable(m: &mut MarioState, w: &mut StepWorld<'_>, o: ObjectId) -> bool {
+    let subtype = w.objects.slot(o).raw.u32(O_INTERACTION_SUBTYPE);
+    if subtype & INT_SUBTYPE_KICKABLE != 0 {
+        let interaction = determine_interaction(m, w, o);
+        if interaction & (INT_KICK | INT_TRIP) != 0 {
+            attack_object(w, o, interaction);
+            bounce_back_from_attack(m, w, interaction);
+            return false;
+        }
+    }
+    if subtype & INT_SUBTYPE_GRABS_MARIO != 0 {
+        needs_objects("check_object_grab_mario (the grabbed action)");
+    }
+    if able_to_grab_object(m, w, o) && subtype & INT_SUBTYPE_NOT_GRABBABLE == 0 {
+        m.interact_obj = Some(o);
+        m.input |= INPUT_INTERACT_OBJ_GRABBABLE;
+        return true;
+    }
+    push_mario_out_of_object(m, w, o, -5.0);
+    false
+}
+
+/// take_damage_from_interact_object: the hurt counter and hit shake for
+/// the interacting object's damage.
+fn take_damage_from_interact_object(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    let object = m.interact_obj.expect("interactObj");
+    let mut damage = w.objects.slot(object).raw.s32(O_DAMAGE_OR_COIN_VALUE);
+    let shake = if damage >= 4 {
+        SHAKE_LARGE_DAMAGE
+    } else if damage >= 2 {
+        SHAKE_MED_DAMAGE
+    } else {
+        SHAKE_SMALL_DAMAGE
+    };
+    if m.flags & MARIO_CAP_ON_HEAD == 0 {
+        damage += (damage + 1) / 2;
+    }
+    if m.flags & MARIO_METAL_CAP != 0 {
+        damage = 0;
+    }
+    m.hurt_counter = (i32::from(m.hurt_counter) + 4 * damage) as u8;
+    w.event(Event::CameraShake(shake));
+    damage
+}
+
+/// determine_knockback_action: faces the object, gets pushed away from it.
+fn determine_knockback_action(m: &mut MarioState, w: &mut StepWorld<'_>) -> u32 {
+    let object = m.interact_obj.expect("interactObj");
+    let angle_to_object = mario_obj_angle_to_object(m, w, object);
+    let facing_d_yaw = angle_to_object.wrapping_sub(m.face_angle[1]);
+    let remaining_health = (i32::from(m.health) - 0x40 * i32::from(m.hurt_counter)) as i16;
+    let terrain_index = if m.action & (ACT_FLAG_SWIMMING | ACT_FLAG_METAL_WATER) != 0 {
+        2
+    } else if m.action & (ACT_FLAG_AIR | ACT_FLAG_ON_POLE | ACT_FLAG_HANGING) != 0 {
+        1
+    } else {
+        0
+    };
+    let damage = w.objects.slot(object).raw.s32(O_DAMAGE_OR_COIN_VALUE);
+    let strength_index = if remaining_health < 0x100 || damage >= 4 {
+        2
+    } else if damage >= 2 {
+        1
+    } else {
+        0
+    };
+    m.face_angle[1] = angle_to_object;
+    if terrain_index == 2 {
+        if m.forward_vel < 28.0 {
+            mario_set_forward_vel(m, w, 28.0);
+        }
+        if m.pos[1] >= w.objects.slot(object).raw.f32(O_POS_Y) {
+            if m.vel[1] < 20.0 {
+                m.vel[1] = 20.0;
+            }
+        } else if m.vel[1] > 0.0 {
+            m.vel[1] = 0.0;
+        }
+    } else if m.forward_vel < 16.0 {
+        mario_set_forward_vel(m, w, 16.0);
+    }
+    if (-0x4000..=0x4000).contains(&facing_d_yaw) {
+        m.forward_vel *= -1.0;
+        BACKWARD_KNOCKBACK_ACTIONS[terrain_index][strength_index]
+    } else {
+        m.face_angle[1] = m.face_angle[1].wrapping_add(i16::MIN);
+        FORWARD_KNOCKBACK_ACTIONS[terrain_index][strength_index]
+    }
+}
+
+/// take_damage_and_knock_back.
+fn take_damage_and_knock_back(m: &mut MarioState, w: &mut StepWorld<'_>, o: ObjectId) -> bool {
+    let subtype = w.objects.slot(o).raw.u32(O_INTERACTION_SUBTYPE);
+    if w.interaction.invulnerable == 0
+        && m.flags & MARIO_VANISH_CAP == 0
+        && subtype & INT_SUBTYPE_DELAY_INVINCIBILITY == 0
+    {
+        w.objects.slot_mut(o).raw.set_u32(
+            O_INTERACT_STATUS,
+            INT_STATUS_INTERACTED | INT_STATUS_ATTACKED_MARIO,
+        );
+        m.interact_obj = Some(o);
+        let damage = take_damage_from_interact_object(m, w);
+        if subtype & INT_SUBTYPE_BIG_KNOCKBACK != 0 {
+            m.forward_vel = 40.0;
+        }
+        if w.objects.slot(o).raw.s32(O_DAMAGE_OR_COIN_VALUE) > 0 {
+            w.play_sound(SOUND_MARIO_ATTACKED);
+        }
+        core::update_mario_sound_and_camera(m, w);
+        let action = determine_knockback_action(m, w);
+        return drop_and_set_mario_action(m, w, action, damage as u32) != 0;
+    }
+    false
+}
+
+/// interact_damage.
+fn interact_damage(m: &mut MarioState, w: &mut StepWorld<'_>, o: ObjectId) -> bool {
+    if take_damage_and_knock_back(m, w, o) {
+        return true;
+    }
+    if w.objects.slot(o).raw.u32(O_INTERACTION_SUBTYPE) & INT_SUBTYPE_DELAY_INVINCIBILITY == 0 {
+        w.interaction.delay_invinc_timer = 1;
     }
     false
 }
@@ -184,6 +529,8 @@ pub fn mario_process_interactions(m: &mut MarioState, w: &mut StepWorld<'_>) {
                 if w.objects.slot(object).raw.u32(O_INTERACT_STATUS) & INT_STATUS_INTERACTED == 0 {
                     let stop = match interact_type {
                         INTERACT_COIN => interact_coin(m, w, object),
+                        INTERACT_DAMAGE => interact_damage(m, w, object),
+                        INTERACT_GRABBABLE => interact_grabbable(m, w, object),
                         _ => needs_objects(name),
                     };
                     if stop {
