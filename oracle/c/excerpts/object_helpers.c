@@ -3,7 +3,431 @@
  * oracle/tools/extract_excerpts.py from a clean pinned checkout; do not
  * edit. The include lines are authored (MIT). Item SHA-1s: oracle/README.md. */
 #include "sm64.h"
+#include "behavior_data.h"
+#include "level_table.h"
+#include "engine/graph_node.h"
+#include "engine/math_util.h"
+#include "engine/surface_collision.h"
+#include "game/area.h"
 #include "game/object_helpers.h"
+#include "game/object_list_processor.h"
+#include "game/rendering_graph_node.h"
+#include "game/spawn_object.h"
+
+/* src/game/object_helpers.c: static s16 sPowersOfTwo[] = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80 } */
+static s16 sPowersOfTwo[] = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80 };
+
+/* src/game/object_helpers.c: static s8 sLevelsWithRooms[] = { LEVEL_BBH, LEVEL_CASTLE, LEVEL_HMC, -1 } */
+static s8 sLevelsWithRooms[] = { LEVEL_BBH, LEVEL_CASTLE, LEVEL_HMC, -1 };
+
+/* src/game/object_helpers.c: #define o gCurrentObject */
+#define o gCurrentObject
+
+/* src/game/object_helpers.c: Gfx *geo_switch_anim_state(s32 callContext, struct GraphNode *node, UNUSED void *context) */
+#ifdef AVOID_UB
+Gfx *geo_switch_anim_state(s32 callContext, struct GraphNode *node, UNUSED void *context)
+#else
+Gfx *geo_switch_anim_state(s32 callContext, struct GraphNode *node)
+#endif
+{
+    struct Object *obj;
+    struct GraphNodeSwitchCase *switchCase;
+
+    if (callContext == GEO_CONTEXT_RENDER) {
+        obj = (struct Object *) gCurGraphNodeObject; // TODO: change global type to Object pointer
+
+        // move to a local var because GraphNodes are passed in all geo functions.
+        // cast the pointer.
+        switchCase = (struct GraphNodeSwitchCase *) node;
+
+        if (gCurGraphNodeHeldObject != NULL) {
+            obj = gCurGraphNodeHeldObject->objNode;
+        }
+
+        // if the case is greater than the number of cases, set to 0 to avoid overflowing
+        // the switch.
+        if (obj->oAnimState >= switchCase->numCases) {
+            obj->oAnimState = 0;
+        }
+
+        // assign the case number for execution.
+        switchCase->selectedCase = obj->oAnimState;
+    }
+
+    return NULL;
+}
+
+/* src/game/object_helpers.c: dist_between_objects */
+f32 dist_between_objects(struct Object *obj1, struct Object *obj2) {
+    f32 dx = obj1->oPosX - obj2->oPosX;
+    f32 dy = obj1->oPosY - obj2->oPosY;
+    f32 dz = obj1->oPosZ - obj2->oPosZ;
+
+    return sqrtf(dx * dx + dy * dy + dz * dz);
+}
+
+/* src/game/object_helpers.c: obj_angle_to_object */
+s16 obj_angle_to_object(struct Object *obj1, struct Object *obj2) {
+    f32 z1, x1, z2, x2;
+    s16 angle;
+
+    z1 = obj1->oPosZ; z2 = obj2->oPosZ; // ordering of instructions..
+    x1 = obj1->oPosX; x2 = obj2->oPosX;
+
+    angle = atan2s(z2 - z1, x2 - x1);
+    return angle;
+}
+
+/* src/game/object_helpers.c: obj_set_parent_relative_pos */
+void obj_set_parent_relative_pos(struct Object *obj, s16 relX, s16 relY, s16 relZ) {
+    obj->oParentRelativePosX = relX;
+    obj->oParentRelativePosY = relY;
+    obj->oParentRelativePosZ = relZ;
+}
+
+/* src/game/object_helpers.c: obj_set_pos */
+void obj_set_pos(struct Object *obj, s16 x, s16 y, s16 z) {
+    obj->oPosX = x;
+    obj->oPosY = y;
+    obj->oPosZ = z;
+}
+
+/* src/game/object_helpers.c: obj_set_angle */
+void obj_set_angle(struct Object *obj, s16 pitch, s16 yaw, s16 roll) {
+    obj->oFaceAnglePitch = pitch;
+    obj->oFaceAngleYaw = yaw;
+    obj->oFaceAngleRoll = roll;
+
+    obj->oMoveAnglePitch = pitch;
+    obj->oMoveAngleYaw = yaw;
+    obj->oMoveAngleRoll = roll;
+}
+
+/* src/game/object_helpers.c: spawn_object_abs_with_rot */
+struct Object *spawn_object_abs_with_rot(struct Object *parent, s16 uselessArg, u32 model,
+                                         const BehaviorScript *behavior,
+                                         s16 x, s16 y, s16 z, s16 pitch, s16 yaw, s16 roll) {
+    // 'uselessArg' is unused in the function spawn_object_at_origin()
+    struct Object *newObj = spawn_object_at_origin(parent, uselessArg, model, behavior);
+    obj_set_pos(newObj, x, y, z);
+    obj_set_angle(newObj, pitch, yaw, roll);
+
+    return newObj;
+}
+
+/* src/game/object_helpers.c: spawn_object_at_origin */
+struct Object *spawn_object_at_origin(struct Object *parent, UNUSED s32 unusedArg, u32 model,
+                                      const BehaviorScript *behavior) {
+    struct Object *obj;
+    const BehaviorScript *behaviorAddr;
+
+    behaviorAddr = segmented_to_virtual(behavior);
+    obj = create_object(behaviorAddr);
+
+    obj->parentObj = parent;
+    obj->header.gfx.areaIndex = parent->header.gfx.areaIndex;
+    obj->header.gfx.activeAreaIndex = parent->header.gfx.areaIndex;
+
+    geo_obj_init((struct GraphNodeObject *) &obj->header.gfx, gLoadedGraphNodes[model], gVec3fZero,
+                 gVec3sZero);
+
+    return obj;
+}
+
+/* src/game/object_helpers.c: spawn_object */
+struct Object *spawn_object(struct Object *parent, s32 model, const BehaviorScript *behavior) {
+    struct Object *obj = spawn_object_at_origin(parent, 0, model, behavior);
+
+    obj_copy_pos_and_angle(obj, parent);
+
+    return obj;
+}
+
+/* src/game/object_helpers.c: obj_build_relative_transform */
+static void obj_build_relative_transform(struct Object *obj) {
+    obj_build_transform_from_pos_and_angle(obj, O_PARENT_RELATIVE_POS_INDEX, O_FACE_ANGLE_INDEX);
+    obj_translate_local(obj, O_POS_INDEX, O_PARENT_RELATIVE_POS_INDEX);
+}
+
+/* src/game/object_helpers.c: spawn_object_relative */
+struct Object *spawn_object_relative(s16 behaviorParam, s16 relativePosX, s16 relativePosY, s16 relativePosZ,
+                                     struct Object *parent, s32 model, const BehaviorScript *behavior) {
+    struct Object *obj = spawn_object_at_origin(parent, 0, model, behavior);
+
+    obj_copy_pos_and_angle(obj, parent);
+    obj_set_parent_relative_pos(obj, relativePosX, relativePosY, relativePosZ);
+    obj_build_relative_transform(obj);
+
+    obj->oBhvParams2ndByte = behaviorParam;
+    obj->oBhvParams = (behaviorParam & 0xFF) << 16;
+
+    return obj;
+}
+
+/* src/game/object_helpers.c: obj_copy_pos_and_angle */
+void obj_copy_pos_and_angle(struct Object *dst, struct Object *src) {
+    obj_copy_pos(dst, src);
+    obj_copy_angle(dst, src);
+}
+
+/* src/game/object_helpers.c: obj_copy_pos */
+void obj_copy_pos(struct Object *dst, struct Object *src) {
+    dst->oPosX = src->oPosX;
+    dst->oPosY = src->oPosY;
+    dst->oPosZ = src->oPosZ;
+}
+
+/* src/game/object_helpers.c: obj_copy_angle */
+void obj_copy_angle(struct Object *dst, struct Object *src) {
+    dst->oMoveAnglePitch = src->oMoveAnglePitch;
+    dst->oMoveAngleYaw = src->oMoveAngleYaw;
+    dst->oMoveAngleRoll = src->oMoveAngleRoll;
+
+    dst->oFaceAnglePitch = src->oFaceAnglePitch;
+    dst->oFaceAngleYaw = src->oFaceAngleYaw;
+    dst->oFaceAngleRoll = src->oFaceAngleRoll;
+}
+
+/* src/game/object_helpers.c: obj_scale */
+void obj_scale(struct Object *obj, f32 scale) {
+    obj->header.gfx.scale[0] = scale;
+    obj->header.gfx.scale[1] = scale;
+    obj->header.gfx.scale[2] = scale;
+}
+
+/* src/game/object_helpers.c: cur_obj_scale */
+void cur_obj_scale(f32 scale) {
+    o->header.gfx.scale[0] = scale;
+    o->header.gfx.scale[1] = scale;
+    o->header.gfx.scale[2] = scale;
+}
+
+/* src/game/object_helpers.c: cur_obj_enable_rendering */
+void cur_obj_enable_rendering(void) {
+    o->header.gfx.node.flags |= GRAPH_RENDER_ACTIVE;
+}
+
+/* src/game/object_helpers.c: cur_obj_disable_rendering */
+void cur_obj_disable_rendering(void) {
+    o->header.gfx.node.flags &= ~GRAPH_RENDER_ACTIVE;
+}
+
+/* src/game/object_helpers.c: cur_obj_hide */
+void cur_obj_hide(void) {
+    o->header.gfx.node.flags |= GRAPH_RENDER_INVISIBLE;
+}
+
+/* src/game/object_helpers.c: find_unimportant_object */
+struct Object *find_unimportant_object(void) {
+    struct ObjectNode *listHead = &gObjectLists[OBJ_LIST_UNIMPORTANT];
+    struct ObjectNode *obj = listHead->next;
+
+    if (listHead == obj) {
+        obj = NULL;
+    }
+
+    return (struct Object *) obj;
+}
+
+/* src/game/object_helpers.c: cur_obj_set_model */
+void cur_obj_set_model(s32 modelID) {
+    o->header.gfx.sharedChild = gLoadedGraphNodes[modelID];
+}
+
+/* src/game/object_helpers.c: obj_mark_for_deletion */
+void obj_mark_for_deletion(struct Object *obj) {
+    //! This clears all activeFlags. Since some of these flags disable behavior,
+    //  setting it to 0 could potentially enable unexpected behavior. After an
+    //  object is marked for deletion, it still updates on that frame (I think),
+    //  so this is worth looking into.
+    obj->activeFlags = ACTIVE_FLAG_DEACTIVATED;
+}
+
+/* src/game/object_helpers.c: cur_obj_update_floor_height */
+void cur_obj_update_floor_height(void) {
+    struct Surface *floor;
+    o->oFloorHeight = find_floor(o->oPosX, o->oPosY, o->oPosZ, &floor);
+}
+
+/* src/game/object_helpers.c: cur_obj_set_behavior */
+void cur_obj_set_behavior(const BehaviorScript *behavior) {
+    o->behavior = segmented_to_virtual(behavior);
+}
+
+/* src/game/object_helpers.c: cur_obj_has_behavior */
+s32 cur_obj_has_behavior(const BehaviorScript *behavior) {
+    if (o->behavior == segmented_to_virtual(behavior)) {
+        return TRUE;
+    } else {
+        return FALSE;
+    }
+}
+
+/* src/game/object_helpers.c: obj_translate_local */
+void obj_translate_local(struct Object *obj, s16 posIndex, s16 localTranslateIndex) {
+    f32 dx = obj->rawData.asF32[localTranslateIndex + 0];
+    f32 dy = obj->rawData.asF32[localTranslateIndex + 1];
+    f32 dz = obj->rawData.asF32[localTranslateIndex + 2];
+
+    obj->rawData.asF32[posIndex + 0] +=
+        obj->transform[0][0] * dx + obj->transform[1][0] * dy + obj->transform[2][0] * dz;
+    obj->rawData.asF32[posIndex + 1] +=
+        obj->transform[0][1] * dx + obj->transform[1][1] * dy + obj->transform[2][1] * dz;
+    obj->rawData.asF32[posIndex + 2] +=
+        obj->transform[0][2] * dx + obj->transform[1][2] * dy + obj->transform[2][2] * dz;
+}
+
+/* src/game/object_helpers.c: obj_build_transform_from_pos_and_angle */
+void obj_build_transform_from_pos_and_angle(struct Object *obj, s16 posIndex, s16 angleIndex) {
+    f32 translate[3];
+    s16 rotation[3];
+
+    translate[0] = obj->rawData.asF32[posIndex + 0];
+    translate[1] = obj->rawData.asF32[posIndex + 1];
+    translate[2] = obj->rawData.asF32[posIndex + 2];
+
+    rotation[0] = obj->rawData.asS32[angleIndex + 0];
+    rotation[1] = obj->rawData.asS32[angleIndex + 1];
+    rotation[2] = obj->rawData.asS32[angleIndex + 2];
+
+    mtxf_rotate_zxy_and_translate(obj->transform, translate, rotation);
+}
+
+/* src/game/object_helpers.c: obj_apply_scale_to_transform */
+void obj_apply_scale_to_transform(struct Object *obj) {
+    f32 scaleX = obj->header.gfx.scale[0];
+    f32 scaleY = obj->header.gfx.scale[1];
+    f32 scaleZ = obj->header.gfx.scale[2];
+
+    obj->transform[0][0] *= scaleX;
+    obj->transform[0][1] *= scaleX;
+    obj->transform[0][2] *= scaleX;
+
+    obj->transform[1][0] *= scaleY;
+    obj->transform[1][1] *= scaleY;
+    obj->transform[1][2] *= scaleY;
+
+    obj->transform[2][0] *= scaleZ;
+    obj->transform[2][1] *= scaleZ;
+    obj->transform[2][2] *= scaleZ;
+}
+
+/* src/game/object_helpers.c: obj_set_face_angle_to_move_angle */
+void obj_set_face_angle_to_move_angle(struct Object *obj) {
+    obj->oFaceAnglePitch = obj->oMoveAnglePitch;
+    obj->oFaceAngleYaw = obj->oMoveAngleYaw;
+    obj->oFaceAngleRoll = obj->oMoveAngleRoll;
+}
+
+/* src/game/object_helpers.c: cur_obj_move_xz_using_fvel_and_yaw */
+void cur_obj_move_xz_using_fvel_and_yaw(void) {
+    o->oVelX = o->oForwardVel * sins(o->oMoveAngleYaw);
+    o->oVelZ = o->oForwardVel * coss(o->oMoveAngleYaw);
+
+    o->oPosX += o->oVelX;
+    o->oPosZ += o->oVelZ;
+}
+
+/* src/game/object_helpers.c: cur_obj_move_y_with_terminal_vel */
+void cur_obj_move_y_with_terminal_vel(void) {
+    if (o->oVelY < -70.0f) {
+        o->oVelY = -70.0f;
+    }
+
+    o->oPosY += o->oVelY;
+}
+
+/* src/game/object_helpers.c: obj_build_transform_relative_to_parent */
+void obj_build_transform_relative_to_parent(struct Object *obj) {
+    struct Object *parent = obj->parentObj;
+
+    obj_build_transform_from_pos_and_angle(obj, O_PARENT_RELATIVE_POS_INDEX, O_FACE_ANGLE_INDEX);
+    obj_apply_scale_to_transform(obj);
+    mtxf_mul(obj->transform, obj->transform, parent->transform);
+
+    obj->oPosX = obj->transform[3][0];
+    obj->oPosY = obj->transform[3][1];
+    obj->oPosZ = obj->transform[3][2];
+
+    obj->header.gfx.throwMatrix = &obj->transform;
+
+    //! Sets scale of gCurrentObject instead of obj. Not exploitable since this
+    //  function is only called with obj = gCurrentObject
+    cur_obj_scale(1.0f);
+}
+
+/* src/game/object_helpers.c: obj_set_throw_matrix_from_transform */
+void obj_set_throw_matrix_from_transform(struct Object *obj) {
+    if (obj->oFlags & OBJ_FLAG_0020) {
+        obj_build_transform_from_pos_and_angle(obj, O_POS_INDEX, O_FACE_ANGLE_INDEX);
+        obj_apply_scale_to_transform(obj);
+    }
+
+    obj->header.gfx.throwMatrix = &obj->transform;
+
+    //! Sets scale of gCurrentObject instead of obj. Not exploitable since this
+    //  function is only called with obj = gCurrentObject
+    cur_obj_scale(1.0f);
+}
+
+/* src/game/object_helpers.c: cur_obj_enable_rendering_if_mario_in_room */
+void cur_obj_enable_rendering_if_mario_in_room(void) {
+    register s32 marioInRoom;
+
+    if (o->oRoom != -1 && gMarioCurrentRoom != 0) {
+        if (gMarioCurrentRoom == o->oRoom) {
+            marioInRoom = TRUE;
+        } else if (gDoorAdjacentRooms[gMarioCurrentRoom][0] == o->oRoom) {
+            marioInRoom = TRUE;
+        } else if (gDoorAdjacentRooms[gMarioCurrentRoom][1] == o->oRoom) {
+            marioInRoom = TRUE;
+        } else {
+            marioInRoom = FALSE;
+        }
+
+        if (marioInRoom) {
+            cur_obj_enable_rendering();
+            o->activeFlags &= ~ACTIVE_FLAG_IN_DIFFERENT_ROOM;
+            gNumRoomedObjectsInMarioRoom++;
+        } else {
+            cur_obj_disable_rendering();
+            o->activeFlags |= ACTIVE_FLAG_IN_DIFFERENT_ROOM;
+            gNumRoomedObjectsNotInMarioRoom++;
+        }
+    }
+}
+
+/* src/game/object_helpers.c: cur_obj_become_tangible */
+void cur_obj_become_tangible(void) {
+    o->oIntangibleTimer = 0;
+}
+
+/* src/game/object_helpers.c: cur_obj_become_intangible */
+void cur_obj_become_intangible(void) {
+    // When the timer is negative, the object is intangible and the timer
+    // doesn't count down
+    o->oIntangibleTimer = -1;
+}
+
+/* src/game/object_helpers.c: obj_set_hitbox */
+void obj_set_hitbox(struct Object *obj, struct ObjectHitbox *hitbox) {
+    if (!(obj->oFlags & OBJ_FLAG_30)) {
+        obj->oFlags |= OBJ_FLAG_30;
+
+        obj->oInteractType = hitbox->interactType;
+        obj->oDamageOrCoinValue = hitbox->damageOrCoinValue;
+        obj->oHealth = hitbox->health;
+        obj->oNumLootCoins = hitbox->numLootCoins;
+
+        cur_obj_become_tangible();
+    }
+
+    obj->hitboxRadius = obj->header.gfx.scale[0] * hitbox->radius;
+    obj->hitboxHeight = obj->header.gfx.scale[1] * hitbox->height;
+    obj->hurtboxRadius = obj->header.gfx.scale[0] * hitbox->hurtboxRadius;
+    obj->hurtboxHeight = obj->header.gfx.scale[1] * hitbox->hurtboxHeight;
+    obj->hitboxDownOffset = obj->header.gfx.scale[1] * hitbox->downOffset;
+}
 
 /* src/game/object_helpers.c: absf */
 f32 absf(f32 x) {
@@ -11,5 +435,49 @@ f32 absf(f32 x) {
         return x;
     } else {
         return -x;
+    }
+}
+
+/* src/game/object_helpers.c: bit_shift_left */
+s32 bit_shift_left(s32 a0) {
+    return sPowersOfTwo[a0];
+}
+
+/* src/game/object_helpers.c: is_item_in_array */
+s32 is_item_in_array(s8 item, s8 *array) {
+    while (*array != -1) {
+        if (*array == item) {
+            return TRUE;
+        }
+
+        array++;
+    }
+
+    return FALSE;
+}
+
+/* src/game/object_helpers.c: bhv_init_room */
+void bhv_init_room(void) {
+    struct Surface *floor;
+    f32 floorHeight;
+
+    if (is_item_in_array(gCurrLevelNum, sLevelsWithRooms)) {
+        floorHeight = find_floor(o->oPosX, o->oPosY, o->oPosZ, &floor);
+
+        if (floor != NULL) {
+            if (floor->room != 0) {
+                o->oRoom = floor->room;
+            } else {
+                // Floor probably belongs to a platform object. Try looking
+                // underneath it
+                find_floor(o->oPosX, floorHeight - 100.0f, o->oPosZ, &floor);
+                if (floor != NULL) {
+                    //! Technically possible that the room could still be 0 here
+                    o->oRoom = floor->room;
+                }
+            }
+        }
+    } else {
+        o->oRoom = -1;
     }
 }

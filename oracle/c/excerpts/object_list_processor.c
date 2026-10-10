@@ -3,8 +3,83 @@
  * oracle/tools/extract_excerpts.py from a clean pinned checkout; do not
  * edit. The include lines are authored (MIT). Item SHA-1s: oracle/README.md. */
 #include "sm64.h"
+#include "engine/behavior_script.h"
+#include "engine/graph_node.h"
+#include "engine/surface_load.h"
+#include "game/debug.h"
+#include "game/interaction.h"
 #include "game/level_update.h"
+#include "game/mario.h"
+#include "game/memory.h"
+#include "game/object_collision.h"
+#include "game/object_helpers.h"
 #include "game/object_list_processor.h"
+#include "game/platform_displacement.h"
+#include "game/spawn_object.h"
+
+/* src/game/object_list_processor.c: s32 gDebugInfoFlags */
+s32 gDebugInfoFlags;
+
+/* src/game/object_list_processor.c: s32 gUnknownWallCount */
+s32 gUnknownWallCount;
+
+/* src/game/object_list_processor.c: u32 gObjectCounter */
+u32 gObjectCounter;
+
+/* src/game/object_list_processor.c: struct Object gObjectPool[OBJECT_POOL_CAPACITY] */
+struct Object gObjectPool[OBJECT_POOL_CAPACITY];
+
+/* src/game/object_list_processor.c: struct ObjectNode gFreeObjectList */
+struct ObjectNode gFreeObjectList;
+
+/* src/game/object_list_processor.c: const BehaviorScript *gCurBhvCommand */
+const BehaviorScript *gCurBhvCommand;
+
+/* src/game/object_list_processor.c: s16 gPrevFrameObjectCount */
+s16 gPrevFrameObjectCount;
+
+/* src/game/object_list_processor.c: struct MemoryPool *gObjectMemoryPool */
+struct MemoryPool *gObjectMemoryPool;
+
+/* src/game/object_list_processor.c: RoomData gDoorAdjacentRooms[60][2] */
+RoomData gDoorAdjacentRooms[60][2];
+
+/* src/game/object_list_processor.c: s16 gMarioCurrentRoom */
+s16 gMarioCurrentRoom;
+
+/* src/game/object_list_processor.c: s16 D_8035FEE2 */
+s16 D_8035FEE2;
+
+/* src/game/object_list_processor.c: s16 D_8035FEE4 */
+s16 D_8035FEE4;
+
+/* src/game/object_list_processor.c: s16 gTHIWaterDrained */
+s16 gTHIWaterDrained;
+
+/* src/game/object_list_processor.c: s16 gNumRoomedObjectsInMarioRoom */
+s16 gNumRoomedObjectsInMarioRoom;
+
+/* src/game/object_list_processor.c: s16 gNumRoomedObjectsNotInMarioRoom */
+s16 gNumRoomedObjectsNotInMarioRoom;
+
+/* src/game/object_list_processor.c: s16 gWDWWaterLevelChanging */
+s16 gWDWWaterLevelChanging;
+
+/* src/game/object_list_processor.c: s16 gMarioOnMerryGoRound */
+s16 gMarioOnMerryGoRound;
+
+/* src/game/object_list_processor.c: s8 sObjectListUpdateOrder[] = { OBJ_LIST_SPAWNER, */
+s8 sObjectListUpdateOrder[] = { OBJ_LIST_SPAWNER,
+                                OBJ_LIST_SURFACE,
+                                OBJ_LIST_POLELIKE,
+                                OBJ_LIST_PLAYER,
+                                OBJ_LIST_PUSHABLE,
+                                OBJ_LIST_GENACTOR,
+                                OBJ_LIST_DESTRUCTIVE,
+                                OBJ_LIST_LEVEL,
+                                OBJ_LIST_DEFAULT,
+                                OBJ_LIST_UNIMPORTANT,
+                                -1 };
 
 /* src/game/object_list_processor.c: copy_mario_state_to_object */
 void copy_mario_state_to_object(void) {
@@ -33,4 +108,323 @@ void copy_mario_state_to_object(void) {
     gCurrentObject->oAngleVelPitch = gMarioStates[i].angleVel[0];
     gCurrentObject->oAngleVelYaw = gMarioStates[i].angleVel[1];
     gCurrentObject->oAngleVelRoll = gMarioStates[i].angleVel[2];
+}
+
+/* src/game/object_list_processor.c: update_objects_starting_at */
+s32 update_objects_starting_at(struct ObjectNode *objList, struct ObjectNode *firstObj) {
+    s32 count = 0;
+
+    while (objList != firstObj) {
+        gCurrentObject = (struct Object *) firstObj;
+
+        gCurrentObject->header.gfx.node.flags |= GRAPH_RENDER_HAS_ANIMATION;
+        cur_obj_update();
+
+        firstObj = firstObj->next;
+        count++;
+    }
+
+    return count;
+}
+
+/* src/game/object_list_processor.c: update_objects_during_time_stop */
+s32 update_objects_during_time_stop(struct ObjectNode *objList, struct ObjectNode *firstObj) {
+    s32 count = 0;
+    s32 unfrozen;
+
+    while (objList != firstObj) {
+        gCurrentObject = (struct Object *) firstObj;
+
+        unfrozen = FALSE;
+
+        // Selectively unfreeze certain objects
+        if (!(gTimeStopState & TIME_STOP_ALL_OBJECTS)) {
+            if (gCurrentObject == gMarioObject && !(gTimeStopState & TIME_STOP_MARIO_AND_DOORS)) {
+                unfrozen = TRUE;
+            }
+
+            if ((gCurrentObject->oInteractType & (INTERACT_DOOR | INTERACT_WARP_DOOR))
+                && !(gTimeStopState & TIME_STOP_MARIO_AND_DOORS)) {
+                unfrozen = TRUE;
+            }
+
+            if (gCurrentObject->activeFlags
+                & (ACTIVE_FLAG_UNIMPORTANT | ACTIVE_FLAG_INITIATED_TIME_STOP)) {
+                unfrozen = TRUE;
+            }
+        }
+
+        // Only update if unfrozen
+        if (unfrozen) {
+            gCurrentObject->header.gfx.node.flags |= GRAPH_RENDER_HAS_ANIMATION;
+            cur_obj_update();
+        } else {
+            gCurrentObject->header.gfx.node.flags &= ~GRAPH_RENDER_HAS_ANIMATION;
+        }
+
+        firstObj = firstObj->next;
+        count++;
+    }
+
+    return count;
+}
+
+/* src/game/object_list_processor.c: update_objects_in_list */
+s32 update_objects_in_list(struct ObjectNode *objList) {
+    s32 count;
+    struct ObjectNode *firstObj = objList->next;
+
+    if (!(gTimeStopState & TIME_STOP_ACTIVE)) {
+        count = update_objects_starting_at(objList, firstObj);
+    } else {
+        count = update_objects_during_time_stop(objList, firstObj);
+    }
+
+    return count;
+}
+
+/* src/game/object_list_processor.c: unload_deactivated_objects_in_list */
+s32 unload_deactivated_objects_in_list(struct ObjectNode *objList) {
+    struct ObjectNode *obj = objList->next;
+
+    while (objList != obj) {
+        gCurrentObject = (struct Object *) obj;
+
+        obj = obj->next;
+
+        if ((gCurrentObject->activeFlags & ACTIVE_FLAG_ACTIVE) != ACTIVE_FLAG_ACTIVE) {
+            // Prevent object from respawning after exiting and re-entering the
+            // area
+            if (!(gCurrentObject->oFlags & OBJ_FLAG_PERSISTENT_RESPAWN)) {
+                set_object_respawn_info_bits(gCurrentObject, RESPAWN_INFO_DONT_RESPAWN);
+            }
+
+            unload_object(gCurrentObject);
+        }
+    }
+
+    return 0;
+}
+
+/* src/game/object_list_processor.c: set_object_respawn_info_bits */
+void set_object_respawn_info_bits(struct Object *obj, u8 bits) {
+    u32 *info32;
+    u16 *info16;
+
+    switch (obj->respawnInfoType) {
+        case RESPAWN_INFO_TYPE_32:
+            info32 = (u32 *) obj->respawnInfo;
+            *info32 |= bits << 8;
+            break;
+
+        case RESPAWN_INFO_TYPE_16:
+            info16 = (u16 *) obj->respawnInfo;
+            *info16 |= bits << 8;
+            break;
+    }
+}
+
+/* src/game/object_list_processor.c: spawn_objects_from_info */
+void spawn_objects_from_info(UNUSED s32 unused, struct SpawnInfo *spawnInfo) {
+    gObjectLists = gObjectListArray;
+    gTimeStopState = 0;
+
+    gWDWWaterLevelChanging = FALSE;
+    gMarioOnMerryGoRound = FALSE;
+
+    //! (Spawning Displacement) On the Japanese version, Mario's platform object
+    //  isn't cleared when transitioning between areas. This can cause Mario to
+    //  receive displacement after spawning.
+#ifndef VERSION_JP
+    clear_mario_platform();
+#endif
+
+    if (gCurrAreaIndex == 2) {
+        gCCMEnteredSlide |= 1;
+    }
+
+    while (spawnInfo != NULL) {
+        struct Object *object;
+        UNUSED u8 filler[4];
+        const BehaviorScript *script;
+        UNUSED s16 arg16 = (s16)(spawnInfo->behaviorArg & 0xFFFF);
+
+        script = segmented_to_virtual(spawnInfo->behaviorScript);
+
+        // If the object was previously killed/collected, don't respawn it
+        if ((spawnInfo->behaviorArg & (RESPAWN_INFO_DONT_RESPAWN << 8))
+            != (RESPAWN_INFO_DONT_RESPAWN << 8)) {
+            object = create_object(script);
+
+            // Behavior parameters are often treated as four separate bytes, but
+            // are stored as an s32.
+            object->oBhvParams = spawnInfo->behaviorArg;
+            // The second byte of the behavior parameters is copied over to a special field
+            // as it is the most frequently used by objects.
+            object->oBhvParams2ndByte = ((spawnInfo->behaviorArg) >> 16) & 0xFF;
+
+            object->behavior = script;
+            object->unused1 = 0;
+
+            // Record death/collection in the SpawnInfo
+            object->respawnInfoType = RESPAWN_INFO_TYPE_32;
+            object->respawnInfo = &spawnInfo->behaviorArg;
+
+            if (spawnInfo->behaviorArg & 0x01) {
+                gMarioObject = object;
+                geo_make_first_child(&object->header.gfx.node);
+            }
+
+            geo_obj_init_spawninfo(&object->header.gfx, spawnInfo);
+
+            object->oPosX = spawnInfo->startPos[0];
+            object->oPosY = spawnInfo->startPos[1];
+            object->oPosZ = spawnInfo->startPos[2];
+
+            object->oFaceAnglePitch = spawnInfo->startAngle[0];
+            object->oFaceAngleYaw = spawnInfo->startAngle[1];
+            object->oFaceAngleRoll = spawnInfo->startAngle[2];
+
+            object->oMoveAnglePitch = spawnInfo->startAngle[0];
+            object->oMoveAngleYaw = spawnInfo->startAngle[1];
+            object->oMoveAngleRoll = spawnInfo->startAngle[2];
+        }
+
+        spawnInfo = spawnInfo->next;
+    }
+}
+
+/* src/game/object_list_processor.c: stub_obj_list_processor_1 */
+void stub_obj_list_processor_1(void) {
+}
+
+/* src/game/object_list_processor.c: clear_objects */
+void clear_objects(void) {
+    s32 i;
+
+    gTHIWaterDrained = 0;
+    gTimeStopState = 0;
+    gMarioObject = NULL;
+    gMarioCurrentRoom = 0;
+
+    for (i = 0; i < 60; i++) {
+        gDoorAdjacentRooms[i][0] = 0;
+        gDoorAdjacentRooms[i][1] = 0;
+    }
+
+    debug_unknown_level_select_check();
+
+    init_free_object_list();
+    clear_object_lists(gObjectListArray);
+
+    stub_behavior_script_2();
+    stub_obj_list_processor_1();
+
+    for (i = 0; i < OBJECT_POOL_CAPACITY; i++) {
+        gObjectPool[i].activeFlags = ACTIVE_FLAG_DEACTIVATED;
+        geo_reset_object_node(&gObjectPool[i].header.gfx);
+    }
+
+    gObjectMemoryPool = mem_pool_init(0x800, MEMORY_POOL_LEFT);
+    gObjectLists = gObjectListArray;
+
+    clear_dynamic_surfaces();
+}
+
+/* src/game/object_list_processor.c: update_terrain_objects */
+void update_terrain_objects(void) {
+    gObjectCounter = update_objects_in_list(&gObjectLists[OBJ_LIST_SPAWNER]);
+    //! This was meant to be +=
+    gObjectCounter = update_objects_in_list(&gObjectLists[OBJ_LIST_SURFACE]);
+}
+
+/* src/game/object_list_processor.c: update_non_terrain_objects */
+void update_non_terrain_objects(void) {
+    UNUSED u8 filler[4];
+    s32 listIndex;
+
+    s32 i = 2;
+    while ((listIndex = sObjectListUpdateOrder[i]) != -1) {
+        gObjectCounter += update_objects_in_list(&gObjectLists[listIndex]);
+        i++;
+    }
+}
+
+/* src/game/object_list_processor.c: unload_deactivated_objects */
+void unload_deactivated_objects(void) {
+    UNUSED u8 filler[4];
+    s32 listIndex;
+
+    s32 i = 0;
+    while ((listIndex = sObjectListUpdateOrder[i]) != -1) {
+        unload_deactivated_objects_in_list(&gObjectLists[listIndex]);
+        i++;
+    }
+
+    // TIME_STOP_UNKNOWN_0 was most likely intended to be used to track whether
+    // any objects had been deactivated
+    gTimeStopState &= ~TIME_STOP_UNKNOWN_0;
+}
+
+/* src/game/object_list_processor.c: update_objects */
+void update_objects(UNUSED s32 unused) {
+    s64 cycleCounts[30];
+
+    cycleCounts[0] = get_current_clock();
+
+    gTimeStopState &= ~TIME_STOP_MARIO_OPENED_DOOR;
+
+    gNumRoomedObjectsInMarioRoom = 0;
+    gNumRoomedObjectsNotInMarioRoom = 0;
+    gCheckingSurfaceCollisionsForCamera = FALSE;
+
+    reset_debug_objectinfo();
+    stub_debug_5();
+
+    gObjectLists = gObjectListArray;
+
+    // If time stop is not active, unload object surfaces
+    cycleCounts[1] = get_clock_difference(cycleCounts[0]);
+    clear_dynamic_surfaces();
+
+    // Update spawners and objects with surfaces
+    cycleCounts[2] = get_clock_difference(cycleCounts[0]);
+    update_terrain_objects();
+
+    // If Mario was touching a moving platform at the end of last frame, apply
+    // displacement now
+    //! If the platform object unloaded and a different object took its place,
+    //  displacement could be applied incorrectly
+    apply_mario_platform_displacement();
+
+    // Detect which objects are intersecting
+    cycleCounts[3] = get_clock_difference(cycleCounts[0]);
+    detect_object_collisions();
+
+    // Update all other objects that haven't been updated yet
+    cycleCounts[4] = get_clock_difference(cycleCounts[0]);
+    update_non_terrain_objects();
+
+    // Unload any objects that have been deactivated
+    cycleCounts[5] = get_clock_difference(cycleCounts[0]);
+    unload_deactivated_objects();
+
+    // Check if Mario is on a platform object and save this object
+    cycleCounts[6] = get_clock_difference(cycleCounts[0]);
+    update_mario_platform();
+
+    cycleCounts[7] = get_clock_difference(cycleCounts[0]);
+
+    cycleCounts[0] = 0;
+    try_print_debug_mario_object_info();
+
+    // If time stop was enabled this frame, activate it now so that it will
+    // take effect next frame
+    if (gTimeStopState & TIME_STOP_ENABLED) {
+        gTimeStopState |= TIME_STOP_ACTIVE;
+    } else {
+        gTimeStopState &= ~TIME_STOP_ACTIVE;
+    }
+
+    gPrevFrameObjectCount = gObjectCounter;
 }

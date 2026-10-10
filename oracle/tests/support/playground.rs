@@ -241,3 +241,17 @@ pub(crate) fn world(stream: &[i16]) -> CollisionWorld {
     assert_eq!(consumed, bytes.len());
     CollisionWorld::load_area_terrain(&mesh).unwrap()
 }
+
+/// The authored behavior segment and model table (simulation::object's
+/// ROM-free fixtures), shared for the life of the test process.
+pub(crate) static SCRIPTS: std::sync::LazyLock<
+    rustario64::simulation::object::script::BehaviorScripts,
+> = std::sync::LazyLock::new(rustario64::simulation::object::script::authored_scripts);
+pub(crate) static MODELS: std::sync::LazyLock<
+    rustario64::simulation::object::render::ObjectModels,
+> = std::sync::LazyLock::new(rustario64::simulation::object::render::authored_models);
+
+/// Mario alone, with the authored scripts and models.
+pub(crate) fn mario_only() -> rustario64::simulation::mario::tick::LevelObjects<'static> {
+    rustario64::simulation::mario::tick::LevelObjects::mario_only(&SCRIPTS, &MODELS)
+}

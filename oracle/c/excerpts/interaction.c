@@ -209,6 +209,27 @@ void mario_blow_off_cap(struct MarioState *m, f32 capSpeed) {
     }
 }
 
+/* src/game/interaction.c: interact_coin */
+u32 interact_coin(struct MarioState *m, UNUSED u32 interactType, struct Object *o) {
+    m->numCoins += o->oDamageOrCoinValue;
+    m->healCounter += 4 * o->oDamageOrCoinValue;
+
+    o->oInteractStatus = INT_STATUS_INTERACTED;
+
+    if (COURSE_IS_MAIN_COURSE(gCurrCourseNum)
+        && m->numCoins - o->oDamageOrCoinValue < 100 && m->numCoins >= 100) {
+        bhv_spawn_star_no_level_exit(STAR_INDEX_100_COINS);
+    }
+
+#if ENABLE_RUMBLE
+    if (o->oDamageOrCoinValue >= 2) {
+        queue_rumble_data(5, 80);
+    }
+#endif
+
+    return FALSE;
+}
+
 /* src/game/interaction.c: mario_get_collided_object */
 struct Object *mario_get_collided_object(struct MarioState *m, u32 interactType) {
     s32 i;

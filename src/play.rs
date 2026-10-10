@@ -19,7 +19,10 @@ use crate::{
         collision::CollisionWorld,
         controller::{A_BUTTON, B_BUTTON, R_TRIG, Z_TRIG},
         game::{self, Game, GameEntry},
-        mario::{Event, MarioState, StepWorld, Unsupported, constants, tick::RenderedFrame},
+        mario::{
+            Event, MarioState, StepWorld, Unsupported, constants,
+            tick::{LevelObjects, RenderedFrame},
+        },
         math::TrigTables,
     },
     trace::{CameraInput, INPUT_LOG_SCHEMA, InputLog},
@@ -128,6 +131,9 @@ impl fmt::Display for Stop {
             }
             Stop::Unsupported(Unsupported::InfiniteStairs) => {
                 write!(f, "the endless stairs are not ported")
+            }
+            Stop::Unsupported(Unsupported::HundredCoinStar) => {
+                write!(f, "the 100-coin star is not ported")
             }
             Stop::Camera(what) => write!(f, "{}", game::describe(*what)),
             Stop::Warp(op) => write!(f, "warp operation {op:#x} requested; warps are not ported"),
@@ -248,6 +254,7 @@ pub struct Session<'a> {
     collision: &'a CollisionWorld,
     trig: &'a TrigTables,
     anims: &'a MarioAnimations,
+    objects: LevelObjects<'a>,
     entry: GameEntry,
     game: Game<'a>,
     inputs: Vec<TickInput>,
@@ -264,14 +271,16 @@ impl<'a> Session<'a> {
         collision: &'a CollisionWorld,
         trig: &'a TrigTables,
         anims: &'a MarioAnimations,
+        objects: LevelObjects<'a>,
         entry: GameEntry,
     ) -> Self {
-        let game = Game::enter(collision, trig, anims, &entry);
+        let game = Game::enter(collision, trig, anims, &objects, &entry);
         let current = snapshot(&game.mario, 0);
         Self {
             collision,
             trig,
             anims,
+            objects,
             entry,
             game,
             inputs: vec![],
@@ -288,7 +297,13 @@ impl<'a> Session<'a> {
 
     /// Enter the level again. The input log restarts and presentation snaps.
     pub fn reset(&mut self) {
-        self.game = Game::enter(self.collision, self.trig, self.anims, &self.entry);
+        self.game = Game::enter(
+            self.collision,
+            self.trig,
+            self.anims,
+            &self.objects,
+            &self.entry,
+        );
         self.inputs.clear();
         self.stopped = None;
         self.rendered = RenderedFrame::default();
@@ -412,6 +427,7 @@ impl<'a> Session<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::simulation::object::{render::authored_models, script::authored_scripts};
     use crate::{
         content::{CollisionMesh, Triangle, animation::Animation},
         simulation::{
@@ -573,7 +589,9 @@ mod tests {
         let world = floor();
         let trig = tables();
         let anims = still_animations();
-        let mut session = Session::new(&world, &trig, &anims, entry(90));
+        let (scripts, models) = (authored_scripts(), authored_models());
+        let objects = LevelObjects::mario_only(&scripts, &models);
+        let mut session = Session::new(&world, &trig, &anims, objects, entry(90));
         assert_eq!(session.mario().action, ACT_IDLE);
         // create_camera's yaw is 0 until the first update initializes the camera.
         assert_eq!(session.game().camera.yaw(), 0);
@@ -638,7 +656,9 @@ mod tests {
         let world = CollisionWorld::load_area_terrain(&mesh).unwrap();
         let trig = tables();
         let anims = still_animations();
-        let mut session = Session::new(&world, &trig, &anims, entry(0));
+        let (scripts, models) = (authored_scripts(), authored_models());
+        let objects = LevelObjects::mario_only(&scripts, &models);
+        let mut session = Session::new(&world, &trig, &anims, objects, entry(0));
         let mut ticks = 0;
         while session.step(&Pad::default()) {
             ticks += 1;

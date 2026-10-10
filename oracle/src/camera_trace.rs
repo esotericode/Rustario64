@@ -16,6 +16,7 @@ use rustario64::{
         camera::system::CameraSystem,
         collision::CollisionWorld,
         game::{Game, GameEntry},
+        mario::tick::LevelObjects,
         math::TrigTables,
     },
     trace::{Frame, Metadata, TRACE_SCHEMA, Trace},
@@ -297,7 +298,7 @@ pub fn capture_camera(camera: &CameraSystem, o: &mut Words) {
 pub fn capture_game(game: &Game<'_>) -> BTreeMap<String, u32> {
     let mut o = Words(capture(&game.mario, &game.world));
     capture_camera(&game.camera, &mut o);
-    o.i("camera.rngSeed", i32::from(game.rng.seed));
+    o.i("camera.rngSeed", i32::from(game.world.rng.seed));
     o.0
 }
 
@@ -306,6 +307,8 @@ pub struct GameScenario<'a> {
     pub collision: &'a CollisionWorld,
     pub trig: &'a TrigTables,
     pub anims: &'a MarioAnimations,
+    /// The level's objects (scripts, models and the area's placements).
+    pub objects: LevelObjects<'a>,
     pub entry: GameEntry,
 }
 
@@ -326,6 +329,7 @@ impl GameScenario<'_> {
     /// The native decomp's words after the entry and after each frame. The
     /// oracle must have this scenario's terrain loaded and animations set.
     pub fn native(&self, oracle: &Oracle, inputs: &[TickInput]) -> Vec<BTreeMap<String, u32>> {
+        oracle.tick_set_objects(&crate::object_trace::NativeObjects::new(&self.objects));
         oracle.tick_begin(&self.setup());
         let mut out = vec![oracle.tick_snapshot()];
         for input in inputs {
@@ -339,7 +343,13 @@ impl GameScenario<'_> {
     /// frame that reaches an unsupported path. That frame's words are kept
     /// for a camera stop (the frame completes) but not for a panic.
     pub fn rust(&self, inputs: &[TickInput]) -> (Vec<BTreeMap<String, u32>>, Option<RustStop>) {
-        let mut game = Game::enter(self.collision, self.trig, self.anims, &self.entry);
+        let mut game = Game::enter(
+            self.collision,
+            self.trig,
+            self.anims,
+            &self.objects,
+            &self.entry,
+        );
         let mut out = vec![capture_game(&game)];
         for input in inputs {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -376,7 +386,13 @@ impl GameScenario<'_> {
     /// reads completed frames only, so the words must equal `rust`'s.
     pub fn rust_at(&self, inputs: &[TickInput], render_hz: u32) -> Vec<BTreeMap<String, u32>> {
         assert!((1..=1000).contains(&render_hz));
-        let mut game = Game::enter(self.collision, self.trig, self.anims, &self.entry);
+        let mut game = Game::enter(
+            self.collision,
+            self.trig,
+            self.anims,
+            &self.objects,
+            &self.entry,
+        );
         let mut out = vec![capture_game(&game)];
         let mut clock = FixedClock::default();
         let (mut elapsed, mut frame) = (0u64, 0u64);

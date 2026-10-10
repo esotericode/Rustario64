@@ -1,28 +1,39 @@
 /* Rustario64 tick oracle (authored, MIT). Development comparison tool only;
  * never linked into the game runtime. See oracle/README.md.
  *
- * Runs complete frames of the vendored decomp's Mario code with Mario's
- * object as the only object, in the original order (src/simulation/mario/
- * tick.rs mirrors this sequence): read_controller_inputs for controller 1,
- * gAreaUpdateCounter++, update_objects (clear_dynamic_surfaces,
- * clear_object_collision, cur_obj_update running bhvMario,
- * update_mario_platform), the authoritative part of the render pass, and
- * gGlobalTimer++. State persists across ticks and is only read back.
+ * Runs complete frames of the vendored decomp's object system in the
+ * original order (src/simulation/mario/tick.rs and src/simulation/object
+ * mirror this sequence): read_controller_inputs for controller 1,
+ * gAreaUpdateCounter++, the verbatim update_objects (every list in
+ * sObjectListUpdateOrder, object collisions, cur_obj_update interpreting the
+ * verbatim behavior scripts, unloading, update_mario_platform), the
+ * authoritative part of the render pass for Mario and the other objects,
+ * and gGlobalTimer++. State persists across ticks and is only read back.
+ *
+ * The level entry is init_level's from a fresh boot: the pool as
+ * clear_objects leaves it, the area's macro objects (verbatim
+ * spawn_macro_objects over the macro entries whose scripts the port runs,
+ * with the ROM's presets) and spawn infos, Mario from gMarioSpawnInfo
+ * (verbatim spawn_objects_from_info), init_mario, the camera reset and the
+ * idle action.
  *
  * With the camera linked, the area's camera is the original camera.c's (see
  * camera_unit.c): created when the area loads, reset at level entry, updated
  * by update_camera after the objects and drawn by the render pass's camera
  * nodes, and Mario's camera calls run the original functions as well as
- * being recorded. Otherwise the camera's mode and yaw are explicit inputs.
+ * being recorded. Otherwise the camera's mode and yaw are explicit inputs,
+ * and no object but Mario may exist (the render pass needs the camera).
  *
  * Original functions run unmodified (vendored files and verbatim excerpts).
- * Authored here: the object-pool slot reset and allocation fields for Mario's
- * object, bhvMario's script steps, the render pass's object condition, and
- * the level-entry sequence. Particle objects are not spawned. */
+ * Authored here: bhv_mario_update without spawn_particle (particle objects
+ * are not ported), the level-entry sequence, the render pass's object
+ * traversal around the verbatim obj_is_in_view and geo_switch_anim_state
+ * (object_render_unit.c), and the snapshot. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "sm64.h"
+#include "behavior_data.h"
 #include "audio/external.h"
 #include "engine/graph_node.h"
 #include "engine/math_util.h"
@@ -40,12 +51,26 @@
 #include "game/object_list_processor.h"
 #include "game/platform_displacement.h"
 #include "game/save_file.h"
+#include "excerpts/macro_preset_struct.inc.c"
+#include "macro_preset_boundary.h"
 #include "runtime.h"
 
 /* Defined in vendored files or excerpts whose headers are not vendored. */
 void adjust_analog_stick(struct Controller *controller);
-void clear_object_collision(struct Object *a);
 void copy_mario_state_to_object(void);
+void spawn_macro_objects(s16 areaIndex, s16 *macroObjList);
+void spawn_objects_from_info(s32 unused, struct SpawnInfo *spawnInfo);
+void clear_objects(void);
+void update_objects(s32 unused);
+void oracle_set_rng_seed(u16 seed);
+u16 oracle_rng_seed(void);
+extern struct Object gObjectPool[];
+extern struct ObjectNode gFreeObjectList;
+extern struct GraphNode gObjParentGraphNode;
+extern struct GraphNode **gLoadedGraphNodes;
+extern struct MacroPreset sMacroObjectPresets[];
+extern struct ObjectNode gObjectListArray[];
+extern s16 gCurrAreaIndex;
 void geo_set_animation_globals(struct AnimInfo *node, s32 hasAnimation);
 s32 oracle_surface_index(struct Surface *s);
 s32 oracle_anim_dma_loaded(void);
@@ -58,15 +83,6 @@ extern struct Surface gWaterSurfacePseudoFloor;
 extern u32 gOracleSaveFlags;
 extern s32 gOracleCapPosValid;
 extern s32 gOracleTotalStars;
-
-/* Object flags whose cur_obj_update handling needs object helpers that this
- * harness does not run; bhvMario sets none of them. */
-#define UNSUPPORTED_OBJ_FLAGS                                                               \
-    (OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE | OBJ_FLAG_MOVE_XZ_USING_FVEL                        \
-     | OBJ_FLAG_MOVE_Y_WITH_TERMINAL_VEL | OBJ_FLAG_SET_FACE_YAW_TO_MOVE_YAW                \
-     | OBJ_FLAG_SET_FACE_ANGLE_TO_MOVE_ANGLE | OBJ_FLAG_COMPUTE_DIST_TO_MARIO               \
-     | OBJ_FLAG_TRANSFORM_RELATIVE_TO_PARENT | OBJ_FLAG_SET_THROW_MATRIX_FROM_TRANSFORM     \
-     | OBJ_FLAG_COMPUTE_ANGLE_TO_MARIO)
 
 typedef struct {
     s32 startPos[3];
@@ -88,6 +104,8 @@ typedef struct {
     f32 cameraFocus[3];
     s32 actNum;
     u32 rngSeed;
+    /* gCurrCourseNum. */
+    s32 courseNum;
 } OracleTickSetup;
 
 typedef struct {
@@ -109,10 +127,8 @@ typedef struct {
     s32 cameraYaw;
 } OracleTickInput;
 
-static struct Object sTickMario;
 static struct Area sTickArea;
 static struct Camera sTickCamera;
-static s32 sBhvLoopEntered;
 static s8 sRootAreaIndex;
 static s32 sTickReady;
 static s32 sCameraLinked;
@@ -122,82 +138,141 @@ static void fail(const char *what) {
     abort();
 }
 
-/* spawn_objects_from_info for gMarioSpawnInfo, with the slot as
- * clear_objects leaves it (geo_reset_object_node) and allocate_object's
- * field initialization. */
-static void tick_spawn_mario(void) {
-    struct Object *obj = &sTickMario;
-    struct SpawnInfo *spawnInfo = gMarioSpawnInfo;
+/* ---- Object content supplied by the Rust side ---- */
+
+/* The verbatim scripts (behavior_data_unit.c) and their segmented addresses
+ * in the scripts the Rust side runs (ROM or authored fixture). */
+typedef struct {
+    const BehaviorScript *start;
+    s32 count;
+} OracleScript;
+s32 oracle_script_count(void);
+const OracleScript *oracle_script(s32 i);
+#define MAX_SCRIPTS 16
+static u32 sScriptAddresses[MAX_SCRIPTS];
+
+void oracle_tick_set_scripts(const u32 *segmented, s32 count) {
     s32 i;
-
-    memset(obj, 0, sizeof(*obj));
-    /* geo_reset_object_node */
-    init_graph_node_object(NULL, &obj->header.gfx, NULL, gVec3fZero, gVec3sZero, gVec3fOne);
-    obj->header.gfx.node.flags &= ~GRAPH_RENDER_ACTIVE;
-
-    /* spawn_objects_from_info: per-area state */
-    gTimeStopState = 0;
-    gMarioPlatform = NULL;
-
-    /* allocate_object */
-    obj->activeFlags = ACTIVE_FLAG_ACTIVE | ACTIVE_FLAG_UNK8;
-    obj->parentObj = obj;
-    obj->prevObj = NULL;
-    obj->collidedObjInteractTypes = 0;
-    obj->numCollidedObjs = 0;
-    for (i = 0; i < 0x50; i++) {
-        obj->rawData.asS32[i] = 0;
-#if IS_64_BIT
-        obj->ptrData.asVoidPtr[i] = NULL;
-#endif
+    if (count != oracle_script_count() || count > MAX_SCRIPTS) {
+        fail("script table size");
     }
-    obj->unused1 = 0;
-    obj->bhvStackIndex = 0;
-    obj->bhvDelayTimer = 0;
-    obj->hitboxRadius = 50.0f;
-    obj->hitboxHeight = 100.0f;
-    obj->hurtboxRadius = 0.0f;
-    obj->hurtboxHeight = 0.0f;
-    obj->hitboxDownOffset = 0.0f;
-    obj->unused2 = 0;
-    obj->platform = NULL;
-    obj->collisionData = NULL;
-    obj->oIntangibleTimer = -1;
-    obj->oDamageOrCoinValue = 0;
-    obj->oHealth = 2048;
-    obj->oCollisionDistance = 1000.0f;
-    obj->oDrawingDistance = gCurrLevelNum == LEVEL_TTC ? 2000.0f : 4000.0f;
-    mtxf_identity(obj->transform);
-    obj->respawnInfoType = RESPAWN_INFO_TYPE_NULL;
-    obj->respawnInfo = NULL;
-    obj->oDistanceToMario = 19000.0f;
-    obj->oRoom = -1;
-    obj->header.gfx.node.flags &= ~GRAPH_RENDER_INVISIBLE;
-    obj->header.gfx.pos[0] = -10000.0f;
-    obj->header.gfx.pos[1] = -10000.0f;
-    obj->header.gfx.pos[2] = -10000.0f;
-    obj->header.gfx.throwMatrix = NULL;
-
-    /* spawn_objects_from_info: the spawned object */
-    obj->oBhvParams = spawnInfo->behaviorArg;
-    obj->oBhvParams2ndByte = ((spawnInfo->behaviorArg) >> 16) & 0xFF;
-    obj->unused1 = 0;
-    obj->respawnInfoType = RESPAWN_INFO_TYPE_32;
-    obj->respawnInfo = &spawnInfo->behaviorArg;
-    if (!(spawnInfo->behaviorArg & 0x01)) {
-        fail("the spawn info is not Mario's");
+    for (i = 0; i < count; i++) {
+        sScriptAddresses[i] = segmented[i];
     }
-    gMarioObject = obj;
-    geo_obj_init_spawninfo(&obj->header.gfx, spawnInfo);
-    obj->oPosX = spawnInfo->startPos[0];
-    obj->oPosY = spawnInfo->startPos[1];
-    obj->oPosZ = spawnInfo->startPos[2];
-    obj->oFaceAnglePitch = spawnInfo->startAngle[0];
-    obj->oFaceAngleYaw = spawnInfo->startAngle[1];
-    obj->oFaceAngleRoll = spawnInfo->startAngle[2];
-    obj->oMoveAnglePitch = spawnInfo->startAngle[0];
-    obj->oMoveAngleYaw = spawnInfo->startAngle[1];
-    obj->oMoveAngleRoll = spawnInfo->startAngle[2];
+}
+
+/* A behavior command pointer as its segmented address; 0 for NULL. */
+static u32 script_address(const BehaviorScript *p) {
+    s32 i;
+    if (p == NULL) {
+        return 0;
+    }
+    for (i = 0; i < oracle_script_count(); i++) {
+        const OracleScript *script = oracle_script(i);
+        if (p >= script->start && p < script->start + script->count) {
+            return sScriptAddresses[i] + 4 * (u32) (p - script->start);
+        }
+    }
+    fail("a behavior pointer outside the verbatim scripts");
+    return 0;
+}
+
+/* The verbatim script that starts at a segmented address. */
+static const BehaviorScript *script_at(u32 segmented) {
+    s32 i;
+    for (i = 0; i < oracle_script_count(); i++) {
+        if (sScriptAddresses[i] == segmented) {
+            return oracle_script(i)->start;
+        }
+    }
+    fail("a spawned behavior has no verbatim script");
+    return NULL;
+}
+
+/* The authored render traversal and its model table (object_render_unit.c). */
+typedef struct {
+    s32 model;
+    s32 root;
+    s32 nodeCount;
+    const s32 *kinds;
+    const s32 *params;
+    const s32 *childStart;
+    const s32 *childCount;
+    const s32 *children;
+} OracleModel;
+void oracle_render_set_models(const OracleModel *models, s32 count);
+s32 oracle_render_model_of(struct GraphNode *node);
+void oracle_render_load_models(void);
+void oracle_render_object(struct Object *obj, s8 rootAreaIndex);
+void oracle_render_begin(void);
+
+void oracle_tick_set_models(const OracleModel *models, s32 count) {
+    oracle_render_set_models(models, count);
+}
+
+/* The area's macro entries the port spawns (5 shorts each, as in the area's
+ * list, then -1), each entry's index in the area's full list, and the ROM's
+ * preset table as (segmented behavior, model, param). */
+#define MAX_MACROS 512
+static s16 sMacroList[MAX_MACROS * 5 + 1];
+static s32 sMacroOriginal[MAX_MACROS];
+static s32 sMacroCount;
+
+void oracle_tick_set_macros(const s16 *list, const s32 *original, s32 count, const u32 *presetBehaviors,
+                            const s16 *presetModels, const s16 *presetParams) {
+    s32 i;
+    if (count > MAX_MACROS) {
+        fail("too many macro objects");
+    }
+    memcpy(sMacroList, list, sizeof(s16) * (size_t) count * 5);
+    sMacroList[count * 5] = -1;
+    memcpy(sMacroOriginal, original, sizeof(s32) * (size_t) count);
+    sMacroCount = count;
+    for (i = 0; i < ORACLE_MACRO_PRESET_COUNT; i++) {
+        s32 known = FALSE;
+        s32 j;
+        for (j = 0; j < oracle_script_count(); j++) {
+            known |= sScriptAddresses[j] == presetBehaviors[i];
+        }
+        sMacroObjectPresets[i].behavior = known ? script_at(presetBehaviors[i]) : NULL;
+        sMacroObjectPresets[i].model = presetModels[i];
+        sMacroObjectPresets[i].param = presetParams[i];
+    }
+}
+
+/* The area's spawn infos the port spawns, in list order, with their
+ * indices in the area's full list. */
+typedef struct {
+    s32 startPos[3];
+    s32 startAngle[3];
+    s32 areaIndex;
+    s32 activeAreaIndex;
+    u32 behaviorArg;
+    u32 behaviorScript;
+    s32 model;
+    s32 original;
+} OracleSpawnInfo;
+#define MAX_SPAWN_INFOS 128
+static struct SpawnInfo sAreaSpawnInfos[MAX_SPAWN_INFOS];
+static s32 sSpawnOriginal[MAX_SPAWN_INFOS];
+static OracleSpawnInfo sSpawnSetup[MAX_SPAWN_INFOS];
+static s32 sSpawnCount;
+
+void oracle_tick_set_spawn_infos(const OracleSpawnInfo *infos, s32 count) {
+    if (count > MAX_SPAWN_INFOS) {
+        fail("too many spawn infos");
+    }
+    memcpy(sSpawnSetup, infos, sizeof(OracleSpawnInfo) * (size_t) count);
+    sSpawnCount = count;
+}
+
+/* bhvMario's native, without spawn_particle: particle objects are not
+ * ported, so their flags stay in oMarioParticleFlags. */
+void bhv_mario_update(void) {
+    u32 particleFlags = 0;
+    particleFlags = execute_mario_action(gCurrentObject);
+    gCurrentObject->oMarioParticleFlags = particleFlags;
+    copy_mario_state_to_object();
 }
 
 /* A level entry without a warp destination (init_level's branch that demos
@@ -232,7 +307,11 @@ void oracle_tick_begin(const OracleTickSetup *s) {
     gShowDebugText = FALSE;
     gTimeStopState = 0;
     gMarioPlatform = NULL;
+    gMarioObject = NULL;
+    gCurrentObject = NULL;
+    oracle_set_rng_seed((u16) s->rngSeed);
     gCurrLevelNum = (s16) s->levelNum;
+    gCurrCourseNum = (s16) s->courseNum;
     gOracleSaveFlags = s->saveFlags;
     gOracleTotalStars = s->totalStars;
     gOracleCapPosValid = FALSE;
@@ -245,6 +324,7 @@ void oracle_tick_begin(const OracleTickSetup *s) {
     sTickArea.camera = &sTickCamera;
     gCurrentArea = &sTickArea;
     sRootAreaIndex = (s8) s->rootAreaIndex;
+    gCurrAreaIndex = (s16) s->rootAreaIndex;
     sCameraLinked = s->cameraLinked != 0;
     gOracleCameraLinked = sCameraLinked;
     if (sCameraLinked) {
@@ -259,12 +339,14 @@ void oracle_tick_begin(const OracleTickSetup *s) {
         sTickArea.camera = oracle_camera_create(&camera);
     }
 
-    /* Object lists: Mario alone in OBJ_LIST_PLAYER. */
-    gObjectLists = gObjectListArray;
-    for (i = 0; i < NUM_OBJ_LISTS; i++) {
-        gObjectListArray[i].next = &gObjectListArray[i];
-        gObjectListArray[i].prev = &gObjectListArray[i];
-    }
+    /* INIT_LEVEL: the object parent node and clear_objects, over a pool as a
+     * fresh boot's BSS leaves it. */
+    memset(gObjectPool, 0, sizeof(struct Object) * OBJECT_POOL_CAPACITY);
+    memset(&gMacroObjectDefaultParent, 0, sizeof(gMacroObjectDefaultParent));
+    memset(&gObjParentGraphNode, 0, sizeof(gObjParentGraphNode));
+    init_graph_node_start(NULL, (struct GraphNodeStart *) &gObjParentGraphNode);
+    clear_objects();
+    oracle_render_load_models();
 
     /* level_cmd_init_mario and level_cmd_set_mario_start_pos */
     memset(gMarioSpawnInfo, 0, sizeof(*gMarioSpawnInfo));
@@ -275,96 +357,56 @@ void oracle_tick_begin(const OracleTickSetup *s) {
     gMarioSpawnInfo->areaIndex = (s8) s->areaIndex;
     gMarioSpawnInfo->activeAreaIndex = (s8) s->activeAreaIndex;
     gMarioSpawnInfo->behaviorArg = s->behaviorArg;
+    gMarioSpawnInfo->behaviorScript = (void *) bhvMario;
+    gMarioSpawnInfo->model = gLoadedGraphNodes[MODEL_MARIO];
 
-    /* lvl_init_from_save_file, then init_level */
+    /* level_cmd_place_object's list: each command prepends, so the setup is
+     * already in list order. */
+    for (i = 0; i < sSpawnCount; i++) {
+        const OracleSpawnInfo *in = &sSpawnSetup[i];
+        struct SpawnInfo *info = &sAreaSpawnInfos[i];
+        s32 j;
+        memset(info, 0, sizeof(*info));
+        for (j = 0; j < 3; j++) {
+            info->startPos[j] = (s16) in->startPos[j];
+            info->startAngle[j] = (s16) in->startAngle[j];
+        }
+        info->areaIndex = (s8) in->areaIndex;
+        info->activeAreaIndex = (s8) in->activeAreaIndex;
+        info->behaviorArg = in->behaviorArg;
+        info->behaviorScript = (void *) script_at(in->behaviorScript);
+        info->model = gLoadedGraphNodes[in->model];
+        info->next = i + 1 < sSpawnCount ? &sAreaSpawnInfos[i + 1] : NULL;
+        sSpawnOriginal[i] = in->original;
+    }
+
+    /* lvl_init_from_save_file, then init_level's load_mario_area: the area's
+     * terrain load spawns its macro objects, then its spawn infos; then
+     * Mario's. */
     gMarioState = &gMarioStates[0];
     init_mario_from_save_file();
-    tick_spawn_mario();
-    gObjectListArray[OBJ_LIST_PLAYER].next = &sTickMario.header;
-    gObjectListArray[OBJ_LIST_PLAYER].prev = &sTickMario.header;
-    sTickMario.header.next = &gObjectListArray[OBJ_LIST_PLAYER];
-    sTickMario.header.prev = &gObjectListArray[OBJ_LIST_PLAYER];
-    gCurrentObject = &sTickMario;
+    if (sMacroCount > 0) {
+        spawn_macro_objects(sRootAreaIndex, sMacroList);
+    }
+    if (sSpawnCount > 0) {
+        spawn_objects_from_info(0, &sAreaSpawnInfos[0]);
+    }
+    spawn_objects_from_info(0, gMarioSpawnInfo);
+    if (gMarioObject == NULL) {
+        fail("Mario's spawn info made no gMarioObject");
+    }
     init_mario();
     if (sCameraLinked) {
         oracle_camera_reset();
     }
     set_mario_action(gMarioState, ACT_IDLE, 0);
-    sBhvLoopEntered = FALSE;
     sTickReady = TRUE;
-}
-
-static void tick_reset_timer_on_action_change(struct Object *o) {
-    if (o->oAction != o->oPrevAction) {
-        (void) (o->oTimer = 0, o->oSubAction = 0, o->oPrevAction = o->oAction);
-    }
-}
-
-/* cur_obj_update for Mario's object running bhvMario. */
-static void tick_cur_obj_update_mario(void) {
-    struct Object *o = gCurrentObject;
-    s16 objFlags = o->oFlags;
-    if (objFlags & UNSUPPORTED_OBJ_FLAGS) {
-        fail("Mario's object flags need object helpers");
-    }
-    tick_reset_timer_on_action_change(o);
-    if (!sBhvLoopEntered) {
-        /* SET_INT(oIntangibleTimer, 0), OR_INT(oFlags, OBJ_FLAG_0100),
-         * OR_INT(oUnk94, 0x0001), SET_HITBOX(37, 160), BEGIN_LOOP */
-        o->oIntangibleTimer = 0;
-        o->oFlags |= OBJ_FLAG_0100;
-        o->oUnk94 |= 0x0001;
-        o->hitboxRadius = 37;
-        o->hitboxHeight = 160;
-        sBhvLoopEntered = TRUE;
-    }
-    /* CALL_NATIVE(try_print_debug_mario_level_info): debug page 0 prints
-     * nothing. CALL_NATIVE(bhv_mario_update), without spawn_particle. */
-    {
-        u32 particleFlags = execute_mario_action(gCurrentObject);
-        gCurrentObject->oMarioParticleFlags = particleFlags;
-        copy_mario_state_to_object();
-    }
-    /* CALL_NATIVE(try_do_mario_debug_object_spawn): debug pages only. */
-    if (o->oTimer < 0x3FFFFFFF) {
-        o->oTimer++;
-    }
-    tick_reset_timer_on_action_change(o);
-    objFlags = (s16) o->oFlags;
-    if (objFlags & UNSUPPORTED_OBJ_FLAGS) {
-        fail("Mario's object flags need object helpers");
-    }
-    if (o->oRoom != -1) {
-        fail("room visibility is not modelled");
-    }
-}
-
-/* update_objects with Mario's object as the only object. */
-static void tick_update_objects(void) {
-    gTimeStopState &= ~TIME_STOP_MARIO_OPENED_DOOR;
-    gCheckingSurfaceCollisionsForCamera = FALSE;
-    gObjectLists = gObjectListArray;
-    clear_dynamic_surfaces();
-    /* update_terrain_objects: no spawners or surface objects. */
-    if (gMarioPlatform != NULL) {
-        fail("platform displacement needs objects");
-    }
-    /* detect_object_collisions: the other lists are empty. */
-    clear_object_collision((struct Object *) &gObjectLists[OBJ_LIST_PLAYER]);
-    /* update_objects_starting_at for the player list */
-    gCurrentObject = &sTickMario;
-    gCurrentObject->header.gfx.node.flags |= GRAPH_RENDER_HAS_ANIMATION;
-    tick_cur_obj_update_mario();
-    if ((sTickMario.activeFlags & ACTIVE_FLAG_ACTIVE) != ACTIVE_FLAG_ACTIVE) {
-        fail("Mario's object was deactivated");
-    }
-    update_mario_platform();
 }
 
 /* geo_process_node_and_siblings and geo_process_object for Mario's node:
  * the parts that change object state. */
 static void tick_render_mario(void) {
-    struct Object *node = &sTickMario;
+    struct Object *node = gMarioObject;
     if (node->header.gfx.node.flags & GRAPH_RENDER_ACTIVE) {
         s32 hasAnimation = (node->header.gfx.node.flags & GRAPH_RENDER_HAS_ANIMATION) != 0;
         if (node->header.gfx.areaIndex == sRootAreaIndex) {
@@ -375,6 +417,29 @@ static void tick_render_mario(void) {
         }
     } else {
         node->header.gfx.throwMatrix = NULL;
+    }
+}
+
+/* The other object nodes (Mario's is first among gObjParentGraphNode's
+ * children). No ported render-pass write depends on another object, so the
+ * list order gives the same state as the graph's child order. */
+static void tick_render_objects(void) {
+    s32 list;
+    oracle_render_begin();
+    for (list = 0; list < NUM_OBJ_LISTS; list++) {
+        struct ObjectNode *head = &gObjectListArray[list];
+        struct ObjectNode *node = head->next;
+        while (node != head) {
+            struct Object *obj = (struct Object *) node;
+            node = node->next;
+            if (obj == gMarioObject) {
+                continue;
+            }
+            if (!sCameraLinked) {
+                fail("objects other than Mario need the linked camera's render pass");
+            }
+            oracle_render_object(obj, sRootAreaIndex);
+        }
     }
 }
 
@@ -398,7 +463,7 @@ void oracle_tick_run(const OracleTickInput *in) {
     }
     /* area_update_objects */
     gAreaUpdateCounter++;
-    tick_update_objects();
+    update_objects(0);
     if (sCameraLinked) {
         /* update_hud_values does not touch the camera; then update_camera. */
         oracle_camera_update();
@@ -408,11 +473,12 @@ void oracle_tick_run(const OracleTickInput *in) {
         oracle_camera_render();
     }
     tick_render_mario();
+    tick_render_objects();
     gGlobalTimer++;
 }
 
 /* ---- Snapshot: every compared value as a named 32-bit word ---- */
-#define MAX_WORDS 2048
+#define MAX_WORDS 49152
 static char sNames[MAX_WORDS][64];
 static const char *sNamePtrs[MAX_WORDS];
 static u32 sWords[MAX_WORDS];
@@ -456,17 +522,51 @@ static void put_f32v(const char *name, const f32 *v, s32 n) {
     }
 }
 
-/* Objects are compared as NULL (-1); the harness has no others. */
+/* An object reference: its pool slot, -2 for gMacroObjectDefaultParent,
+ * -1 for NULL. */
 static s32 object_id(struct Object *o) {
-    if (o != NULL) {
-        fail("a referenced object exists");
+    if (o == NULL) {
+        return -1;
     }
+    if (o == &gMacroObjectDefaultParent) {
+        return -2;
+    }
+    if (o < &gObjectPool[0] || o >= &gObjectPool[OBJECT_POOL_CAPACITY]) {
+        fail("an object reference outside the pool");
+    }
+    return (s32) (o - &gObjectPool[0]);
+}
+
+/* A respawn record: the full-list index of the macro entry or spawn info,
+ * -2 for gMarioSpawnInfo's argument, -1 for none. */
+static s32 respawn_id(struct Object *o) {
+    s32 i;
+    if (o->respawnInfo == NULL) {
+        return -1;
+    }
+    if (o->respawnInfoType == RESPAWN_INFO_TYPE_16) {
+        s16 *p = (s16 *) o->respawnInfo;
+        s32 at = (s32) (p - sMacroList) - 4;
+        if (at < 0 || at % 5 != 0 || at / 5 >= sMacroCount) {
+            fail("a macro respawn record outside the list");
+        }
+        return sMacroOriginal[at / 5];
+    }
+    if (o->respawnInfo == &gMarioSpawnInfo->behaviorArg) {
+        return -2;
+    }
+    for (i = 0; i < sSpawnCount; i++) {
+        if (o->respawnInfo == &sAreaSpawnInfos[i].behaviorArg) {
+            return sSpawnOriginal[i];
+        }
+    }
+    fail("a respawn record outside the spawn infos");
     return -1;
 }
 
 static void snapshot_mario_state(void) {
     struct MarioState *m = gMarioState;
-    if (m->marioObj != &sTickMario || m->area != &sTickArea || m->controller != &gControllers[0]
+    if (m->marioObj != gMarioObject || m->area != &sTickArea || m->controller != &gControllers[0]
         || m->marioBodyState != &gBodyStates[0] || m->statusForCamera != &gPlayerCameraState[0]
         || m->animList != &gMarioAnimsBuf) {
         fail("MarioState pointers changed");
@@ -526,16 +626,18 @@ static void snapshot_mario_state(void) {
     put_f("m.gettingBlownGravity", m->gettingBlownGravity);
 }
 
-static void snapshot_mario_object(void) {
-    struct Object *o = &sTickMario;
+/* Every compared field of an object, under `prefix`. */
+static void put_object(const char *prefix, struct Object *o) {
     struct GraphNodeObject *gfx = &o->header.gfx;
     char buf[64];
     s32 i;
     s32 curAnim;
     s32 throwMatrix;
+    s32 model = -1;
+#define NAME(field) (snprintf(buf, sizeof(buf), "%s.%s", prefix, field), buf)
     if (gfx->animInfo.curAnim == NULL) {
         curAnim = 0;
-    } else if ((void *) gfx->animInfo.curAnim == gMarioAnimsBuf.bufTarget) {
+    } else if (o == gMarioObject && (void *) gfx->animInfo.curAnim == gMarioAnimsBuf.bufTarget) {
         curAnim = 1;
     } else {
         fail("curAnim points outside Mario's animation buffer");
@@ -549,34 +651,111 @@ static void snapshot_mario_object(void) {
     } else {
         fail("throwMatrix points outside the floor-align matrices");
     }
-    put_i("obj.gfx.flags", gfx->node.flags);
-    put_i("obj.gfx.areaIndex", gfx->areaIndex);
-    put_i("obj.gfx.activeAreaIndex", gfx->activeAreaIndex);
-    put_s16v("obj.gfx.angle", gfx->angle, 3);
-    put_f32v("obj.gfx.pos", gfx->pos, 3);
-    put_f32v("obj.gfx.scale", gfx->scale, 3);
-    put_i("obj.gfx.anim.animID", gfx->animInfo.animID);
-    put_i("obj.gfx.anim.animYTrans", gfx->animInfo.animYTrans);
-    put_i("obj.gfx.anim.curAnim", curAnim);
-    put_i("obj.gfx.anim.animFrame", gfx->animInfo.animFrame);
-    put_i("obj.gfx.anim.animTimer", gfx->animInfo.animTimer);
-    put_i("obj.gfx.anim.animFrameAccelAssist", gfx->animInfo.animFrameAccelAssist);
-    put_i("obj.gfx.anim.animAccel", gfx->animInfo.animAccel);
-    put_i("obj.gfx.throwMatrix", throwMatrix);
-    put("obj.collidedObjInteractTypes", o->collidedObjInteractTypes);
-    put_i("obj.activeFlags", o->activeFlags);
-    put_i("obj.numCollidedObjs", o->numCollidedObjs);
-    for (i = 0; i < 0x50; i++) {
-        snprintf(buf, sizeof(buf), "obj.raw[0x%02X]", i);
-        put(buf, o->rawData.asU32[i]);
+    if (gfx->sharedChild != NULL) {
+        model = oracle_render_model_of(gfx->sharedChild);
     }
-    put_f("obj.hitboxRadius", o->hitboxRadius);
-    put_f("obj.hitboxHeight", o->hitboxHeight);
-    put_f("obj.hurtboxRadius", o->hurtboxRadius);
-    put_f("obj.hurtboxHeight", o->hurtboxHeight);
-    put_f("obj.hitboxDownOffset", o->hitboxDownOffset);
-    put_i("obj.platform", object_id(o->platform));
-    put_i("obj.bhvLoopEntered", sBhvLoopEntered);
+    put_i(NAME("gfx.flags"), gfx->node.flags);
+    put_i(NAME("gfx.areaIndex"), gfx->areaIndex);
+    put_i(NAME("gfx.activeAreaIndex"), gfx->activeAreaIndex);
+    put_i(NAME("gfx.sharedChild"), model);
+    put_s16v(NAME("gfx.angle"), gfx->angle, 3);
+    put_f32v(NAME("gfx.pos"), gfx->pos, 3);
+    put_f32v(NAME("gfx.scale"), gfx->scale, 3);
+    put_i(NAME("gfx.anim.animID"), gfx->animInfo.animID);
+    put_i(NAME("gfx.anim.animYTrans"), gfx->animInfo.animYTrans);
+    put_i(NAME("gfx.anim.curAnim"), curAnim);
+    put_i(NAME("gfx.anim.animFrame"), gfx->animInfo.animFrame);
+    put_i(NAME("gfx.anim.animTimer"), gfx->animInfo.animTimer);
+    put_i(NAME("gfx.anim.animFrameAccelAssist"), gfx->animInfo.animFrameAccelAssist);
+    put_i(NAME("gfx.anim.animAccel"), gfx->animInfo.animAccel);
+    put_i(NAME("gfx.throwMatrix"), throwMatrix);
+    put(NAME("collidedObjInteractTypes"), o->collidedObjInteractTypes);
+    put_i(NAME("activeFlags"), o->activeFlags);
+    put_i(NAME("numCollidedObjs"), o->numCollidedObjs);
+    for (i = 0; i < 4; i++) {
+        char field[32];
+        snprintf(field, sizeof(field), "collidedObjs[%d]", i);
+        put_i(NAME(field), i < o->numCollidedObjs ? object_id(o->collidedObjs[i]) : -1);
+    }
+    for (i = 0; i < 0x50; i++) {
+        char field[32];
+        snprintf(field, sizeof(field), "raw[0x%02X]", i);
+        put(NAME(field), o->rawData.asU32[i]);
+    }
+    put(NAME("unused1"), o->unused1);
+    put(NAME("bhvStackIndex"), o->bhvStackIndex);
+    for (i = 0; i < 8; i++) {
+        char field[32];
+        snprintf(field, sizeof(field), "bhvStack[%d]", i);
+        /* Addresses become segmented; repeat counts are small integers. */
+        put(NAME(field), i < (s32) o->bhvStackIndex
+                             ? (o->bhvStack[i] < 0x10000 ? (u32) o->bhvStack[i]
+                                                          : script_address((const BehaviorScript *) o->bhvStack[i]))
+                             : 0);
+    }
+    put_i(NAME("bhvDelayTimer"), o->bhvDelayTimer);
+    put_i(NAME("respawnInfoType"), o->respawnInfoType);
+    put_i(NAME("respawnInfo"), respawn_id(o));
+    put_f(NAME("hitboxRadius"), o->hitboxRadius);
+    put_f(NAME("hitboxHeight"), o->hitboxHeight);
+    put_f(NAME("hurtboxRadius"), o->hurtboxRadius);
+    put_f(NAME("hurtboxHeight"), o->hurtboxHeight);
+    put_f(NAME("hitboxDownOffset"), o->hitboxDownOffset);
+    put(NAME("behavior"), script_address(o->behavior));
+    put(NAME("curBhvCommand"), script_address(o->curBhvCommand));
+    put_i(NAME("platform"), object_id(o->platform));
+    put_i(NAME("collisionData"), o->collisionData == NULL ? -1 : 1);
+    put_i(NAME("parentObj"), object_id(o->parentObj));
+    put_i(NAME("prevObj"), object_id(o->prevObj));
+#undef NAME
+}
+
+static void snapshot_mario_object(void) {
+    put_object("obj", gMarioObject);
+}
+
+/* The pool: every listed object other than Mario by slot, each list's
+ * order, and the free list's order. */
+static void snapshot_objects(void) {
+    char buf[64];
+    s32 list, i;
+    struct ObjectNode *node;
+    for (list = 0; list < NUM_OBJ_LISTS; list++) {
+        struct ObjectNode *head = &gObjectListArray[list];
+        s32 count = 0;
+        for (node = head->next; node != head; node = node->next) {
+            struct Object *obj = (struct Object *) node;
+            snprintf(buf, sizeof(buf), "lists[%d][%d]", list, count);
+            put_i(buf, object_id(obj));
+            if (obj != gMarioObject) {
+                char prefix[32];
+                snprintf(prefix, sizeof(prefix), "objects[%d]", object_id(obj));
+                put_object(prefix, obj);
+            }
+            count++;
+        }
+        snprintf(buf, sizeof(buf), "lists[%d].count", list);
+        put_i(buf, count);
+    }
+    i = 0;
+    for (node = gFreeObjectList.next; node != NULL; node = node->next) {
+        snprintf(buf, sizeof(buf), "free[%d]", i);
+        put_i(buf, object_id((struct Object *) node));
+        i++;
+    }
+    put_i("free.count", i);
+    put_i("world.marioObject", object_id(gMarioObject));
+    put_i("world.currentObject", object_id(gCurrentObject));
+    put("world.timeStopState", gTimeStopState);
+    put_i("world.rngSeed", oracle_rng_seed());
+    for (i = 0; i < sMacroCount; i++) {
+        snprintf(buf, sizeof(buf), "area.macro[%d].params", sMacroOriginal[i]);
+        put_i(buf, (u16) sMacroList[i * 5 + 4]);
+    }
+    for (i = 0; i < sSpawnCount; i++) {
+        snprintf(buf, sizeof(buf), "area.spawnInfo[%d].behaviorArg", sSpawnOriginal[i]);
+        put(buf, sAreaSpawnInfos[i].behaviorArg);
+    }
 }
 
 static void snapshot_body_and_camera_status(void) {
@@ -665,6 +844,7 @@ s32 oracle_tick_snapshot(const char *const **names, const u32 **words) {
     sCount = 0;
     snapshot_mario_state();
     snapshot_mario_object();
+    snapshot_objects();
     snapshot_body_and_camera_status();
     snapshot_world();
     if (sCameraLinked) {

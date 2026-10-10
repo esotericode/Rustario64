@@ -4,8 +4,11 @@
 //! that tools/check_mario_model_reference.py reproduces from the pinned decomp
 //! sources, then poses Mario through a played session.
 use rustario64::{
-    content::visual::{SkinnedModel, VisualVertex},
-    import::{animation, bob, engine, mario, rom::Rom, sha1_hex},
+    content::{
+        Act,
+        visual::{SkinnedModel, VisualVertex},
+    },
+    import::{animation, bob, engine, mario, objects, rom::Rom, sha1_hex},
     play::{Pad, Session},
     presentation::mario::{MarioDrawer, MarioPose},
     simulation::{
@@ -160,7 +163,8 @@ fn local_us_rom_mario_model() {
     let world = CollisionWorld::load_area_terrain(&imported.collision).unwrap();
     let camera = imported.visual.as_ref().unwrap().camera.unwrap();
     let entry = GameEntry::script_start(&imported.level, &camera).unwrap();
-    let mut session = Session::new(&world, &trig, &anims, entry);
+    let content = objects::bob(&rom, &imported.level, Act::new(1).unwrap()).unwrap();
+    let mut session = Session::new(&world, &trig, &anims, content.level_objects(), entry);
     drawer.update(&session.mario_pose(), None).unwrap();
     assert!(
         drawer.frame(1.0, true).is_none(),
@@ -219,7 +223,8 @@ fn local_us_rom_blinks_and_lod_keep_interpolating() {
     let world = CollisionWorld::load_area_terrain(&imported.collision).unwrap();
     let camera = imported.visual.as_ref().unwrap().camera.unwrap();
     let entry = GameEntry::script_start(&imported.level, &camera).unwrap();
-    let mut session = Session::new(&world, &trig, &anims, entry);
+    let content = objects::bob(&rom, &imported.level, Act::new(1).unwrap()).unwrap();
+    let mut session = Session::new(&world, &trig, &anims, content.level_objects(), entry);
     let mut drawer = MarioDrawer::new(&source, &trig, &anims);
     let mut reference = MarioDrawer::new(&source, &trig, &anims);
     let mut previous: Option<(MarioPose, usize)> = None;
@@ -291,6 +296,7 @@ fn local_us_rom_landing_and_action_changes_keep_interpolating() {
     let world = CollisionWorld::load_area_terrain(&imported.collision).unwrap();
     let camera = imported.visual.as_ref().unwrap().camera.unwrap();
     let entry = GameEntry::script_start(&imported.level, &camera).unwrap();
+    let content = objects::bob(&rom, &imported.level, Act::new(1).unwrap()).unwrap();
     let run = Pad {
         up: true,
         ..Pad::default()
@@ -305,7 +311,7 @@ fn local_us_rom_landing_and_action_changes_keep_interpolating() {
         ("landing-turn", turn),
         ("landing-stop-restart", Pad::default()),
     ] {
-        let mut session = Session::new(&world, &trig, &anims, entry);
+        let mut session = Session::new(&world, &trig, &anims, content.level_objects(), entry);
         let mut drawer = MarioDrawer::new(&source, &trig, &anims);
         let (mut jumped, mut landed, mut ground_ticks) = (false, false, 0);
         let mut previous: Option<(MarioPose, usize, Vec<Vec<VisualVertex>>)> = None;

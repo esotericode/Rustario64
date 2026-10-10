@@ -6,7 +6,8 @@
 //! replay with the camera linked). Writes both traces to a new private
 //! directory.
 use rustario64::{
-    import::{animation, bob, collision, engine, mio0, rom::Rom, version},
+    content::Act,
+    import::{animation, bob, collision, engine, mio0, objects, rom::Rom, version},
     play::BOB_SCRIPT_START,
     presentation::GraphicsOptions,
     simulation::{
@@ -132,6 +133,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .ok_or("BOB's area has no camera node")?;
     let game_entry = GameEntry::script_start(&imported.level, &node)?;
     let entry = game_entry.mario;
+    // The ROM's scripts and models; with the camera, BOB's act-1 placements
+    // as the viewer enters them.
+    let content = objects::bob(&rom, &imported.level, Act::new(1).ok_or("act")?)?;
     let (inputs, name) = match &recording {
         Some(log) => {
             if log.rom_sha1 != rom.fingerprint() {
@@ -157,6 +161,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 collision: &world,
                 trig: &trig,
                 anims: &anims,
+                objects: content.level_objects(),
                 entry: game_entry,
             },
             &inputs,
@@ -171,6 +176,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         collision: &world,
         trig: &trig,
         anims: &anims,
+        objects: content.mario_only(),
         setup: TickSetup::from_entry(&entry),
         rom_sha1: rom.fingerprint().into(),
         world_digest: world_digest(&stream, &trig),

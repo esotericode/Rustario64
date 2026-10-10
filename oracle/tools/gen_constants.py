@@ -25,7 +25,9 @@ FLAGS = ["-std=gnu99", "-DNON_MATCHING", "-DVERSION_US=1", "-DAVOID_UB", "-DNO_S
          "-I" + str(DECOMP / "include"), "-I" + str(DECOMP / "src"), "-I" + str(DECOMP)]
 HEADERS = ["sm64.h", "dialog_ids.h", "surface_terrains.h", "sounds.h", "mario_animation_ids.h", "level_table.h",
            "object_constants.h", "object_fields.h", "game/camera.h", "game/interaction.h",
-           "game/level_update.h", "game/mario.h", "game/save_file.h", "engine/graph_node.h"]
+           "game/level_update.h", "game/mario.h", "game/save_file.h", "engine/graph_node.h",
+           "model_ids.h", "course_table.h", "engine/surface_collision.h",
+           "game/object_list_processor.h"]
 
 # (name pattern, Rust type), first match wins. Names that match no group are
 # not mirrored.
@@ -76,8 +78,20 @@ GROUPS = [
     (r"HELD_\w+", "i32"),
     (r"SAVE_FLAG_\w+", "u32"),
     (r"GRAPH_RENDER_\w+", "i16"),
+    (r"OBJ_LIST_\w+", "i32"),
+    (r"TIME_STOP_\w+", "u32"),
+    (r"OBJECT_POOL_CAPACITY", "usize"),
+    (r"RESPAWN_INFO_\w+", "i16"),
+    (r"COIN_FORMATION_\w+", "i32"),
+    (r"OBJ_MOVE_\w+", "u32"),
+    (r"FLOOR_LOWER_LIMIT(_MISC)?", "i32"),
+    (r"MODEL_\w+", "i32"),
+    (r"COURSE_\w+", "i16"),
     (r"o[A-Z]\w+", "usize"),
 ]
+# Object field sections beyond the common and Mario fields, by their
+# object_fields.h headings.
+FIELD_SECTIONS = ["Coin"]
 
 
 def compile_and_run(source):
@@ -107,7 +121,12 @@ def candidates():
     # Object fields: common fields through the Mario section only.
     lines = (DECOMP / "include/object_fields.h").read_text().splitlines()
     end = next(i for i, l in enumerate(lines) if l.startswith("/* Hidden 1-Up */"))
-    fields = [m.group(1) for l in lines[:end] for m in [re.match(r"#define\s+/\*0x\w+\*/\s+(o[A-Z]\w+)\s", l)] if m]
+    selected = lines[:end]
+    for section in FIELD_SECTIONS:
+        start = lines.index(f"/* {section} */")
+        stop = next(i for i in range(start + 1, len(lines)) if not lines[i].startswith("#define"))
+        selected += lines[start:stop]
+    fields = [m.group(1) for l in selected for m in [re.match(r"#define\s+/\*0x\w+\*/\s+(o[A-Z]\w+)\s", l)] if m]
     out = []
     for name in dict.fromkeys(names + fields):
         rust = next((t for pattern, t in GROUPS if re.fullmatch(pattern, name)), None)

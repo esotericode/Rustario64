@@ -4,9 +4,11 @@ Mario's movement now has **per-tick coverage against the natively compiled
 decomp**: complete frames of Mario alone (input stage, every non-object action
 group, Mario's object update and the animation frame advance) match bit for bit
 on an authored playground and on Bob-omb Battlefield with the owner ROM's data.
-That is not yet coverage against original N64 execution, and the complete camera update,
-objects, interactions with objects, cutscene/submerged actions and RNG-driven
-behaviors have **zero validated coverage**. Collision, math, physics steps and
+That is not yet coverage against original N64 execution. Since session 17
+the object system (pool, lists, behavior scripts, object collision) with the
+coin behaviors and coin collection also has per-frame coverage (Objects and
+coins below); every other object behavior, interactions with other objects
+and cutscene/submerged actions have **zero validated coverage**. Collision, math, physics steps and
 pre-action inputs also keep their component suites. Camera helpers and radial
 goal construction have native component checks; the persistent Lakitu/transition
 stage also has per-tick native comparisons (Camera sections below). The viewer's Mario mode
@@ -570,3 +572,67 @@ the native reference (540 frames total). The optimized core/oracle suite passes
 pass. Window smoke checks use Xvfb/software Vulkan. This is automated presentation
 and native-oracle coverage, with physical-GPU human transition playtesting still
 pending.
+
+## Objects and coins (session 17, 2026-10-10)
+
+`simulation::object` runs the original object system each frame inside the
+game frame: `update_objects` over the lists in `sObjectListUpdateOrder`, the
+ROM's behavior scripts interpreted by `cur_obj_update`, object collision,
+`interact_coin` through Mario's interaction pass, unloading with respawn bits,
+and the render pass's `oAnimState` writes for objects in the camera's view.
+The oracle runs the verbatim C for all of it (`oracle/c/tick.c`; see
+oracle/README.md) with the original camera linked. Both sides enter the same
+placements: the area's macro entries and spawn infos whose scripts the port
+runs, in the original list order; the rest are skipped on both sides.
+
+After the entry and every frame both report Mario's and the camera's words
+(as in session 12) plus every object word: each list's slots in order, the
+free list, the current object, the time-stop state, the RNG seed, the
+compared macro entries' respawn bits and spawn infos' arguments, and for every
+non-Mario object its graph node (flags, area indices, model, angles, position,
+scale, animation state, throw matrix), all 0x50 raw words, active flags,
+collisions and their interact types, the behavior stack and delay timer,
+respawn record, hitbox and hurtbox, `behavior`, `curBhvCommand` (both as
+segment 0x13 addresses), platform, collision data and parent.
+
+| Check | Authored field (CI) | BOB, owner ROM (ignored test) |
+| --- | --- | --- |
+| World | 10x10 flat tiles with a void beyond x = 5000 and a raised block; computed trig tables; authored animations, scripts (`authored_scripts`, the same command words as the verbatim scripts) and coin/sparkle model traversals | BOB collision, ROM trig tables and animations, the ROM's behavior segment, presets and coin/sparkle models; act 1's placements |
+| Placements | 18 macro entries: eight yellow coins (one 700 units above the floor, one over the void), every formation type (horizontal and vertical line, horizontal and vertical ring, arrow, flying line and ring), list parameters selecting the type, and a formation 2,600 units away with preset respawn bits | BOB act 1: 14 coin placements (five yellow coins, nine formations) and the spin airborne warp spawn; 94 other placements are skipped |
+| Scenarios | Six starts × 900 frames of seeded movement, jumps, dives, ground pounds and camera buttons | Four ground-formation starts × four yaws × 600 frames |
+| Frames compared, all identical | 5,400 | 9,600 |
+| Coverage asserted | up to 12 coins collected; up to 75 objects; 93 golden-sparkle and 930 coin-sparkle object-frames; 79 formation-respawn frames; 174 frames with unloads; 40,293 shadowless-coin object-frames | up to six coins collected; up to 26 objects; 111 golden-sparkle and 1,110 coin-sparkle object-frames; 11 formation-respawn frames; 142 frames with unloads; 48,000 shadowless-coin object-frames |
+
+The camera suite's BOB frames (77,112, identical) and the 30/60/144 Hz
+presentation check now enter BOB with its act-1 coins on both sides as well.
+`tests/objects.rs` (core crate, owner ROM) pins BOB act 1's placement counts
+(88 macro objects, 21 spawn infos, 14 coin placements spawned, 94 recorded as
+unported) and collects a yellow coin in a played session.
+
+```sh
+cargo test --locked --release -p rustario64-oracle --test objects -- --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test objects -- --include-ignored --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release --test objects -- --ignored --nocapture
+```
+
+Seeded mutations (each reverted afterwards), run against the authored suite:
+the yellow coin hitbox radius (100 → 99), the vertical ring's height offset
+(+200 → +201), the formation unload distance (2100 → 2000), the anim-state
+switch's reset test (`>=` → `>`), the list update order (OBJ_LIST_LEVEL and
+OBJ_LIST_DEFAULT swapped) and the free list's order (freed slots appended
+instead of pushed to the front). All six fail it at a per-frame word
+difference.
+
+Limits of this evidence:
+
+- Native host C, not N64 execution.
+- Only the coin behaviors, the spin airborne warp's BREAK and Mario run.
+  Skipping the other placements changes slot assignment and removes their
+  random draws on both sides equally, so BOB's comparison is of the subset,
+  not of the full level's object state.
+- Particles are not spawned on either side (Mario's particle flags are
+  compared); object animations, object collision models, platforms, held
+  objects and every other interaction handler are unported and abort or are
+  never spawned.
+- The render pass's object writes are compared; drawing is not (coins are not
+  drawn by the viewer yet).

@@ -49,12 +49,22 @@ What works now:
   fades, water/ice layers and lateral animation offsets. Shadow presentation
   interpolates with Mario while simulation stays at 30 Hz. Original vertex
   coordinates, alpha and layers match the native decomp on authored cases and BOB.
+- **The original object system with BOB's coins**: the 240-slot object pool
+  and its lists, `update_objects` in the original list order, the ROM's own
+  behavior scripts (segment 0x13) run by a port of the behavior interpreter,
+  object collision, and the coin behaviors: yellow coins, every coin formation
+  type (lines, rings, the arrow, flying variants) with their respawn bits,
+  sparkles, and coin collection. **Complete frames with objects match the decomp
+  word for word**, including every object's fields, the lists and the free list
+  (5,400 authored frames in CI, 9,600 on BOB's coins with your ROM). In the
+  viewer, Mario collects BOB's act-1 coins, but they are not drawn yet.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
   **full-tick** and input-stage trace pairs.
 
 This is level exploration with Mario's movement and camera, not mission
-support: there are no objects (coins, enemies,
-trees, the cannon lid), camera cutscenes, original pause behavior, cutscene or water
+support: of the objects only the coins are simulated. Enemies, trees, signs,
+red coins, the cannon lid and every other placement are recorded as unported
+and not spawned. There are no camera cutscenes, original pause behavior, cutscene or water
 actions, warps, deaths, or missions. Play stops where the port stops
 (unsupported paths, falling off the course); R re-enters.
 The comparisons are against the natively compiled decomp, not N64 execution.
@@ -67,7 +77,7 @@ decompilation; see [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md).
 | --- | --- | --- |
 | `rustario64` | `.` | GPU-free core: import, content, simulation (Mario, the reference camera, the game frame), the play session that drives it from held controls, traces, headless CLI |
 | `rustario64-render` | `render/` | Optional wgpu renderer and the `rustario64-viewer` development binary |
-| `rustario64-oracle` | `oracle/` | Development-only: the pinned CC0 decomp's collision, math, Mario and camera code compiled natively for bitwise component and full-tick differential tests (needs a C compiler); never a runtime dependency |
+| `rustario64-oracle` | `oracle/` | Development-only: the pinned CC0 decomp's collision, math, Mario, camera and object code compiled natively for bitwise component and full-tick differential tests (needs a C compiler); never a runtime dependency |
 
 The core never depends on the renderer, so simulation and replay comparisons run
 without a GPU or window.
@@ -151,7 +161,17 @@ RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-ora
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --test animation local_us_rom_mario_animations -- --ignored --exact
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release --test mario_model -- --ignored --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test mario_tick bob_ticks -- --ignored --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release --test objects -- --ignored --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test objects -- --include-ignored --nocapture
 ```
+
+With a clean pinned decomp checkout, two checkers re-derive the object
+content the importer relies on: `python3 -I tools/check_behavior_reference.py
+--rom /path/to/sm64.z64 --reference /path/to/sm64` lays the pinned
+`behavior_data.c` over the ROM's segment 0x13 and checks every word, the
+macro preset table and the version adapter's script and native addresses;
+`tools/check_object_model_reference.py` (same arguments) checks the coin and
+sparkle geo layouts and the object geo callback address.
 
 The oracle tests compare BOB's real collision (about four million queries), the
 ROM's trig tables (about four million lookups), Mario's physics steps on BOB
@@ -180,7 +200,8 @@ fog. The viewer launches straight into BOB area 1 as a development entry point.
 The free camera is a presentation-only inspection camera, not the original game
 camera. The sky is a placeholder color until the skybox is imported; trees,
 coins, enemies, and other objects are not drawn yet (their painted ground
-shadows are terrain).
+shadows are terrain). In Mario mode BOB's act-1 coins are simulated and can
+be collected; they are not drawn yet.
 
 #### Move Mario
 
@@ -280,10 +301,12 @@ cargo run --locked --release -p rustario64-oracle --example tick_trace -- \
 Each frame records about 260 named words: all of MarioState, Mario's object, his
 body and camera-status state, world globals, controller 1 and the frame's sound,
 camera and warp events. The entry is a fresh-boot level entry at the script's
-start, not a painting spawn. Mario's object is the only object. Without the
-camera the yaw is part of each tick's input; with it, each frame adds every
-camera word (the area's `struct Camera`, Lakitu, transitions, C-Up, shakes,
-the random seed, FOV and graph camera).
+start, not a painting spawn. Without the camera, Mario's object is the only
+object and the yaw is part of each tick's input; with it, BOB's act-1 coins
+are spawned on both sides and each frame adds every camera word (the area's
+`struct Camera`, Lakitu, transitions, C-Up, shakes, the random seed, FOV and
+graph camera) and every object word (the lists, the free list and each
+object's fields).
 
 Export a native-vs-Rust **input-stage** trace pair with your ROM:
 
@@ -313,16 +336,18 @@ rendering decisions; [PROVENANCE.md](PROVENANCE.md) lists exact upstream sources
 reuse, and dependency terms; [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md)
 holds the owner-ROM evidence.
 
-Object-list setup is available in `simulation::object`: original IDs and update
-order, plus `import::behavior::object_list` for bounded behavior-header decoding.
-It prepares the object processor; spawning, behavior execution and coins are
-still unimplemented. The viewer's playable behavior is unchanged.
+The object system lives in `simulation::object` (pool, lists, interpreter,
+collision, processor, render-pass writes, coin behaviors) and
+`import::objects` (behavior segment, macro presets, model registrations and
+traversals, area placements). A placement whose script the port does not run
+is never spawned; it is listed in `AreaObjects::skipped` with the reason.
 
 ## Next increment
 
-Physical-GPU Windows/Linux playtesting continues. Implement object-list
-processing and the first BOB coins, then the first mission's actors, with the
-camera cutscenes that mission needs. Original-execution traces remain the
+Physical-GPU Windows/Linux playtesting continues. Draw the coins (their ROM
+models, billboarded by animation state) and a coin counter in the viewer,
+then port the first mission's actors (King Bob-omb, Bob-ombs, the star) with
+the camera cutscenes that mission needs. Original-execution traces remain the
 eventual authority. Skybox and placement models remain M1 work.
 
 Camera checks without a ROM: `cargo test --locked -p rustario64-oracle --test camera --test lakitu --test radial --test camera_tick`;

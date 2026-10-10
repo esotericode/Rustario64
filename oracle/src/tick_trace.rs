@@ -13,9 +13,9 @@ use rustario64::{
         FixedClock, TickInput,
         collision::CollisionWorld,
         mario::{
-            AnimRef, MarioState, ObjectId, SaveInputs, StepWorld, SurfaceRef,
+            MarioState, SaveInputs, StepWorld, SurfaceRef,
             core::SpawnPoint,
-            tick::{LevelEntry, enter_level, tick},
+            tick::{LevelEntry, LevelObjects, course_of_level, enter_level, tick},
         },
         math::TrigTables,
     },
@@ -70,6 +70,7 @@ impl TickSetup {
             camera_focus: [0.0; 3],
             act_num: 0,
             rng_seed: 0,
+            course_num: i32::from(course_of_level(entry.level_num)),
         }
     }
 
@@ -110,9 +111,10 @@ pub fn rust_begin<'a>(
     collision: &'a CollisionWorld,
     trig: &'a TrigTables,
     anims: &'a MarioAnimations,
+    objects: &LevelObjects<'a>,
     setup: &TickSetup,
 ) -> (MarioState, StepWorld<'a>) {
-    enter_level(collision, trig, anims, &setup.entry())
+    enter_level(collision, trig, anims, objects, &setup.entry())
 }
 
 /// Named words, inserted once each.
@@ -152,11 +154,7 @@ fn surface_id(surface: Option<SurfaceRef>) -> i32 {
     }
 }
 
-/// Objects are compared as NULL; the harness has no others.
-fn object_id(object: Option<ObjectId>) -> i32 {
-    assert!(object.is_none(), "a referenced object exists");
-    -1
-}
+use crate::object_trace::object_id;
 
 /// Every compared word, named as c/tick.c's oracle_tick_snapshot names it.
 /// Events are the ones recorded since `w.events` was last cleared.
@@ -219,50 +217,8 @@ pub fn capture(m: &MarioState, w: &StepWorld<'_>) -> BTreeMap<String, u32> {
     o.f("m.quicksandDepth", m.quicksand_depth);
     o.f("m.gettingBlownGravity", m.getting_blown_gravity);
 
-    let obj = &m.obj;
-    let gfx = &obj.gfx;
-    o.i("obj.gfx.flags", i32::from(gfx.node_flags));
-    o.i("obj.gfx.areaIndex", i32::from(gfx.area_index));
-    o.i("obj.gfx.activeAreaIndex", i32::from(gfx.active_area_index));
-    o.s16v("obj.gfx.angle", &gfx.angle);
-    o.f32v("obj.gfx.pos", &gfx.pos);
-    o.f32v("obj.gfx.scale", &gfx.scale);
-    o.i("obj.gfx.anim.animID", i32::from(gfx.anim.anim_id));
-    o.i("obj.gfx.anim.animYTrans", i32::from(gfx.anim.anim_y_trans));
-    o.i(
-        "obj.gfx.anim.curAnim",
-        match gfx.anim.cur_anim {
-            None => 0,
-            Some(AnimRef::MarioDmaBuffer) => 1,
-        },
-    );
-    o.i("obj.gfx.anim.animFrame", i32::from(gfx.anim.anim_frame));
-    o.put("obj.gfx.anim.animTimer", u32::from(gfx.anim.anim_timer));
-    o.i(
-        "obj.gfx.anim.animFrameAccelAssist",
-        gfx.anim.anim_frame_accel_assist,
-    );
-    o.i("obj.gfx.anim.animAccel", gfx.anim.anim_accel);
-    o.i(
-        "obj.gfx.throwMatrix",
-        gfx.throw_matrix.map_or(-1, |i| i as i32),
-    );
-    o.put(
-        "obj.collidedObjInteractTypes",
-        obj.collided_obj_interact_types,
-    );
-    o.i("obj.activeFlags", i32::from(obj.active_flags));
-    o.i("obj.numCollidedObjs", i32::from(obj.num_collided_objs));
-    for (i, word) in obj.raw.0.iter().enumerate() {
-        o.put(format!("obj.raw[0x{i:02X}]"), *word);
-    }
-    o.f("obj.hitboxRadius", obj.hitbox_radius);
-    o.f("obj.hitboxHeight", obj.hitbox_height);
-    o.f("obj.hurtboxRadius", obj.hurtbox_radius);
-    o.f("obj.hurtboxHeight", obj.hurtbox_height);
-    o.f("obj.hitboxDownOffset", obj.hitbox_down_offset);
-    o.i("obj.platform", object_id(obj.platform));
-    o.put("obj.bhvLoopEntered", u32::from(obj.bhv_loop_entered));
+    crate::object_trace::put_object(&mut o, "obj", &m.obj);
+    crate::object_trace::capture_objects(&mut o, m, w);
 
     let b = &m.body;
     o.put("body.action", b.action);
@@ -395,6 +351,8 @@ pub struct TickScenario<'a> {
     pub collision: &'a CollisionWorld,
     pub trig: &'a TrigTables,
     pub anims: &'a MarioAnimations,
+    /// The level's objects (scripts, models and the area's placements).
+    pub objects: LevelObjects<'a>,
     pub setup: TickSetup,
     pub rom_sha1: String,
     pub world_digest: String,
@@ -411,7 +369,7 @@ impl TickScenario<'_> {
                 rom_sha1: self.rom_sha1.clone(),
                 reference_revision: version::REFERENCE_REVISION.into(),
                 reference_configuration: "full-tick-v1; native C IEEE/fwrapv/no-FMA/AVOID_UB; \
-                    Mario's object only; level entry without warp from a fresh boot; \
+                    the ported objects; level entry without warp from a fresh boot; \
                     camera yaw and mode recorded inputs; sound, camera, warp and particle \
                     calls recorded as events; debug pages off"
                     .into(),
@@ -431,6 +389,7 @@ impl TickScenario<'_> {
     /// The native decomp's trace. The oracle must have this scenario's
     /// terrain loaded and animations set.
     pub fn native(&self, oracle: &Oracle, inputs: &[TickInput]) -> Trace {
+        oracle.tick_set_objects(&crate::object_trace::NativeObjects::new(&self.objects));
         oracle.tick_begin(&self.setup);
         let initial = oracle.tick_snapshot();
         let mut trace = self.trace("native-decomp full tick", initial, inputs.len());
@@ -447,7 +406,13 @@ impl TickScenario<'_> {
 
     /// The Rust side's words after the level entry.
     pub fn rust_initial(&self) -> BTreeMap<String, u32> {
-        let (m, w) = rust_begin(self.collision, self.trig, self.anims, &self.setup);
+        let (m, w) = rust_begin(
+            self.collision,
+            self.trig,
+            self.anims,
+            &self.objects,
+            &self.setup,
+        );
         capture(&m, &w)
     }
 
@@ -459,7 +424,13 @@ impl TickScenario<'_> {
         &self,
         inputs: &[TickInput],
     ) -> (Vec<BTreeMap<String, u32>>, Option<String>) {
-        let (mut m, mut w) = rust_begin(self.collision, self.trig, self.anims, &self.setup);
+        let (mut m, mut w) = rust_begin(
+            self.collision,
+            self.trig,
+            self.anims,
+            &self.objects,
+            &self.setup,
+        );
         let mut out = Vec::with_capacity(inputs.len());
         for input in inputs {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -493,7 +464,13 @@ impl TickScenario<'_> {
         if inputs.is_empty() || !(1..=1000).contains(&render_hz) {
             return Err("nonempty inputs and render rate 1..=1000 required");
         }
-        let (mut m, mut w) = rust_begin(self.collision, self.trig, self.anims, &self.setup);
+        let (mut m, mut w) = rust_begin(
+            self.collision,
+            self.trig,
+            self.anims,
+            &self.objects,
+            &self.setup,
+        );
         let mut trace = self.trace("Rust full tick", capture(&m, &w), inputs.len());
         let mut clock = FixedClock::default();
         let mut elapsed = 0;

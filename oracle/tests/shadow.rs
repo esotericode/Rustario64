@@ -250,8 +250,14 @@ fn bob_shadows_match_native_vertices_and_leave_played_state_unchanged() {
             }
         }
     }
-    let mut session = Session::new(&world, &trig, &anims, entry);
-    let mut baseline = Session::new(&world, &trig, &anims, entry);
+    let content = rustario64::import::objects::bob(
+        &rom,
+        &imported.level,
+        rustario64::content::Act::new(1).unwrap(),
+    )
+    .unwrap();
+    let mut session = Session::new(&world, &trig, &anims, content.level_objects(), entry);
+    let mut baseline = Session::new(&world, &trig, &anims, content.level_objects(), entry);
     let mut drawer = ShadowDrawer::new(&source);
     let mut shown = 0;
     for tick in 0..360 {

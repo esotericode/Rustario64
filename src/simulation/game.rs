@@ -21,12 +21,14 @@ use crate::{
         collision::CollisionWorld,
         mario::{
             Event, MarioState, PlayerCameraState, StepWorld,
-            constants::MARIO_VANISH_CAP,
+            constants::{ACTIVE_FLAG_MOVE_THROUGH_GRATE, MARIO_VANISH_CAP},
             tick::{
-                LevelEntry, RenderedFrame, enter_level_with, render_mario_object, update_objects,
+                LevelEntry, LevelObjects, RenderedFrame, enter_level_with, render_mario_object,
+                update_objects,
             },
         },
         math::TrigTables,
+        object::{object, render::render_objects},
         rng::Rng,
     },
 };
@@ -88,13 +90,12 @@ pub struct FrameResult {
     pub camera: Result<(), Unsupported>,
 }
 
-/// Mario and his area's camera from one level entry.
+/// Mario, the area's objects and its camera from one level entry. The
+/// shared random seed (gRandomSeed16) is `world.rng`.
 pub struct Game<'a> {
     pub mario: MarioState,
     pub world: StepWorld<'a>,
     pub camera: CameraSystem,
-    /// gRandomSeed16, shared by everything that draws random numbers.
-    pub rng: Rng,
 }
 
 impl<'a> Game<'a> {
@@ -105,6 +106,7 @@ impl<'a> Game<'a> {
         collision: &'a CollisionWorld,
         trig: &'a TrigTables,
         anims: &'a MarioAnimations,
+        objects: &LevelObjects<'a>,
         entry: &GameEntry,
     ) -> Self {
         let mut camera = CameraSystem::create(
@@ -115,15 +117,22 @@ impl<'a> Game<'a> {
             },
             entry.camera,
         );
-        let (mario, world) = enter_level_with(collision, trig, anims, &entry.mario, |m, w| {
-            camera.reset(&mut m.camera_status);
-            share(&camera, w);
-        });
+        let (mario, world) = enter_level_with(
+            collision,
+            trig,
+            anims,
+            objects,
+            Rng::new(entry.rng_seed),
+            &entry.mario,
+            |m, w| {
+                camera.reset(&mut m.camera_status);
+                share(&camera, w);
+            },
+        );
         Self {
             mario,
             world,
             camera,
-            rng: Rng::new(entry.rng_seed),
         }
     }
 
@@ -159,14 +168,15 @@ impl<'a> Game<'a> {
                 face_angle: reported.face_angle,
                 ..m.camera_status
             };
+            let mario = view(m, w);
             let mut frame = Frame {
                 world: w.collision,
                 trig: w.trig,
                 flags: &mut w.collision_flags,
                 controller: &w.controller,
                 mario_cam: &mut status,
-                mario: view(m),
-                rng: &mut self.rng,
+                mario,
+                rng: &mut w.rng,
                 events: &mut w.events,
             };
             match event {
@@ -189,7 +199,7 @@ impl<'a> Game<'a> {
         );
         w.camera_movement_flags = camera.rig.movement as i16;
         // update_camera.
-        let mario = view(m);
+        let mario = view(m, w);
         let result = camera.update(&mut Frame {
             world: w.collision,
             trig: w.trig,
@@ -197,13 +207,14 @@ impl<'a> Game<'a> {
             controller: &w.controller,
             mario_cam: &mut m.camera_status,
             mario,
-            rng: &mut self.rng,
+            rng: &mut w.rng,
             events: &mut w.events,
         });
         share(camera, w);
-        // render_game: the camera nodes enclose the object nodes.
+        // render_game: the camera nodes enclose the object nodes, Mario's first.
         camera.render(m.action, m.camera_status.pos, w.trig);
         let rendered = render_mario_object(&mut m.obj, w);
+        render_objects(w, &camera.graph);
         // display_and_vsync.
         w.global_timer = w.global_timer.wrapping_add(1);
         (
@@ -216,14 +227,20 @@ impl<'a> Game<'a> {
     }
 }
 
-/// What the camera reads from gMarioStates[0]. Mario is the last object
-/// updated, so he is the current object when the camera queries walls.
-fn view(m: &MarioState) -> MarioView {
+/// What the camera reads from gMarioStates[0], and whether its wall queries
+/// pass vanish-cap walls: gCurrentObject is the last object the processor
+/// visited (unload_deactivated_objects ends on the last listed object).
+fn view(m: &MarioState, w: &StepWorld<'_>) -> MarioView {
+    let current = w.objects.current;
+    let pass_vanish_walls = current.is_some_and(|id| {
+        object(&w.objects, &m.obj, id).active_flags & ACTIVE_FLAG_MOVE_THROUGH_GRATE != 0
+            || (current == w.objects.mario && m.flags & MARIO_VANISH_CAP != 0)
+    });
     MarioView {
         action: m.action,
         forward_vel: m.forward_vel,
         angle_vel_yaw: m.angle_vel[1],
-        pass_vanish_walls: m.flags & MARIO_VANISH_CAP != 0,
+        pass_vanish_walls,
     }
 }
 

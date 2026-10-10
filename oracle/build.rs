@@ -11,11 +11,14 @@ fn main() {
         "c/constants.c",
         "c/runtime_glue.c",
         "c/interaction_unit.c",
+        "c/behavior_data_unit.c",
+        "c/object_render_unit.c",
+        "c/excerpts/coin.c",
+        "c/excerpts/geo_layout.c",
         "c/excerpts/game_init.c",
         "c/excerpts/graph_node.c",
         "c/excerpts/rendering_graph_node.c",
         "c/excerpts/macro_special_objects.c",
-        "c/excerpts/object_collision.c",
         "c/excerpts/object_helpers.c",
         "c/excerpts/object_list_processor.c",
         "c/excerpts/platform_displacement.c",
@@ -29,6 +32,8 @@ fn main() {
         "c/decomp/src/game/mario_actions_object.c",
         "c/decomp/src/game/mario_actions_stationary.c",
         "c/decomp/src/game/mario_step.c",
+        "c/decomp/src/game/object_collision.c",
+        "c/decomp/src/game/spawn_object.c",
     ];
     let mut build = cc::Build::new();
     build

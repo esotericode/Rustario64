@@ -2,9 +2,11 @@
 
 This is an early Bob-omb Battlefield exploration build. Mario's non-object
 movement and the original camera (Lakitu, the R-button Mario camera, C-Up
-first person) have native decomp comparison coverage. Missions, objects
-(including the cannon lid), camera cutscenes, original pause behavior, water/cutscene
-actions, warps, saves, gamepad controls and audio are missing. Play stops on
+first person) have native decomp comparison coverage. BOB's act-1 coins
+(yellow coins and coin formations) are simulated and can be collected, but are
+not drawn yet. Missions, every other object (including the cannon lid), camera
+cutscenes, original pause behavior, water/cutscene actions, warps, saves,
+gamepad controls and audio are missing. Play stops on
 unsupported paths; R re-enters.
 
 ## Start

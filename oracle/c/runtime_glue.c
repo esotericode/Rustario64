@@ -37,6 +37,8 @@
 #include "game/save_file.h"
 #include "game/sound_init.h"
 #include "interaction_boundary.h"
+#include "excerpts/macro_preset_struct.inc.c"
+#include "macro_preset_boundary.h"
 #include "runtime.h"
 
 /* ---- Event log ---- */
@@ -122,7 +124,11 @@ s32 gSurfacesAllocated;
 s32 gNumStaticSurfaceNodes;
 s32 gNumStaticSurfaces;
 
-/* Behavior scripts are compared by address only; objects never run them. */
+/* Behavior scripts are compared by address only; objects never run them.
+ * The scripts objects do run are verbatim (excerpts/behavior_data.c). */
+const BehaviorScript bhvHauntedChair[1];
+const BehaviorScript bhvMadPiano[1];
+const BehaviorScript bhvMessagePanel[1];
 const BehaviorScript bhvDDDWarp[1];
 const BehaviorScript bhvGiantPole[1];
 const BehaviorScript bhvJumpingBox[1];
@@ -165,7 +171,6 @@ const BehaviorScript bhvTowerPlatformGroup[1];
 const BehaviorScript bhvTumblingBridge[1];
 const BehaviorScript bhvWFRotatingWoodenPlatform[1];
 const BehaviorScript bhvWFSlidingPlatform[1];
-const BehaviorScript bhvYellowCoin[1];
 
 /* ---- Explicit inputs set by the harness ---- */
 u32 gOracleSaveFlags;
@@ -295,14 +300,6 @@ s32 mario_execute_submerged_action(struct MarioState *m) {
 }
 
 /* ---- Unreachable without objects ---- */
-struct Object *spawn_object(struct Object *parent, s32 model, const BehaviorScript *behavior) {
-    (void) parent;
-    (void) model;
-    (void) behavior;
-    unreachable_without_objects("spawn_object");
-    return NULL;
-}
-
 void obj_set_held_state(struct Object *obj, const BehaviorScript *heldBehavior) {
     (void) obj;
     (void) heldBehavior;
@@ -342,7 +339,6 @@ void *virtual_to_segmented(u32 segment, const void *addr) {
         unreachable_without_objects(#name);                                         \
         return FALSE;                                                               \
     }
-UNREACHABLE_HANDLER(interact_coin)
 UNREACHABLE_HANDLER(interact_water_ring)
 UNREACHABLE_HANDLER(interact_star_or_key)
 UNREACHABLE_HANDLER(interact_bbh_entrance)
@@ -371,6 +367,84 @@ UNREACHABLE_HANDLER(interact_hoot)
 UNREACHABLE_HANDLER(interact_cap)
 UNREACHABLE_HANDLER(interact_grabbable)
 UNREACHABLE_HANDLER(interact_text)
+
+/* ---- Object-system boundaries ---- */
+/* gCurrAreaIndex (area.c): the loaded area, which the tick harness sets. */
+s16 gCurrAreaIndex;
+
+/* gLoadedGraphNodes (area.c); the tick harness fills the loaded entries. */
+struct GraphNode *D_8033A160[0x100];
+struct GraphNode **gLoadedGraphNodes = D_8033A160;
+
+/* The macro preset table's stand-in (macro_preset_boundary.h). */
+struct MacroPreset sMacroObjectPresets[ORACLE_MACRO_PRESET_COUNT];
+
+/* memory.c's object pool serves only chain chomps and wigglers. */
+struct MemoryPool *mem_pool_init(u32 size, u32 side) {
+    (void) size;
+    (void) side;
+    return NULL;
+}
+
+/* Sound sources have no simulated state. */
+void stop_sounds_from_source(f32 *pos) {
+    (void) pos;
+}
+
+struct Object *spawn_water_droplet(struct Object *parent, struct WaterDropletParams *params) {
+    (void) parent;
+    (void) params;
+    unreachable_without_objects("spawn_water_droplet");
+    return NULL;
+}
+
+void apply_platform_displacement(u32 isMario, struct Object *platform) {
+    (void) isMario;
+    (void) platform;
+    unreachable_without_objects("apply_platform_displacement (platform objects)");
+}
+
+/* interact_coin's 100-coin star: recorded, as the Rust port records it. */
+void bhv_spawn_star_no_level_exit(u32 sp20) {
+    (void) sp20;
+    oracle_event(ORACLE_EVENT_UNSUPPORTED, ORACLE_UNSUPPORTED_HUNDRED_COIN_STAR, 0);
+}
+
+/* ---- debug.c: the boot-time debug page (DEBUG_PAGE_OBJECTINFO) prints
+ * nothing, debug object spawning is never enabled, and the profiler and
+ * debug counters have no gameplay readers. ---- */
+s64 get_current_clock(void) {
+    return 0;
+}
+
+s64 get_clock_difference(s64 cycles) {
+    (void) cycles;
+    return 0;
+}
+
+void reset_debug_objectinfo(void) {
+    gNumFindFloorMisses = 0;
+}
+
+void stub_debug_5(void) {
+}
+
+void try_print_debug_mario_object_info(void) {
+}
+
+void debug_unknown_level_select_check(void) {
+}
+
+void try_print_debug_mario_level_info(void) {
+}
+
+void try_do_mario_debug_object_spawn(void) {
+}
+
+void print_debug_top_down_objectinfo(const char *str, s32 number) {
+    (void) str;
+    (void) number;
+}
 
 /* ---- Debug text (disabled, as gShowDebugText is FALSE) ---- */
 void print_text_fmt_int(s32 x, s32 y, const char *str, s32 n) {
@@ -437,26 +511,9 @@ void *segmented_to_virtual(const void *addr) {
 void reset_red_coins_collected(void) {
 }
 
-f32 dist_between_objects(struct Object *obj1, struct Object *obj2) {
-    (void) obj1;
-    (void) obj2;
-    return 0.0f;
-}
-
-void obj_build_transform_from_pos_and_angle(struct Object *obj, s16 posIndex, s16 angleIndex) {
-    (void) obj;
-    (void) posIndex;
-    (void) angleIndex;
-}
-
 void obj_apply_scale_to_matrix(struct Object *obj, Mat4 dst, Mat4 src) {
     (void) obj;
     memcpy(dst, src, sizeof(Mat4));
-}
-
-void spawn_macro_objects(s16 areaIndex, s16 *macroObjList) {
-    (void) areaIndex;
-    (void) macroObjList;
 }
 
 void spawn_macro_objects_hardcoded(s16 areaIndex, s16 *macroObjList) {

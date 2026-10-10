@@ -11,6 +11,7 @@ use rustario64::{
     import::{
         animation, bob, engine,
         mario::{self as mario_model, MarioModelSource},
+        objects,
         rom::Rom,
         shadow::{self, ShadowSource},
     },
@@ -160,6 +161,9 @@ struct Level {
     world: &'static CollisionWorld,
     trig: &'static TrigTables,
     anims: &'static MarioAnimations,
+    /// The level's objects: the ROM's behavior scripts, models and BOB's
+    /// placements (act 1).
+    objects: &'static objects::LevelObjectContent,
     entry: GameEntry,
     rom_sha1: &'static str,
     /// Mario's model, or None when it could not be imported.
@@ -169,7 +173,13 @@ struct Level {
 
 impl Level {
     fn session(&self) -> Session<'static> {
-        Session::new(self.world, self.trig, self.anims, self.entry)
+        Session::new(
+            self.world,
+            self.trig,
+            self.anims,
+            self.objects.level_objects(),
+            self.entry,
+        )
     }
 }
 
@@ -279,6 +289,8 @@ fn load(rom_path: &Path) -> AppResult<Level> {
     let camera = visual.camera.ok_or("the area has no camera node")?;
     let entry = GameEntry::script_start(&imported.level, &camera)?;
     let world = CollisionWorld::load_area_terrain(&imported.collision)?;
+    let act = rustario64::content::Act::new(1).expect("act 1");
+    let level_objects = objects::bob(&rom, &imported.level, act)?;
     let mario_model = match mario_model::import(&rom) {
         Ok(source) => Some(&*Box::leak(Box::new(source))),
         Err(error) => {
@@ -301,6 +313,7 @@ fn load(rom_path: &Path) -> AppResult<Level> {
         world: Box::leak(Box::new(world)),
         trig: Box::leak(Box::new(engine::trig_tables(&rom)?)),
         anims: Box::leak(Box::new(animation::mario_animations(&rom)?)),
+        objects: Box::leak(Box::new(level_objects)),
         entry,
         rom_sha1: rom.fingerprint(),
         mario_model,

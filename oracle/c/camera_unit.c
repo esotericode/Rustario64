@@ -504,6 +504,12 @@ void oracle_camera_reset(void) {
     reset_camera(sFrameCamera);
 }
 
+/* The area's camera and perspective nodes, for the object render pass. */
+void oracle_camera_graph_nodes(struct GraphNodeCamera **camera, struct GraphNodePerspective **perspective) {
+    *camera = &sFrameGraphCamera;
+    *perspective = &sFrameGraphPerspective;
+}
+
 /* update_level's update_camera, after the objects. */
 void oracle_camera_update(void) {
     update_camera(sFrameCamera);

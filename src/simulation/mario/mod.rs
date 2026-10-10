@@ -35,6 +35,13 @@ use crate::{
         collision::{CollisionFlags, CollisionWorld, Surface, SurfaceIndex},
         controller::Controller,
         math::TrigTables,
+        object::{
+            ObjectPool,
+            render::{NO_MODELS, ObjectModels},
+            script::{BehaviorScripts, NO_SCRIPTS},
+            spawn::AreaObjects,
+        },
+        rng::Rng,
     },
 };
 
@@ -46,98 +53,11 @@ pub enum SurfaceRef {
     WaterPseudoFloor,
 }
 
-/// A stable object handle (as `collision::Surface::object`). No objects are
-/// simulated yet, so Mario's object references stay `None`; code that would
-/// dereference one panics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ObjectId(pub u32);
-
-/// What `animInfo.curAnim` points to. Mario's animations live in one DMA
-/// buffer whose content is `StepWorld::anim_dma_loaded`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AnimRef {
-    MarioDmaBuffer,
-}
-
-/// struct AnimInfo. The frame advance is part of the authoritative tick
-/// because actions read the frame (see `animation::update_animation_frame`).
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct AnimInfo {
-    pub anim_id: i16,
-    pub anim_y_trans: i16,
-    pub cur_anim: Option<AnimRef>,
-    pub anim_frame: i16,
-    pub anim_timer: u16,
-    pub anim_frame_accel_assist: i32,
-    pub anim_accel: i32,
-}
-
-/// The header.gfx fields of Mario's object that gameplay code writes. Mario's
-/// object never copies its position here automatically: actions do.
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub struct GfxState {
-    pub node_flags: i16,
-    pub area_index: i8,
-    pub active_area_index: i8,
-    pub angle: [i16; 3],
-    pub pos: [f32; 3],
-    pub scale: [f32; 3],
-    pub anim: AnimInfo,
-    /// throwMatrix: an index into `StepWorld::floor_align_matrix` or NULL.
-    pub throw_matrix: Option<usize>,
-}
-
-/// The object field union (rawData): 0x50 words viewed as s32, u32 or f32.
-/// Original names alias the same word (for Mario, slot 0x22 holds the walking
-/// pitch, long-jump flag, burn timer and steep-jump yaw), so storage is shared.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ObjectFields(pub [u32; 0x50]);
-
-impl Default for ObjectFields {
-    fn default() -> Self {
-        Self([0; 0x50])
-    }
-}
-
-impl ObjectFields {
-    pub fn s32(&self, index: usize) -> i32 {
-        self.0[index] as i32
-    }
-    pub fn set_s32(&mut self, index: usize, value: i32) {
-        self.0[index] = value as u32;
-    }
-    pub fn u32(&self, index: usize) -> u32 {
-        self.0[index]
-    }
-    pub fn set_u32(&mut self, index: usize, value: u32) {
-        self.0[index] = value;
-    }
-    pub fn f32(&self, index: usize) -> f32 {
-        f32::from_bits(self.0[index])
-    }
-    pub fn set_f32(&mut self, index: usize, value: f32) {
-        self.0[index] = value.to_bits();
-    }
-}
-
-/// Mario's object (struct Object): the members Mario code reads or writes.
-#[derive(Debug, Default, Clone, PartialEq)]
-pub struct MarioObject {
-    pub gfx: GfxState,
-    pub collided_obj_interact_types: u32,
-    pub active_flags: i16,
-    pub num_collided_objs: i16,
-    pub raw: ObjectFields,
-    pub hitbox_radius: f32,
-    pub hitbox_height: f32,
-    pub hurtbox_radius: f32,
-    pub hurtbox_height: f32,
-    pub hitbox_down_offset: f32,
-    pub platform: Option<ObjectId>,
-    /// Whether bhvMario's commands before BEGIN_LOOP have run (curBhvCommand
-    /// is inside the loop).
-    pub bhv_loop_entered: bool,
-}
+/// Mario's object is an ordinary `struct Object`; it lives in MarioState
+/// (m->marioObj) rather than in the object pool's slot data.
+pub use crate::simulation::object::{
+    AnimInfo, AnimRef, GfxState, Object as MarioObject, ObjectFields, ObjectId,
+};
 
 /// struct MarioBodyState (gBodyStates[0]): model presentation state that the
 /// action code sets every tick.
@@ -279,6 +199,9 @@ pub enum Unsupported {
     SubmergedGroup(u32),
     /// The castle's endless-stairs music hook.
     InfiniteStairs,
+    /// interact_coin reached 100 coins in a main course, which spawns the
+    /// 100-coin star (bhv_spawn_star_no_level_exit).
+    HundredCoinStar,
 }
 
 /// Calls into systems outside the simulated state, in call order. Mirrors the
@@ -330,13 +253,14 @@ impl Event {
                 Unsupported::CutsceneGroup(action) => (13, 1, action as i32),
                 Unsupported::SubmergedGroup(action) => (13, 2, action as i32),
                 Unsupported::InfiniteStairs => (13, 3, 0),
+                Unsupported::HundredCoinStar => (13, 4, 0),
             },
         }
     }
 }
 
 /// A row-major 4x4 matrix (Mat4).
-pub type Mat4 = [[f32; 4]; 4];
+pub use crate::simulation::math::Mat4;
 
 /// Everything Mario code reads or writes outside MarioState: the original
 /// globals, made explicit.
@@ -382,6 +306,20 @@ pub struct StepWorld<'a> {
     /// gMarioAnimsBuf.currentAddr: the table entry held in the DMA buffer.
     pub anim_dma_loaded: Option<u16>,
     pub events: Vec<Event>,
+    /// The behavior segment and the natives it names.
+    pub behaviors: &'a BehaviorScripts,
+    /// gLoadedGraphNodes, with the render traversal of spawned models.
+    pub models: &'a ObjectModels,
+    /// The object pool and lists (Mario's object data stays in MarioState).
+    pub objects: ObjectPool,
+    /// The loaded area's placements and their respawn records.
+    pub area: AreaObjects,
+    /// gRandomSeed16, shared by objects and the camera.
+    pub rng: Rng,
+    /// gTimeStopState.
+    pub time_stop_state: u32,
+    /// gCurrCourseNum.
+    pub course_num: i16,
 }
 
 impl<'a> StepWorld<'a> {
@@ -416,7 +354,31 @@ impl<'a> StepWorld<'a> {
             floor_align_matrix: [[[0.0; 4]; 4]; 2],
             anim_dma_loaded: None,
             events: Vec::new(),
+            behaviors: &NO_SCRIPTS,
+            models: &NO_MODELS,
+            objects: ObjectPool::new(),
+            area: AreaObjects::default(),
+            rng: Rng::default(),
+            time_stop_state: 0,
+            course_num: 0,
         }
+    }
+
+    /// gLoadedGraphNodes[model]: the model ID if the level loaded it, NULL
+    /// for MODEL_NONE and models it did not load. IDs index a 256-entry array.
+    pub fn loaded_model(&self, model: i32) -> Option<u16> {
+        let index = u16::try_from(model)
+            .ok()
+            .filter(|m| *m < 256)
+            .unwrap_or_else(|| panic!("model ID {model} indexes outside gLoadedGraphNodes"));
+        (index != 0 && self.models.is_loaded(index)).then_some(index)
+    }
+
+    /// find_floor_height (surface_collision.c): find_floor's height.
+    pub fn find_floor_height(&mut self, x: f32, y: f32, z: f32) -> f32 {
+        self.collision
+            .find_floor(x, y, z, &mut self.collision_flags)
+            .0
     }
 
     /// The referenced surface's data (a copy; the pseudo-floor is synthesized).

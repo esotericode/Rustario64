@@ -1,9 +1,12 @@
 /* Authored shim (MIT, Rustario64): display-list/matrix stand-ins named by the
- * vendored headers and the Vtx fields used by the shadow comparison. No
- * display list is built or interpreted. */
+ * vendored headers, the Vtx fields used by the shadow comparison and the
+ * _SHIFTL field-packing macro. No display list is built or interpreted. */
 #ifndef ORACLE_GBI_H
 #define ORACLE_GBI_H
 #include <PR/ultratypes.h>
+/* The SDK's field-packing macro, which data/behavior_data.c's command
+ * macros are written with. */
+#define _SHIFTL(v, s, w) ((unsigned int) (((unsigned int) (v) & ((0x01 << (w)) - 1)) << (s)))
 typedef struct {
     u32 w0;
     u32 w1;

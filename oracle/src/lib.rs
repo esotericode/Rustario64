@@ -9,6 +9,7 @@
 pub mod camera;
 pub mod camera_trace;
 pub mod input_trace;
+pub mod object_trace;
 pub mod shadow;
 pub mod tick_trace;
 
@@ -85,6 +86,17 @@ unsafe extern "C" {
         value_lens: *const i32,
     ) -> i32;
     fn oracle_tick_begin(setup: *const TickSetup);
+    fn oracle_tick_set_scripts(segmented: *const u32, count: i32);
+    fn oracle_tick_set_models(models: *const OracleModel, count: i32);
+    fn oracle_tick_set_macros(
+        list: *const i16,
+        original: *const i32,
+        count: i32,
+        preset_behaviors: *const u32,
+        preset_models: *const i16,
+        preset_params: *const i16,
+    );
+    fn oracle_tick_set_spawn_infos(infos: *const OracleSpawnInfo, count: i32);
     fn oracle_tick_run(input: *const OracleTickInput);
     fn oracle_tick_snapshot(
         names: *mut *const *const std::ffi::c_char,
@@ -122,6 +134,35 @@ pub struct TickSetup {
     pub act_num: i32,
     /// gRandomSeed16 at level entry.
     pub rng_seed: u32,
+    /// gCurrCourseNum.
+    pub course_num: i32,
+}
+
+/// One model's render traversal (layout matches `OracleModel` in c/tick.c).
+#[repr(C)]
+struct OracleModel {
+    model: i32,
+    root: i32,
+    node_count: i32,
+    kinds: *const i32,
+    params: *const i32,
+    child_start: *const i32,
+    child_count: *const i32,
+    children: *const i32,
+}
+
+/// One area spawn info (layout matches `OracleSpawnInfo` in c/tick.c).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OracleSpawnInfo {
+    pub start_pos: [i32; 3],
+    pub start_angle: [i32; 3],
+    pub area_index: i32,
+    pub active_area_index: i32,
+    pub behavior_arg: u32,
+    pub behavior_script: u32,
+    pub model: i32,
+    pub original: i32,
 }
 
 #[repr(C)]
@@ -483,8 +524,46 @@ impl Oracle {
         assert_eq!(status, 0, "oracle_set_mario_anims failed");
     }
 
+    /// The level's objects for the next `tick_begin`: the verbatim scripts'
+    /// segmented addresses in the Rust side's segment (in
+    /// `object_trace::VERBATIM_SCRIPTS` order), the loaded models' render
+    /// traversals, the macro entries and spawn infos whose scripts the port
+    /// runs (with their full-list indices), and their presets.
+    pub fn tick_set_objects(&self, objects: &crate::object_trace::NativeObjects) {
+        let o = objects;
+        let models: Vec<OracleModel> = o
+            .models
+            .iter()
+            .map(|m| OracleModel {
+                model: m.model,
+                root: m.root,
+                node_count: m.kinds.len() as i32,
+                kinds: m.kinds.as_ptr(),
+                params: m.params.as_ptr(),
+                child_start: m.child_start.as_ptr(),
+                child_count: m.child_count.as_ptr(),
+                children: m.children.as_ptr(),
+            })
+            .collect();
+        // SAFETY: every pointer/length pair describes a live slice for the
+        // duration of the call; the C side copies the data.
+        unsafe {
+            oracle_tick_set_scripts(o.scripts.as_ptr(), o.scripts.len() as i32);
+            oracle_tick_set_models(models.as_ptr(), models.len() as i32);
+            oracle_tick_set_macros(
+                o.macro_list.as_ptr(),
+                o.macro_original.as_ptr(),
+                o.macro_original.len() as i32,
+                o.preset_behaviors.as_ptr(),
+                o.preset_models.as_ptr(),
+                o.preset_params.as_ptr(),
+            );
+            oracle_tick_set_spawn_infos(o.spawn_infos.as_ptr(), o.spawn_infos.len() as i32);
+        }
+    }
+
     /// Enter a level as c/tick.c's oracle_tick_begin does. Requires the
-    /// terrain (`load`) and `set_mario_animations`.
+    /// terrain (`load`), `set_mario_animations` and `tick_set_objects`.
     pub fn tick_begin(&self, setup: &TickSetup) {
         // SAFETY: a valid setup record under the process-wide lock.
         unsafe { oracle_tick_begin(setup) };

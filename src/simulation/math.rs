@@ -130,6 +130,147 @@ pub fn approach_f32(current: f32, target: f32, inc: f32, dec: f32) -> f32 {
     current
 }
 
+/// A row-major 4x4 matrix (Mat4): `m[row][column]`, row 3 the translation.
+pub type Mat4 = [[f32; 4]; 4];
+
+/// mtxf_identity.
+pub fn mtxf_identity() -> Mat4 {
+    let mut mtx = [[0.0; 4]; 4];
+    for (i, row) in mtx.iter_mut().enumerate() {
+        row[i] = 1.0;
+    }
+    mtx
+}
+
+/// mtxf_lookat: the camera transform for a camera at `from` looking at `to`
+/// with a bank of `roll`. The inverse lengths are computed in double
+/// precision and narrowed, as the original's `-1.0 / sqrtf(...)`.
+pub fn mtxf_lookat(trig: &TrigTables, from: [f32; 3], to: [f32; 3], roll: i16) -> Mat4 {
+    let mut dx = to[0] - from[0];
+    let mut dz = to[2] - from[2];
+    let mut inv_length = (-1.0 / f64::from((dx * dx + dz * dz).sqrt())) as f32;
+    dx *= inv_length;
+    dz *= inv_length;
+
+    let mut y_col_y = trig.coss(i32::from(roll));
+    let mut x_col_y = trig.sins(i32::from(roll)) * dz;
+    let mut z_col_y = -trig.sins(i32::from(roll)) * dx;
+
+    let mut x_col_z = to[0] - from[0];
+    let mut y_col_z = to[1] - from[1];
+    let mut z_col_z = to[2] - from[2];
+    inv_length = (-1.0
+        / f64::from((x_col_z * x_col_z + y_col_z * y_col_z + z_col_z * z_col_z).sqrt()))
+        as f32;
+    x_col_z *= inv_length;
+    y_col_z *= inv_length;
+    z_col_z *= inv_length;
+
+    let mut x_col_x = y_col_y * z_col_z - z_col_y * y_col_z;
+    let mut y_col_x = z_col_y * x_col_z - x_col_y * z_col_z;
+    let mut z_col_x = x_col_y * y_col_z - y_col_y * x_col_z;
+    inv_length = (1.0
+        / f64::from((x_col_x * x_col_x + y_col_x * y_col_x + z_col_x * z_col_x).sqrt()))
+        as f32;
+    x_col_x *= inv_length;
+    y_col_x *= inv_length;
+    z_col_x *= inv_length;
+
+    x_col_y = y_col_z * z_col_x - z_col_z * y_col_x;
+    y_col_y = z_col_z * x_col_x - x_col_z * z_col_x;
+    z_col_y = x_col_z * y_col_x - y_col_z * x_col_x;
+    inv_length = (1.0
+        / f64::from((x_col_y * x_col_y + y_col_y * y_col_y + z_col_y * z_col_y).sqrt()))
+        as f32;
+    x_col_y *= inv_length;
+    y_col_y *= inv_length;
+    z_col_y *= inv_length;
+
+    [
+        [x_col_x, x_col_y, x_col_z, 0.0],
+        [y_col_x, y_col_y, y_col_z, 0.0],
+        [z_col_x, z_col_y, z_col_z, 0.0],
+        [
+            -(from[0] * x_col_x + from[1] * y_col_x + from[2] * z_col_x),
+            -(from[0] * x_col_y + from[1] * y_col_y + from[2] * z_col_y),
+            -(from[0] * x_col_z + from[1] * y_col_z + from[2] * z_col_z),
+            1.0,
+        ],
+    ]
+}
+
+/// mtxf_rotate_zxy_and_translate.
+pub fn mtxf_rotate_zxy_and_translate(
+    trig: &TrigTables,
+    translate: [f32; 3],
+    rotate: [i16; 3],
+) -> Mat4 {
+    let sx = trig.sins(i32::from(rotate[0]));
+    let cx = trig.coss(i32::from(rotate[0]));
+    let sy = trig.sins(i32::from(rotate[1]));
+    let cy = trig.coss(i32::from(rotate[1]));
+    let sz = trig.sins(i32::from(rotate[2]));
+    let cz = trig.coss(i32::from(rotate[2]));
+    [
+        [
+            cy * cz + sx * sy * sz,
+            cx * sz,
+            -sy * cz + sx * cy * sz,
+            0.0,
+        ],
+        [
+            -cy * sz + sx * sy * cz,
+            cx * cz,
+            sy * sz + sx * cy * cz,
+            0.0,
+        ],
+        [cx * sy, -sx, cx * cy, 0.0],
+        [translate[0], translate[1], translate[2], 1.0],
+    ]
+}
+
+/// mtxf_billboard: a matrix facing the camera (`mtx` is the camera
+/// transform) at `position`, turned by `angle`.
+pub fn mtxf_billboard(trig: &TrigTables, mtx: &Mat4, position: [f32; 3], angle: i16) -> Mat4 {
+    let c = trig.coss(i32::from(angle));
+    let s = trig.sins(i32::from(angle));
+    let row3 = |j: usize| {
+        mtx[0][j] * position[0] + mtx[1][j] * position[1] + mtx[2][j] * position[2] + mtx[3][j]
+    };
+    [
+        [c, s, 0.0, 0.0],
+        [-s, c, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [row3(0), row3(1), row3(2), 1.0],
+    ]
+}
+
+/// mtxf_mul: `a` applied after `b`, for affine matrices (the bottom column
+/// is taken as [0, 0, 0, 1]).
+pub fn mtxf_mul(a: &Mat4, b: &Mat4) -> Mat4 {
+    let mut temp = [[0.0; 4]; 4];
+    for i in 0..4 {
+        let (e0, e1, e2) = (a[i][0], a[i][1], a[i][2]);
+        for j in 0..3 {
+            let sum = e0 * b[0][j] + e1 * b[1][j] + e2 * b[2][j];
+            temp[i][j] = if i == 3 { sum + b[3][j] } else { sum };
+        }
+    }
+    temp[3][3] = 1.0;
+    temp
+}
+
+/// mtxf_scale_vec3f: rows 0-2 scaled by `s`, row 3 copied.
+pub fn mtxf_scale_vec3f(mtx: &Mat4, s: [f32; 3]) -> Mat4 {
+    let mut dest = *mtx;
+    for i in 0..4 {
+        dest[0][i] = mtx[0][i] * s[0];
+        dest[1][i] = mtx[1][i] * s[1];
+        dest[2][i] = mtx[2][i] * s[2];
+    }
+    dest
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

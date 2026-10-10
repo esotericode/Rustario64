@@ -141,3 +141,130 @@ void geo_obj_init_spawninfo(struct GraphNodeObject *graphNode, struct SpawnInfo 
     graphNode->node.flags |= GRAPH_RENDER_HAS_ANIMATION;
     graphNode->node.flags &= ~GRAPH_RENDER_BILLBOARD;
 }
+
+/* src/engine/graph_node.c: init_graph_node_start */
+struct GraphNodeStart *init_graph_node_start(struct AllocOnlyPool *pool,
+                                             struct GraphNodeStart *graphNode) {
+    if (pool != NULL) {
+        graphNode = alloc_only_pool_alloc(pool, sizeof(struct GraphNodeStart));
+    }
+
+    if (graphNode != NULL) {
+        init_scene_graph_node_links(&graphNode->node, GRAPH_NODE_TYPE_START);
+    }
+
+    return graphNode;
+}
+
+/* src/engine/graph_node.c: geo_add_child */
+struct GraphNode *geo_add_child(struct GraphNode *parent, struct GraphNode *childNode) {
+    struct GraphNode *parentFirstChild;
+    struct GraphNode *parentLastChild;
+
+    if (childNode != NULL) {
+        childNode->parent = parent;
+        parentFirstChild = parent->children;
+
+        if (parentFirstChild == NULL) {
+            parent->children = childNode;
+            childNode->prev = childNode;
+            childNode->next = childNode;
+        } else {
+            parentLastChild = parentFirstChild->prev;
+            childNode->prev = parentLastChild;
+            childNode->next = parentFirstChild;
+            parentFirstChild->prev = childNode;
+            parentLastChild->next = childNode;
+        }
+    }
+
+    return childNode;
+}
+
+/* src/engine/graph_node.c: geo_remove_child */
+struct GraphNode *geo_remove_child(struct GraphNode *graphNode) {
+    struct GraphNode *parent;
+    struct GraphNode **firstChild;
+
+    parent = graphNode->parent;
+    firstChild = &parent->children;
+
+    // Remove link with siblings
+    graphNode->prev->next = graphNode->next;
+    graphNode->next->prev = graphNode->prev;
+
+    // If this node was the first child, a new first child must be chosen
+    if (*firstChild == graphNode) {
+        // The list is circular, so this checks whether it was the only child
+        if (graphNode->next == graphNode) {
+            *firstChild = NULL; // Parent has no children anymore
+        } else {
+            *firstChild = graphNode->next; // Choose a new first child
+        }
+    }
+
+    return parent;
+}
+
+/* src/engine/graph_node.c: geo_make_first_child */
+struct GraphNode *geo_make_first_child(struct GraphNode *newFirstChild) {
+    struct GraphNode *lastSibling;
+    struct GraphNode *parent;
+    struct GraphNode **firstChild;
+
+    parent = newFirstChild->parent;
+    firstChild = &parent->children;
+
+    if (*firstChild != newFirstChild) {
+        if ((*firstChild)->prev != newFirstChild) {
+            newFirstChild->prev->next = newFirstChild->next;
+            newFirstChild->next->prev = newFirstChild->prev;
+            lastSibling = (*firstChild)->prev;
+            newFirstChild->prev = lastSibling;
+            newFirstChild->next = *firstChild;
+            (*firstChild)->prev = newFirstChild;
+            lastSibling->next = newFirstChild;
+        }
+        *firstChild = newFirstChild;
+    }
+
+    return parent;
+}
+
+/* src/engine/graph_node.c: geo_reset_object_node */
+void geo_reset_object_node(struct GraphNodeObject *graphNode) {
+    init_graph_node_object(NULL, graphNode, 0, gVec3fZero, gVec3sZero, gVec3fOne);
+
+    geo_add_child(&gObjParentGraphNode, &graphNode->node);
+    graphNode->node.flags &= ~GRAPH_RENDER_ACTIVE;
+}
+
+/* src/engine/graph_node.c: geo_obj_init */
+void geo_obj_init(struct GraphNodeObject *graphNode, void *sharedChild, Vec3f pos, Vec3s angle) {
+    vec3f_set(graphNode->scale, 1.0f, 1.0f, 1.0f);
+    vec3f_copy(graphNode->pos, pos);
+    vec3s_copy(graphNode->angle, angle);
+
+    graphNode->sharedChild = sharedChild;
+    graphNode->unk4C = 0;
+    graphNode->throwMatrix = NULL;
+    graphNode->animInfo.curAnim = NULL;
+
+    graphNode->node.flags |= GRAPH_RENDER_ACTIVE;
+    graphNode->node.flags &= ~GRAPH_RENDER_INVISIBLE;
+    graphNode->node.flags |= GRAPH_RENDER_HAS_ANIMATION;
+    graphNode->node.flags &= ~GRAPH_RENDER_BILLBOARD;
+}
+
+/* src/engine/graph_node.c: geo_obj_init_animation */
+void geo_obj_init_animation(struct GraphNodeObject *graphNode, struct Animation **animPtrAddr) {
+    struct Animation **animSegmented = segmented_to_virtual(animPtrAddr);
+    struct Animation *anim = segmented_to_virtual(*animSegmented);
+
+    if (graphNode->animInfo.curAnim != anim) {
+        graphNode->animInfo.curAnim = anim;
+        graphNode->animInfo.animFrame = anim->startFrame + ((anim->flags & ANIM_FLAG_BACKWARD) ? 1 : -1);
+        graphNode->animInfo.animAccel = 0;
+        graphNode->animInfo.animYTrans = 0;
+    }
+}

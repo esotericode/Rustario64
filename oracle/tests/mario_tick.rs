@@ -474,6 +474,7 @@ fn scenario<'a>(
         collision: world,
         trig,
         anims,
+        objects: playground::mario_only(),
         setup: TickSetup::from_level_script(c::LEVEL_BOB, 1, yaw, pos, 0, 1),
         rom_sha1: "synthetic".into(),
         world_digest: world_digest(stream, trig),
@@ -674,7 +675,8 @@ fn print_action_timelines() {
 #[test]
 #[ignore = "requires a privately supplied supported ROM via RUSTARIO64_ROM"]
 fn bob_ticks_match_the_decomp_with_rom_data() {
-    use rustario64::import::{animation, bob, engine, mio0, rom::Rom, version};
+    use rustario64::content::Act;
+    use rustario64::import::{animation, bob, engine, mio0, objects, rom::Rom, version};
     let path = std::env::var_os("RUSTARIO64_ROM").expect("set RUSTARIO64_ROM");
     let rom = Rom::open(std::path::Path::new(&path)).unwrap();
     let trig = engine::trig_tables(&rom).unwrap();
@@ -711,10 +713,14 @@ fn bob_ticks_match_the_decomp_with_rom_data() {
     let camera_mode = imported.visual.as_ref().unwrap().camera.unwrap().mode;
     assert_eq!(camera_mode, c::CAMERA_MODE_RADIAL);
     let digest = world_digest(&stream, &trig);
+    // The ROM's behavior scripts and models; Mario alone (the camera-less
+    // tick has no render pass for other objects).
+    let content = objects::bob(&rom, &imported.level, Act::new(1).unwrap()).unwrap();
     let bob_scenario = |name: String, yaw: i16, pos: [i16; 3]| TickScenario {
         collision: &world,
         trig: &trig,
         anims: &anims,
+        objects: content.mario_only(),
         setup: TickSetup::from_level_script(
             c::LEVEL_BOB,
             area.0,

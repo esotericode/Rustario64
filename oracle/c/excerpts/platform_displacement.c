@@ -59,3 +59,17 @@ void update_mario_platform(void) {
             break;
     }
 }
+
+/* src/game/platform_displacement.c: apply_mario_platform_displacement */
+void apply_mario_platform_displacement(void) {
+    struct Object *platform = gMarioPlatform;
+
+    if (!(gTimeStopState & TIME_STOP_ACTIVE) && gMarioObject != NULL && platform != NULL) {
+        apply_platform_displacement(TRUE, platform);
+    }
+}
+
+/* src/game/platform_displacement.c: clear_mario_platform */
+void clear_mario_platform(void) {
+    gMarioPlatform = NULL;
+}

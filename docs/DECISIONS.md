@@ -716,3 +716,47 @@ non-finite alpha. Simulation, input timing, camera state and replay formats are
 unchanged. Tests reproduce five landing transitions among 17 real clip changes
 in 540 owner-ROM BOB frames and cover different authored joint poses plus a
 simultaneous clip/geometry switch.
+
+## Object system and coins — 2026-10-10 (session 17)
+
+**Mario's object lives in `MarioState`.** Mario's update reads and writes
+`m->marioObj` constantly; keeping that object beside the rest of his state
+avoids a pool borrow on every access. His pool slot still exists and is linked
+into OBJ_LIST_PLAYER in the original position, so list order, the free list and
+slot numbers are the original ones; `object`, `object_mut` and `pair_mut`
+resolve any handle (a slot, Mario's, or gMacroObjectDefaultParent).
+
+**The ROM's behavior scripts run, not re-authored ones.** Segment 0x13 is
+loaded as the main level scripts load it, and `cur_obj_update` interprets those
+words in place. Addresses stay segmented (0x13xxxxxx) wherever the original
+holds a virtual address (`behavior`, `curBhvCommand`, the behavior stack), which
+is a one-to-one renaming the snapshots compare directly. CALL_NATIVE targets
+resolve through the version adapter's name/address table to Rust translations;
+`tools/check_behavior_reference.py` derives every address from the pinned
+source laid over the ROM. CI tests without a ROM use `authored_scripts`, which
+encodes the same commands for the ported scripts; the oracle runs the verbatim
+`behavior_data.c` excerpt, so a re-encoding error would fail the comparison.
+
+**A level spawns only fully ported placements.** Before spawning, a script is
+followed through every command it can reach (GOTO, CALL, SPAWN_CHILD and the
+behaviors natives spawn) and must use only ported commands, natives and flags.
+Anything else is recorded in `AreaObjects::skipped` with the reason, never
+silently spawned with missing logic. The native harness receives the same
+filtered placements, so both sides run the same subset. This changes slot
+assignment and removes the skipped objects' RNG draws relative to the full
+original level; comparisons are therefore of the subset, which the docs state.
+
+**The render pass's object writes are simulation.** `geo_switch_anim_state`
+resets an object's `oAnimState` when it reaches the switch's case count, and it
+runs only while `obj_is_in_view` accepts the object from the current camera.
+That changes gameplay state (and coin animation phase), so the simulation runs
+the pass's object traversal each frame from the authoritative graph camera
+with the original matrices. Display lists, interpolation and drawing remain
+presentation. Graphics settings (resolution, aspect, FOV options) must not feed
+this stage; it uses the original perspective node's field of view (the
+original view test has no aspect term).
+
+**Particles are not spawned.** Mario's particle flags are still computed and
+compared, but `spawn_particle` and the particle behaviors are not ported, on
+either side. The 100-coin star is recorded as an unsupported event, like
+other unported outside calls.

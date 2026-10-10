@@ -288,3 +288,28 @@ specified. Physical hardware checks remain part of D3. Special lava-level and
 flying-carpet shadow adjustments are outside the current BOB implementation;
 N64 execution and pixel-perfect renderer comparisons remain unavailable.
 ROM, decoded textures, screenshots and traces remain private and untracked.
+
+## Behavior segment, presets and coin models — 2026-10-10
+
+The attached supported US v1.0 ROM supplies the object content the importer
+reads. `python3 -I tools/check_behavior_reference.py --rom ROM --reference
+SM64_SOURCE` lays the pinned `data/behavior_data.c` out from segment 0x13's
+start (evaluating its macros with the vendored headers) and matches all 534
+scripts (5,552 words, 700 pointers of which 546 are natives) against ROM
+`0x219E00..0x21F4C0` (SHA-1 `6a828ee7f66f5bde4778bd21b65857ca56ae980c`). It
+locates `sMacroObjectPresets` as the only matching run at `0xEC7E0..0xED350`
+(SHA-1 `30e066cc1ed9ee9b24c657afaf6f021d5e932677`) and checks the version
+adapter's 20 script and native entries. `tools/check_object_model_reference.py`
+(same arguments) walks `yellow_coin_geo` (0x1600013C),
+`yellow_coin_no_shadow_geo` (0x160001A0) and `sparkles_geo` (0x170001BC)
+alongside the pinned actors sources (46 geo commands) and confirms
+`geo_switch_anim_state` at 0x8029DB48. Both write no ROM data.
+
+The importer requires `level_main_scripts_entry` to load exactly these
+ranges. BOB act 1 resolves to 88 macro entries and 21 spawn infos; its 14 coin
+placements (five `macro_yellow_coin_1`, three `macro_coin_line_horizontal`,
+one `macro_coin_ring_horizontal`, five `macro_coin_ring_vertical_flying`, as
+the pinned `levels/bob/areas/1/macro.inc.c` places them) and the spin airborne
+warp spawn; 94 placements are recorded as unported (`tests/objects.rs`). With
+these scripts, presets and models, 9,600 BOB frames of objects and the 77,112
+BOB camera frames match the native decomp word for word.

@@ -500,6 +500,7 @@ fn scenario<'a>(
         collision: world,
         trig,
         anims,
+        objects: playground::mario_only(),
         entry: GameEntry {
             mario,
             camera: GeoCamera {
@@ -686,7 +687,7 @@ fn played_sessions_with_the_camera_replay_exactly_in_the_decomp() {
     let (mut frames, mut yaws, mut modes) = (0, BTreeSet::new(), BTreeSet::new());
     for (seed, (yaw, pos)) in starts.into_iter().enumerate() {
         let s = scenario(&world, &trig, &anims, yaw, pos, seed as u16);
-        let mut session = Session::new(&world, &trig, &anims, s.entry);
+        let mut session = Session::new(&world, &trig, &anims, s.objects.clone(), s.entry);
         let initial = capture_game(session.game());
         let controls = held_controls(seed as u64, 600);
         let mut words = vec![initial];
@@ -803,10 +804,19 @@ fn bob_frames_with_the_camera_match_the_decomp_with_rom_data() {
         )
     );
     let script_entry = GameEntry::script_start(&imported.level, &node).unwrap();
+    // The ROM's scripts and models with BOB's act-1 placements: the coins
+    // the port runs spawn on both sides.
+    let content = rustario64::import::objects::bob(
+        &rom,
+        &imported.level,
+        rustario64::content::Act::new(1).unwrap(),
+    )
+    .unwrap();
     let bob = |yaw: i16, pos: [i16; 3], rng_seed: u16| GameScenario {
         collision: &world,
         trig: &trig,
         anims: &anims,
+        objects: content.level_objects(),
         entry: GameEntry {
             mario: LevelEntry {
                 spawn: rustario64::simulation::mario::core::SpawnPoint::from_level_script(

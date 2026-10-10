@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 const MAX_COMMANDS: usize = 4096;
 const MAX_CALL_DEPTH: usize = 64;
 
-fn expected_length(opcode: u8) -> Option<usize> {
+pub(crate) fn expected_length(opcode: u8) -> Option<usize> {
     Some(match opcode {
         0x00 | 0x01 | 0x16 => 16,
         0x02..=0x04

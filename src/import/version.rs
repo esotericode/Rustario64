@@ -77,3 +77,59 @@ pub const MARIO_GEO_CALLBACKS: [(&str, u32); 13] = [
     ("geo_mirror_mario_backface_culling", 0x80277D6C),
     ("geo_move_mario_part_from_parent", 0x802B1BB0),
 ];
+
+/// The behavior scripts (sm64tools' "behavior_data" block), loaded by
+/// `level_main_scripts_entry` as raw segment 0x13.
+/// tools/check_behavior_reference.py lays the pinned data/behavior_data.c out
+/// from the segment start and matches every word with this range.
+pub const BEHAVIOR_DATA: Range<usize> = 0x219E00..0x21F4C0;
+pub const BEHAVIOR_SEGMENT: u8 = 0x13;
+
+/// The segmented addresses of the behavior scripts the port names, from the
+/// same layout (the checker verifies each entry).
+pub const BEHAVIOR_SCRIPTS: [(&str, u32); 10] = [
+    ("bhvCoinFormationSpawn", 0x130008D0),
+    ("bhvCoinFormation", 0x130008EC),
+    ("bhvYellowCoin", 0x1300091C),
+    ("bhvCoinSparkles", 0x130009E0),
+    ("bhvGoldenCoinSparkles", 0x13000A14),
+    ("bhvMario", 0x13002EC0),
+    ("bhvSpinAirborneWarp", 0x13002F74),
+    ("bhvMessagePanel", 0x130032E0),
+    ("bhvHauntedChair", 0x13004FD4),
+    ("bhvMadPiano", 0x13005024),
+];
+
+/// The CALL_NATIVE targets the port translates, by decomp name and address
+/// in this revision: the words that follow CALL_NATIVE in the layout above.
+pub const BEHAVIOR_NATIVES: [(&str, u32); 10] = [
+    ("bhv_mario_update", 0x8029CA58),
+    ("bhv_yellow_coin_init", 0x802AB650),
+    ("bhv_yellow_coin_loop", 0x802AB70C),
+    ("bhv_coin_formation_spawn_loop", 0x802ABA40),
+    ("bhv_coin_formation_init", 0x802ABEE4),
+    ("bhv_coin_formation_loop", 0x802ABF0C),
+    ("bhv_coin_sparkles_loop", 0x802AC2C0),
+    ("bhv_golden_coin_sparkles_loop", 0x802AC2EC),
+    ("try_print_debug_mario_level_info", 0x802CB1C0),
+    ("try_do_mario_debug_object_spawn", 0x802CB264),
+];
+
+/// sMacroObjectPresets (pinned include/macro_presets.inc.c): 366 entries of
+/// (behavior, model, param). The checker finds it as the only 4-aligned run
+/// in the ROM equal to the source's entries with the behaviors' addresses.
+pub const MACRO_PRESET_TABLE: Range<usize> = 0xEC7E0..0xED350;
+
+/// Object-model geo callbacks the simulation's render pass runs, by decomp
+/// name and address. tools/check_object_model_reference.py walks the coin
+/// and sparkle layouts the main scripts register alongside the pinned
+/// actors/coin and actors/sparkle geo sources.
+pub const OBJECT_GEO_CALLBACKS: [(&str, u32); 1] = [("geo_switch_anim_state", 0x8029DB48)];
+
+/// level_main_scripts_entry's loads (segment, ROM range, MIO0). group0 is
+/// Mario's (above); common1 holds the coin models (sm64tools
+/// "coins_pipe_doors_maps_trees" MIO0 and geo blocks).
+pub const COMMON1_MIO0: Range<usize> = 0x201410..0x218DA0;
+pub const COMMON1_SEGMENT: u8 = 0x03;
+pub const COMMON1_GEO: Range<usize> = 0x218DA0..0x219E00;
+pub const COMMON1_GEO_SEGMENT: u8 = 0x16;
