@@ -4,6 +4,7 @@
 //! with the decomp. Both are development entry points straight into
 //! Bob-omb Battlefield.
 use rustario64::{
+    APP_TITLE, VERSION,
     content::{
         animation::MarioAnimations,
         visual::{AreaVisual, VisualModel},
@@ -723,7 +724,9 @@ fn create_gpu(
     let window = Arc::new(
         event_loop.create_window(
             Window::default_attributes()
-                .with_title("Rustario64 — Bob-omb Battlefield (development viewer)")
+                .with_title(format!(
+                    "{APP_TITLE} — Bob-omb Battlefield (development viewer)"
+                ))
                 .with_inner_size(PhysicalSize::new(size[0], size[1])),
         )?,
     );
@@ -922,7 +925,7 @@ impl App {
                 present::show_coin_counter(ctx, &play.session.world().hud);
             }
             if self.paused {
-                egui::Window::new("Paused")
+                egui::Window::new(format!("Paused · v{VERSION}"))
                     .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                     .resizable(false)
                     .collapsible(false)
@@ -932,6 +935,7 @@ impl App {
                             .max_height((ctx.content_rect().height() - 60.0).max(100.0))
                             .show(ui, |ui| {
                                 ui.heading("Bob-omb Battlefield");
+                                ui.label(format!("Version {VERSION}"));
                                 if let Some(stop) = play.session.stopped() {
                                     ui.label(format!("Play stopped: {stop}"));
                                 }
@@ -975,11 +979,14 @@ impl App {
                 let stop = play.session.stopped().map_or(String::new(), |stop| {
                     format!(" — stopped: {stop}; R re-enters")
                 });
-                format!("Rustario64 — BOB — Mario {}{stop}", describe(&play.session))
+                format!(
+                    "{APP_TITLE} — BOB — Mario {}{stop}",
+                    describe(&play.session)
+                )
             } else {
                 let p = self.camera.position;
                 format!(
-                    "Rustario64 — BOB viewer — {} ticks @30 Hz — camera ({:.0}, {:.0}, {:.0}) — M plays Mario",
+                    "{APP_TITLE} — BOB viewer — {} ticks @30 Hz — camera ({:.0}, {:.0}, {:.0}) — M plays Mario",
                     self.ticks, p[0], p[1], p[2]
                 )
             };
@@ -1355,7 +1362,7 @@ impl Desktop {
         if let Some(mut gpu) = game.gpu.take() {
             gpu.renderer.load_model(&VisualModel::default());
             gpu.window.set_fullscreen(None);
-            gpu.window.set_title("Rustario64 — Select ROM");
+            gpu.window.set_title(&format!("{APP_TITLE} — Select ROM"));
             let _ = gpu.window.request_inner_size(PhysicalSize::new(800, 720));
             gpu.window.request_redraw();
             self.gpu = Some(gpu);
@@ -1478,6 +1485,7 @@ fn launcher_form(
                 .max_height(height)
                 .show(ui, |ui| {
                     ui.heading(egui::RichText::new("Rustario64").size(42.0));
+                    ui.label(format!("Version {VERSION}"));
                     ui.label("Bob-omb Battlefield · development build");
                     ui.add_space(20.0);
                     ui.label("Choose your Super Mario 64 ROM");
@@ -1550,7 +1558,7 @@ impl ApplicationHandler for Desktop {
         if self.gpu.is_none() {
             match create_gpu(event_loop, RenderOptions::default(), [800, 720]) {
                 Ok(gpu) => {
-                    gpu.window.set_title("Rustario64 — Select ROM");
+                    gpu.window.set_title(&format!("{APP_TITLE} — Select ROM"));
                     gpu.window.request_redraw();
                     self.gpu = Some(gpu);
                 }
@@ -1637,6 +1645,10 @@ fn run_desktop(desktop: &mut Desktop) -> AppResult<()> {
 
 fn run(args: &[String]) -> AppResult<()> {
     match args {
+        [cmd] if cmd == "--version" || cmd == "-V" => {
+            println!("{APP_TITLE}");
+            Ok(())
+        }
         [] => launch(None),
         [cmd] if cmd == "launch" => launch(None),
         [cmd, rom] if cmd == "launch" => launch(Some(Path::new(rom))),
@@ -1707,6 +1719,7 @@ mod tests {
                 text.push_str(&frame_text);
             }
             assert!(text.contains("Rustario64"));
+            assert!(text.contains(&format!("Version {VERSION}")));
             assert!(text.contains("Choose your Super Mario 64 ROM"));
             assert!(text.contains("Browse"));
             assert!(text.contains("Keyboard only"));

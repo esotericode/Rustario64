@@ -27,8 +27,10 @@ Choose the latest successful run for the branch under test (the current
 development checkpoint is on `codex/local-development`, including Bob-ombs,
 holding and the desktop UI resize fix), then
 download `rustario64-windows-x86_64` or `rustario64-linux-x86_64` under Artifacts.
-GitHub's artifact ZIP contains the runtime ZIP; extract both layers. The build
-identifier is in the runtime folder's BUILD_INFO.txt.
+GitHub's artifact ZIP contains the runtime ZIP; extract both layers. The project
+version is in the runtime ZIP/folder name and BUILD_INFO.txt, and is visible in
+the title bar, ROM launcher and pause/settings. Include that version when
+reporting a bug; all runtime binaries also accept `--version`.
 
 The Bob-omb and holding increments enable BOB's Bob-ombs in play, including
 carrying and throwing them, with per-frame decomp comparisons. The launcher,

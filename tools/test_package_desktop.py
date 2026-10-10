@@ -31,17 +31,20 @@ class DesktopPackageTests(unittest.TestCase):
                     (release / (name + suffix)).write_bytes(data)
                 for name in ["owner.z64", "decoded.rgba", "oracle.exe", "run.trace.json"]:
                     (release / name).write_bytes(b"must not ship")
-                archive = package(target, release, root / "dist", "authored dependency notices", "authored build identifier")
+                archive = package(target, release, root / "dist", "authored dependency notices", "Version: 0.0.1\n", "0.0.1")
+                self.assertEqual(archive.name, f"rustario64-0.0.1-{target}.zip")
                 with zipfile.ZipFile(archive) as bundle:
+                    self.assertTrue(all(p.startswith(f"rustario64-0.0.1-{target}/") for p in bundle.namelist()))
+                    self.assertEqual(bundle.read(f"rustario64-0.0.1-{target}/BUILD_INFO.txt"), b"Version: 0.0.1\n")
                     names = {p.split("/", 1)[1] for p in bundle.namelist()}
                     expected = {name + suffix for name in RUNTIME_BINARIES} | {"THIRD_PARTY_NOTICES.txt", "BUILD_INFO.txt"}
                     expected.update("README.md" if p == "docs/PLAYTEST.md" else p for p in NOTICES)
                     self.assertEqual(names, expected)
                     if not suffix:
                         for name in RUNTIME_BINARIES:
-                            self.assertEqual(bundle.getinfo(f"rustario64-{target}/{name}").external_attr >> 16 & 0o777, 0o755)
+                            self.assertEqual(bundle.getinfo(f"rustario64-0.0.1-{target}/{name}").external_attr >> 16 & 0o777, 0o755)
                 with self.assertRaises(FileExistsError):
-                    package(target, release, root / "dist", "authored dependency notices", "authored build identifier")
+                    package(target, release, root / "dist", "authored dependency notices", "authored build identifier", "0.0.1")
 
     def test_runtime_graph_excludes_oracle_and_dev_dependencies(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -72,7 +75,7 @@ class DesktopPackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             with self.assertRaises(ValueError):
-                package("linux-x86_64", root, root / "dist", "authored dependency notices", "authored build identifier")
+                package("linux-x86_64", root, root / "dist", "authored dependency notices", "authored build identifier", "0.0.1")
             self.assertFalse((root / "dist").exists())
 
     def test_windows_desktop_must_be_gui_and_viewer_must_be_console(self):
@@ -82,7 +85,7 @@ class DesktopPackageTests(unittest.TestCase):
                 (root / (name + ".exe")).write_bytes(authored_pe(3))
             self.assertEqual(windows_subsystem(root / "rustario64-viewer.exe"), 3)
             with self.assertRaisesRegex(ValueError, "GUI/console"):
-                package("windows-x86_64", root, root / "dist", "notices", "build")
+                package("windows-x86_64", root, root / "dist", "notices", "build", "0.0.1")
             self.assertFalse((root / "dist").exists())
             (root / "rustario64-desktop.exe").write_bytes(b"not a PE file")
             with self.assertRaisesRegex(ValueError, "not a Windows executable"):

@@ -170,6 +170,7 @@ fn import_bob(rom_path: &Path, output_root: &Path) -> AppResult<()> {
 
 fn run(args: &[OsString]) -> AppResult<()> {
     match args {
+        [cmd] if cmd == "--version" || cmd == "-V" => println!("{}", rustario64::APP_TITLE),
         [] => print!("{HELP}"),
         [cmd] if cmd == "--help" || cmd == "-h" || cmd == "help" => print!("{HELP}"),
         [cmd] if cmd == "demo" => demo(None)?,

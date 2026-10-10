@@ -112,6 +112,17 @@ without a GPU or window.
 
 ## Build and test
 
+The project change counter starts at **0.0.1**. It appears in the running window
+title, ROM launcher, pause/settings and `--version` output of all three binaries.
+Every committed project change, including documentation, must advance it with
+`python3 tools/project_version.py bump`; the next version is 0.0.2. The tool
+updates Cargo.toml, Cargo.lock and the plan's current-version header together.
+Patch/minor roll over at 100:
+0.0.99 → 0.1.0 and 0.99.99 → 1.0.0. Run
+`python3 tools/project_version.py check --base HEAD` before committing and
+`python3 tools/project_version.py check --history` afterward; CI checks the
+history too. Rebuild after a change so the running version reflects its source.
+
 Rust 1.99.0 (current stable as of 2026-10-08) with rustfmt and Clippy is selected
 by `rust-toolchain.toml`. Linux x86_64 is the locally checked platform. CI also builds/tests the Rust
 runtime on Windows x86_64. Both targets passed build/test/package CI at
@@ -172,7 +183,9 @@ python tools/package_desktop.py --target linux-x86_64
 python tools/test_package_desktop.py
 ```
 
-The packager includes the commit/target/compiler in `BUILD_INFO.txt` and notices
+The runtime ZIP/folder includes its project version (for example,
+`rustario64-0.0.1-linux-x86_64.zip`). The packager includes version/commit/target/compiler
+in `BUILD_INFO.txt` and notices
 from the target-filtered Cargo dependency graph. It refuses an existing ZIP;
 use a fresh `--output` directory for another build.
 

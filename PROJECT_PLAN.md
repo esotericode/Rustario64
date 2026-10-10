@@ -2,6 +2,8 @@
 
 Last updated: 2026-10-10
 
+Current project version: **0.0.1** (shared change counter, introduced in session 27).
+
 Status: M0 complete. M1 imported level works: BOB's original terrain and textures import from the ROM and render through an optional wgpu viewer with collision/placement overlays. M2 in progress: Mario's complete tick (inputs, non-object actions, his object update and animation frame advance, with the ROM's animations) matches the natively compiled decomp per tick, and BOB's original camera (radial, R/close, C-Up, boss-fight modes, shakes, FOV and graph camera) runs with it in the original frame order, matching the decomp word for word per frame. The viewer's Mario mode drives that frame from keyboard or mapped gamepads and draws from the reference camera; recorded runs replay exactly against the decomp with its own camera. Mario's model and display lists import from the ROM and are posed from each tick as the original render pass does. D1 local ROM launcher and D2 development pause/settings are implemented, with a dedicated desktop entry point and ROM reselection; basic analog gamepad input is implemented; blink, LOD and animation/action switches preserve Mario's pose interpolation. Mario's original BOB shadow is implemented and interpolated independently. The original object system (pool, lists, the ROM's behavior scripts through a ported interpreter, object collision) runs in the frame with BOB's coins (yellow coins, every formation type, sparkles, collection), matching the decomp word for word per frame including every object; coins and sparkles are drawn from the ROM in viewer play with interpolated positions and a development overlay reading the original HUD coin count. BOB's twelve Bob-ombs now run from the ROM's scripts and animations (patrol, fuse, chase, explosion with its camera shake, coin loot, respawn, lava/death-plane deaths, Mario's damage knockback and kicks), matching the decomp word for word per frame, and are drawn with their skinned ROM models, fuse smoke, explosions and death smoke. Mario picks Bob-ombs up, carries, throws and drops them: his holding actions run with the hand position (HOLP) that his render pass now writes through his ROM model with the original matrix stack, compared word for word, and the held Bob-omb is drawn in his hands. Every other object behavior, King Bob-omb, cutscenes, other areas' camera modes and triggers, cutscene/water actions, warps and missions remain missing.
 Sessions 24–25 add King Bob-omb's standard movement and shared grab/release prerequisites, including heavy-object actions checked with the ROM's Mario animations. The boss itself remains disabled. Local Linux Intel GPU startup/drawing and recorded-run replay pass.
 
@@ -218,6 +220,19 @@ Full-game completion is the direction of the architecture, not a promise attache
 Before each implementation session, read this file and the repository's actual state. Choose the smallest useful next increment, implement it, run relevant checks, and update the status below. Keep README build/run instructions and the provenance ledger consistent with reality.
 
 Develop and test locally on the owner's machine, then commit and push verified source and documentation increments to GitHub. Keep the ROM, extracted assets, local packages, screenshots and private test artifacts excluded from publication.
+
+Every committed change to project code, tests, dependencies or documentation
+requires a new project version. Start at **0.0.1** for the versioning increment;
+the next checkpoint is **0.0.2**. Run `python3 tools/project_version.py bump`
+once per coherent change checkpoint; it updates the single workspace version
+and all three local Cargo.lock entries. Patch/minor are base-100 counters:
+**0.0.99 → 0.1.0**, then **0.99.99 → 1.0.0**. This counts project changes rather
+than promising semantic API compatibility. The title bar, launcher, pause/settings,
+CLI version output and packaged build metadata all derive from that same value.
+Keep the current status/version accurate, validate the bump before committing,
+and rebuild local runtime deliveries. CI checks committed version history,
+including documentation-only changes. Private ROM/assets, logs and repeated
+builds are not project-source changes.
 
 When a dependency choice, data representation, fidelity assumption, ROM mapping, or milestone boundary changes, record what changed and why. Replace stale decisions; do not append contradictory plans indefinitely. Use short decision records if explanations grow too long for this document. Ask the owner about material scope or fidelity changes; routine implementation choices are yours to make.
 
@@ -1145,6 +1160,35 @@ Every handoff should report the working result, commands actually run, missing f
   ROMs, screenshots, test logs and local automation remain private. Gameplay
   scope is unchanged; continue King Bob-omb's documented prerequisites.
 
+### Session 27 — Visible project version and required change counter (2026-10-10)
+
+- **Version/result:** **0.0.1**, the requested starting checkpoint. All three
+  workspace packages inherit one Cargo version. Launcher/game window titles,
+  the initial ROM-selection screen, pause/settings, startup error dialog and
+  each runtime's `--version` output show that value. UI title updates and return
+  to ROM selection preserve it.
+- **Required workflow:** Every committed project change, including docs, must
+  advance the counter. `tools/project_version.py bump` updates Cargo.toml,
+  the three local lockfile entries and this plan's current-version header.
+  Patch/minor roll over at 100 (0.0.99 → 0.1.0; 0.99.99 → 1.0.0). CI checks
+  workspace/lock/plan consistency and versioned commit history, including a
+  forgotten bump in a documentation-only commit. The initial migration from
+  old crate metadata is explicitly bootstrapped at 0.0.1.
+- **Delivery:** Runtime ZIP/folder names and BUILD_INFO.txt carry the project
+  version. Packaging queries each binary's `--version` and rejects a stale
+  build instead of labeling it with newer source metadata. The runtime remains
+  independent of the C oracle and private ROM assets.
+- **Validation:** Four counter tests (rollovers, invalid values, lockfile/plan
+  updates and missing documentation bumps) and four packaging tests pass.
+  All 26 renderer/all-target tests pass on Intel Graphics (MTL) with the private
+  owner test enabled. Formatting, workspace warnings-denied Clippy and the
+  release runtime build pass. All three binaries print `Rustario64 v0.0.1`.
+  Native Intel/Vulkan launcher and game titles are checked; private launcher
+  and pause/settings screenshots visibly show 0.0.1. The test windows close
+  cleanly. Gameplay scope and authoritative simulation are unchanged.
+- **Next:** The next committed project change is 0.0.2. Continue the documented
+  King Bob-omb integration, bump its checkpoint and rebuild local deliveries.
+
 ### Bob-omb Battlefield acceptance tracker
 
 | Capability / act | Actual state |
@@ -1162,6 +1206,7 @@ Every handoff should report the working result, commands actually run, missing f
 
 ### Session update template
 
+- Project version:
 - Date and change:
 - Milestone and actual working result:
 - References or decisions changed:
