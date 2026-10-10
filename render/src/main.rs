@@ -620,7 +620,7 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
         _ => {}
     }
     println!(
-        "Mario mode draws coins, sparkles, animated Bob-ombs and their effects, including held Bob-ombs, Bob-omb Buddies and the dialog box. Unported placements and the skybox remain missing; the sky is a placeholder clear color."
+        "Mario mode draws coins, sparkles, animated Bob-ombs and their effects, including held Bob-ombs, Bob-omb Buddies, King Bob-omb and the dialog box. Unported placements and the skybox remain missing; the sky is a placeholder clear color."
     );
     Ok(())
 }

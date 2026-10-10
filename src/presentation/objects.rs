@@ -64,6 +64,7 @@ enum BuildKey {
     Static {
         model: u16,
         cases: Vec<(usize, usize)>,
+        opacity: Option<u8>,
     },
     Skinned {
         model: u16,
@@ -268,6 +269,15 @@ impl ObjectWalk<'_> {
                 self.draw(layer, Some(display_list), bone);
                 self.siblings(children, parent, bone);
             }
+            GeoNodeKind::Generated { callback, .. }
+                if crate::import::version::OBJECT_GEO_CALLBACKS.iter().any(
+                    |&(name, address)| address == callback && name == "geo_update_held_mario_pos",
+                ) =>
+            {
+                // The simulation already positioned the boss's Mario anchor;
+                // this original callback returns no display list.
+                self.siblings(children, parent, bone);
+            }
             GeoNodeKind::Root { .. }
             | GeoNodeKind::Start
             | GeoNodeKind::CullingRadius { .. }
@@ -358,19 +368,31 @@ impl<'a> ObjectDrawer<'a> {
             .iter()
             .any(|n| matches!(n.kind, GeoNodeKind::AnimatedPart { .. }));
         if !animated {
+            let opacity = layout.nodes.iter().any(|n| matches!(n.kind,
+                GeoNodeKind::Generated { param: 0, callback }
+                    if crate::import::version::OBJECT_GEO_CALLBACKS.iter().any(|(name, address)|
+                        *name == "geo_update_layer_transparency" && *address == callback)
+            )).then_some(o.opacity);
             let key = BuildKey::Static {
                 model: o.model,
                 cases: o.cases.clone(),
+                opacity,
             };
             let build = match self.builds.iter().position(|b| b.key == key) {
                 Some(build) => build,
                 None => {
-                    let built = model::build_selected(segments, layout, true, &|node| {
-                        o.cases
-                            .iter()
-                            .find(|(n, _)| *n == node)
-                            .map(|(_, child)| *child)
-                    })?;
+                    let built = model::build_object_selected(
+                        segments,
+                        layout,
+                        true,
+                        &|node| {
+                            o.cases
+                                .iter()
+                                .find(|(n, _)| *n == node)
+                                .map(|(_, child)| *child)
+                        },
+                        opacity,
+                    )?;
                     // GEO_SHADOW is the only intentionally deferred drawing node.
                     if let Some(issue) = built
                         .issues

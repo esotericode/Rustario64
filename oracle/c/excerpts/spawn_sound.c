@@ -11,6 +11,36 @@
 #include "game/object_list_processor.h"
 #include "game/spawn_sound.h"
 
+/* src/game/spawn_sound.c: exec_anim_sound_state */
+void exec_anim_sound_state(struct SoundState *soundStates) {
+    s32 stateIdx = gCurrentObject->oSoundStateID;
+
+    switch (soundStates[stateIdx].playSound) {
+        // since we have an array of sound states corresponding to
+        // various behaviors, not all entries intend to play sounds. the
+        // boolean being 0 for unused entries skips these states.
+        case FALSE:
+            break;
+        case TRUE: {
+            s32 animFrame;
+
+            // in the sound state information, -1 (0xFF) is for empty
+            // animFrame entries. These checks skips them.
+            if ((animFrame = soundStates[stateIdx].animFrame1) >= 0) {
+                if (cur_obj_check_anim_frame(animFrame)) {
+                    cur_obj_play_sound_2(soundStates[stateIdx].soundMagic);
+                }
+            }
+
+            if ((animFrame = soundStates[stateIdx].animFrame2) >= 0) {
+                if (cur_obj_check_anim_frame(animFrame)) {
+                    cur_obj_play_sound_2(soundStates[stateIdx].soundMagic);
+                }
+            }
+        } break;
+    }
+}
+
 /* src/game/spawn_sound.c: create_sound_spawner */
 void create_sound_spawner(s32 soundMagic) {
     struct Object *obj = spawn_object(gCurrentObject, 0, bhvSoundSpawner);

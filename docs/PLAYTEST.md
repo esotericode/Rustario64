@@ -13,8 +13,12 @@ they are drawn with their animated ROM model, fuse smoke, explosions and smoke.
 Punching or diving into a Bob-omb picks it up: Mario carries it (walking,
 jumping and landing), throws it with B (also in the air), drops it with Z, or
 holds it until its fuse runs out. Object shadows and original HUD typography are
-pending. Missions, King Bob-omb and every other object (including the cannon
-lid), camera cutscenes, original pause behavior, water/cutscene actions, warps, saves,
+pending. The two Bob-omb Buddies talk using the ROM's dialog text. King
+Bob-omb now spawns on the act-1 summit: the encounter, animated anchor,
+grabs/escapes, heavy pickup/throw, damage, return jump and defeat dialog have
+native frame comparisons. Defeat stops at star spawning; missions and other
+objects (including the cannon lid), other camera cutscenes, original pause
+behavior, water/other cutscene actions, warps, saves,
 audio are missing. Basic controller input is available; remapping, calibration,
 rumble and controller-driven menu navigation are pending. Play stops on
 unsupported paths; R re-enters.
@@ -25,7 +29,7 @@ Windows and Linux ZIP builds are attached to successful runs of the
 [Rust foundation workflow](https://github.com/esotericode/Rustario64/actions/workflows/rust.yml).
 Choose the latest successful run for the branch under test (the current
 development checkpoint is on `codex/local-development`, including Bob-ombs,
-holding and the desktop UI resize fix), then
+holding, NPC dialogs, King Bob-omb and the desktop UI resize fix), then
 download `rustario64-windows-x86_64` or `rustario64-linux-x86_64` under Artifacts.
 GitHub's artifact ZIP contains the runtime ZIP; extract both layers. The project
 version is in the runtime ZIP/folder name and BUILD_INFO.txt, and is visible in
@@ -34,8 +38,8 @@ reporting a bug; all runtime binaries also accept `--version`.
 
 The Bob-omb and holding increments enable BOB's Bob-ombs in play, including
 carrying and throwing them, with per-frame decomp comparisons. The launcher,
-controller, coin and Bob-omb exploration flow is the current manual test
-target.
+controller, coin, Bob-omb, NPC-dialog and boss encounter flows are the current
+manual test targets. The star and mission completion are pending.
 
 Extract the whole ZIP. Keep your own ROM outside this folder. Only the original
 8 MiB US v1.0 ROM is supported, identified after byte-order normalization by
@@ -208,7 +212,8 @@ recorded inputs replay exactly in the native oracle. Six renderer integration
 checks pass with GPU access, and a 1280×960 screenshot showing Mario, a Bob-omb
 and fuse smoke is inspected. Automated keyboard injection could not retain
 window focus, so interactive keyboard/controller and Windows checks remain open.
-King Bob-omb is still disabled; this session adds his standard movement
+At this historical checkpoint King Bob-omb was disabled; session 32 enables
+his encounter. Session 24 added his standard movement
 prerequisites, not an encounter that a human can play yet.
 
 
@@ -219,7 +224,8 @@ A native window closes cleanly after 120 draw frames/60 simulation ticks; all
 60 recorded ticks replay exactly in native C. Six offscreen renderer checks
 pass with physical device access. A private 1280×960 Mario/Bob-omb screenshot
 is visually inspected. The new boss grabbing helpers have component coverage;
-King Bob-omb's placement/encounter and human input-feel checks remain pending.
+King Bob-omb's encounter was pending at this checkpoint; session 32 enables
+it. Human input-feel checks remain pending.
 
 ## Bob-omb Buddy checks (session 30)
 
@@ -233,3 +239,22 @@ the original, that pages advance once per press, and that talking again works.
 The box uses development typography; the original font and rotating box are
 pending. Signs are not spawned yet.
 
+
+## King Bob-omb checkpoint (0.0.6)
+
+Climb to the summit in act 1 and finish his introduction with A/B page presses.
+Let him grab and throw Mario, then try escaping with repeated A presses and
+stick changes. Approach from behind to pick him up, walk with him and throw
+with B. Landing on the summit damages him; throwing him off it makes him
+return and complain. Defeat plays his last dialog and particles, then stops
+at the unimplemented star spawn. R re-enters; a stop here is expected in this
+checkpoint. A controller-driven three-hit fight and visual/input-feel review
+remain acceptance checks; the native tests include explicit initial-state
+fixtures for damage/return/defeat and heavy pickup.
+
+The v0.0.6 Linux boss-introduction window runs 120 draw frames/60 simulation
+ticks and exits cleanly on Intel Graphics (MTL), Vulkan. The private screenshot
+shows the animated ROM boss and his introduction text. A 700-frame initial-state
+defeat drawing fixture also builds fading mist and debris. Default debug and
+release GPU checks verify mist fading at opacity 255/128/0. This is automated
+hardware evidence; human controller and Windows playtesting remain open.

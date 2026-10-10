@@ -26,6 +26,8 @@ enum OracleEventKind {
     ORACLE_EVENT_PLAY_MUSIC = 18,       /* a = player, b = seqArgs << 16 | fade */
     ORACLE_EVENT_SEQ_FADE_OUT = 19,     /* a = player, b = duration */
     ORACLE_EVENT_RACE_FANFARE = 20,
+    ORACLE_EVENT_POINT_CAMERA_SHAKE = 21,
+    ORACLE_EVENT_STOP_BACKGROUND_MUSIC = 22,
 };
 
 /* ORACLE_EVENT_UNSUPPORTED reasons. */
@@ -34,6 +36,7 @@ enum OracleUnsupported {
     ORACLE_UNSUPPORTED_SUBMERGED_GROUP = 2,
     ORACLE_UNSUPPORTED_INFINITE_STAIRS = 3,
     ORACLE_UNSUPPORTED_HUNDRED_COIN_STAR = 4,
+    ORACLE_UNSUPPORTED_STAR_SPAWN = 5,
 };
 
 typedef struct {
@@ -52,6 +55,7 @@ struct Camera;
 void oracle_camera_native_set_mode(struct Camera *c, s16 mode, s16 frames);
 void oracle_camera_native_hit(s16 shake);
 void oracle_camera_native_env_shake(s16 shake);
+void oracle_camera_native_point_shake(s16 shake, f32 x, f32 y, f32 z);
 /* Nonzero while the complete camera runs with the tick harness. */
 extern s32 gOracleCameraLinked;
 extern s16 gOracleHudCameraStatus;

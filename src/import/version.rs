@@ -159,9 +159,9 @@ pub const BEHAVIOR_NATIVES: [(&str, u32); 28] = [
 pub const MACRO_PRESET_TABLE: Range<usize> = 0xEC7E0..0xED350;
 
 /// Object-model geo callbacks the simulation's render pass runs, by decomp
-/// name and address. tools/check_object_model_reference.py walks the coin
-/// and sparkle layouts the main scripts register alongside the pinned
-/// actors/coin and actors/sparkle geo sources.
+/// name and address. tools/check_object_model_reference.py walks the coin,
+/// sparkle and mist layouts the main scripts register and BOB's King
+/// Bob-omb layout alongside the pinned actor geo sources.
 pub const OBJECT_GEO_CALLBACKS: [(&str, u32); 3] = [
     ("geo_switch_anim_state", 0x8029DB48),
     ("geo_update_layer_transparency", 0x8029D924),

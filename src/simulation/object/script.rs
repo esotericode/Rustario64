@@ -222,10 +222,10 @@ impl Native {
         Self::ALL.into_iter().find(|n| n.name() == name)
     }
 
-    /// Translated but not yet compared against the decomp in complete
-    /// frames: King Bob-omb (session 31). His placement stays unspawned.
+    /// Translated natives withheld until complete-frame comparisons exist.
+    /// King Bob-omb's gate was lifted with session 32's comparisons.
     pub fn awaits_comparison(self) -> bool {
-        self == Native::BhvKingBobombLoop
+        false
     }
 
     /// The behaviors the function can spawn, for [`BehaviorScripts::check`].

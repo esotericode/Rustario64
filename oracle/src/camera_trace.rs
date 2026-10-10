@@ -235,7 +235,14 @@ pub fn capture_camera(camera: &CameraSystem, o: &mut Words) {
         "camera.cutsceneFocusIsNull",
         i32::from(camera.cutscene_focus.is_none()),
     );
-    o.i("camera.secondCameraFocusIsNull", 1);
+    o.i(
+        "camera.secondCameraFocusIsNull",
+        i32::from(camera.second_camera_focus.is_none()),
+    );
+    o.i(
+        "camera.secondCameraFocus",
+        camera.second_camera_focus.map_or(-1, |id| id.0 as i32),
+    );
     o.put("camera.unused8032CFC8", camera.unused_8032cfc8);
     o.put("camera.unused8032CFCC", camera.unused_8032cfcc);
     o.i("camera.unused8033B316", i32::from(camera.unused_8033b316));

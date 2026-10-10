@@ -7,16 +7,17 @@ on an authored playground and on Bob-omb Battlefield with the owner ROM's data.
 That is not yet coverage against original N64 execution. Since session 17
 the object system (pool, lists, behavior scripts, object collision) with the
 coin behaviors and coin collection also has per-frame coverage (Objects and
-coins below); every other object behavior, interactions with other objects
-and cutscene/submerged actions have **zero validated coverage**. Collision, math, physics steps and
+coins below). Later sessions cover Bob-ombs, holding, NPC dialog actions and
+King Bob-omb (their sections below); other unlisted behaviors and submerged
+actions remain unvalidated. Collision, math, physics steps and
 pre-action inputs also keep their component suites. Camera helpers and radial
 goal construction have native component checks; the persistent Lakitu/transition
 stage also has per-tick native comparisons (Camera sections below). The viewer's Mario mode
 runs the same tick, and its recorded runs replay exactly in the decomp (Played
 sessions below). Mario's drawn model is presentation: it reads completed ticks
 and is checked as imported content (ROM_VALIDATION.md), not compared per tick;
-the render pass's own writes into Mario's body state (torso/head angle resets,
-the punch-scale countdown) are not simulated on either side. The
+the render pass's authoritative body-state writes and held-object position
+are simulated and compared on both sides (Mario render pass below). The
 `demo` command's diagnostic marker visualizes a tick counter; it is not a Mario
 approximation.
 
@@ -933,3 +934,35 @@ cutscene and ACT_READING_SIGN), yes/no answers (no ported object asks one;
 `handle_menu_scrolling` is compiled but unreached), the race and cap-switch
 dialogs, the cannon Buddy, King Bob-omb's `cur_obj_update_dialog_with_cutscene`,
 other cutscenes, and original N64 execution.
+
+### King Bob-omb complete frames (session 32, 0.0.6)
+
+oracle/tests/king_bobomb.rs compares 7,100 authored frames and 6,200 BOB frames
+with the owner's private ROM, covering all nine actions and DIALOG_017/116/128.
+Captured state includes Mario, every object, the camera and animated anchor,
+dialog/time-stop globals, object counters, boss second focus, and ordered
+sound/music/shake/star-boundary events. Authored trajectories observe 100 held
+boss frames and two escapes; ROM trajectories observe 106 held frames and
+three escapes. Both observe one unsupported star spawn and its preceding
+defeat effects. The boss is enabled in normal act-1 play.
+
+Damage, return, defeat and heavy pickup begin from explicitly seeded numeric
+boss fields after its first script frame; subsequent complete frames evolve
+independently. Introduction/grab trajectories use ordinary level entry and
+inputs; escape inputs react to ACT_GRABBED identically on both sides. This is
+not an end-to-end three-hit mission. The earlier prevObj no-op audit was wrong:
+SPAWN_OBJ sets it, and the animated callback is now executed and compared.
+King billboard matrices affect drawing only, with their display-list-only
+children asserted; object shadows/drawing are outside these state comparisons.
+Walk-speed and anchor-position mutations fail at the named state words.
+The independent source checker verifies all boss/mist geo commands and object
+callback addresses. Star behavior, its cutscene/collection, original N64
+execution, controller feel and presentation fidelity remain outside coverage.
+
+Session 32 also executes the native mist transparency callback rather than
+treating it as a drawing-only node: every captured oAnimState write agrees.
+An existing BOB camera fuzz replay exercises leaving C-Up while the boss moves;
+deferred Mario mode requests preserve the original pre-actor second focus.
+The ROM defeat drawing fixture covers 700 additional Rust-only frames, including
+fading mist and debris. GPU captures compare mist opacity 255, 128 and 0; these
+presentation checks are distinct from native simulation coverage.

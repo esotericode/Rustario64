@@ -23,6 +23,7 @@ struct GraphNodePerspective *gCurGraphNodeCamFrustum;
 #include "excerpts/rendering_view.c"
 
 Gfx *geo_switch_anim_state(s32 callContext, struct GraphNode *node, void *context);
+Gfx *geo_update_layer_transparency(s32 callContext, struct GraphNode *node, void *context);
 void geo_set_animation_globals(struct AnimInfo *node, s32 hasAnimation);
 void oracle_camera_graph_nodes(struct GraphNodeCamera **camera, struct GraphNodePerspective **perspective);
 extern struct GraphNode **gLoadedGraphNodes;
@@ -38,7 +39,7 @@ typedef struct {
     const s32 *children;
 } OracleModel;
 
-enum { NODE_PLAIN = 0, NODE_ANIM_STATE_SWITCH = 1, NODE_CULLING_RADIUS = 2, NODE_UNAUDITED = 3 };
+enum { NODE_PLAIN = 0, NODE_ANIM_STATE_SWITCH = 1, NODE_CULLING_RADIUS = 2, NODE_UNAUDITED = 3, NODE_LAYER_TRANSPARENCY = 4 };
 
 typedef struct {
     s32 loaded;
@@ -150,6 +151,10 @@ static void build_children(RenderModel *m, s32 node, struct GraphNode *parent) {
                                                         graph_alloc(sizeof(struct GraphNodeCullingRadius)),
                                                         (s16) m->params[c])->node;
                 break;
+            case NODE_LAYER_TRANSPARENCY:
+                child = &init_graph_node_generated(NULL, graph_alloc(sizeof(struct GraphNodeGenerated)),
+                                                   geo_update_layer_transparency, 0)->fnNode.node;
+                break;
             default:
                 child = &init_graph_node_generated(NULL, graph_alloc(sizeof(struct GraphNodeGenerated)),
                                                    unaudited_node, 0)->fnNode.node;
@@ -236,13 +241,28 @@ static void process_node(struct Object *obj, RenderModel *m, s32 node) {
             }
             break;
         }
+        case NODE_LAYER_TRANSPARENCY: {
+            struct GraphNodeGenerated generated;
+            memset(&generated, 0, sizeof(generated));
+            geo_update_layer_transparency(GEO_CONTEXT_RENDER, &generated.fnNode.node, NULL);
+            for (i = 0; i < m->childCount[node]; i++) {
+                process_node(obj, m, m->children[m->childStart[node] + i]);
+            }
+            break;
+        }
         default:
             fail("the render pass reaches an unaudited node");
     }
 }
 
 /* geo_process_object's state changes for one object other than Mario. */
+s32 oracle_render_has_king(void);
+void oracle_render_king_object(struct Object *obj, s8 rootAreaIndex);
 void oracle_render_object(struct Object *obj, s8 rootAreaIndex) {
+    if (oracle_render_has_king() && obj->header.gfx.sharedChild == gLoadedGraphNodes[MODEL_KING_BOBOMB]) {
+        oracle_render_king_object(obj, rootAreaIndex);
+        return;
+    }
     struct GraphNodeObject *node = &obj->header.gfx;
     s32 hasAnimation = (node->node.flags & GRAPH_RENDER_HAS_ANIMATION) != 0;
     Mat4 placed, matrix;

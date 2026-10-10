@@ -3,8 +3,9 @@
 A new Rust engine that imports Super Mario 64 content from a user-supplied ROM.
 Bob-omb Battlefield is the first playable **target**; today it is an imported,
 viewable level where Mario, with his model and animations from your ROM, can be
-moved around by the compared simulation among its coins and Bob-ombs; it is not
-yet a playable course (no missions, stars or King Bob-omb). Read
+moved around by the compared simulation among its coins, Bob-ombs and Buddies,
+and can encounter King Bob-omb; it is not
+yet a complete playable course (star spawning and missions are pending). Read
 [PROJECT_PLAN.md](PROJECT_PLAN.md) for scope, milestones, and the live status.
 
 What works now:
@@ -93,19 +94,22 @@ What works now:
 - King Bob-omb's **standard movement foundation**: floor/wall queries, drag,
   slope/edge avoidance, ground/air/water transitions, return-home arc movement
   and moving throw/drop release. 537,435 component comparisons match the native
-  decomp exactly, including BOB collision/trig data. His behavior, particles,
-  positional camera shakes and the boss camera's focus on him are translated
-  (session 31) but not yet compared against the decomp, so his placement is
-  still not spawned.
+  decomp exactly, including BOB collision/trig data. King Bob-omb now spawns
+  in act 1: his nine actions, animations and animated Mario anchor, dialogs,
+  heavy pickup/throw, grabs and escapes, damage, return jump, defeat particles,
+  positional shakes and boss-camera focus match native C in 7,100 authored and
+  6,200 owner-ROM complete frames. Damage/return/defeat and heavy pickup use
+  explicit initial-state fixtures; this is not an end-to-end three-hit fight.
+  Defeat stops at the unsupported star spawn.
 - Shared boss **grab/release interactions**: enemy grabs, Mario's thrown action
   transition, anchor placement, escape controls and non-Bowser object release.
   2,860 component calls match native C, including heavy pickup/walk/throw with
-  the ROM's original Mario animations and the 13th-tick release. These helpers
-  do not enable King Bob-omb's placement.
+  the ROM's original Mario animations and the 13th-tick release. Session 32
+  also compares them in the complete boss frame and enables his placement.
 
 This is level exploration with Mario's movement and camera, not mission
-support: of the objects only the coins, Bob-ombs and Bob-omb Buddies are
-simulated. King Bob-omb, other enemies, trees, signs, red coins, the cannon
+support: coins, Bob-ombs, Bob-omb Buddies and King Bob-omb are simulated.
+Other enemies, trees, signs, red coins, the cannon
 lid and every other placement are recorded as unported and not spawned. The
 dialog cutscene is the only camera cutscene; there is no original pause
 behavior, no cutscene action other than NPC dialog, no water actions, warps,
@@ -128,11 +132,11 @@ without a GPU or window.
 
 ## Build and test
 
-The current project version is **0.0.5**; the change counter started at 0.0.1.
+The current project version is **0.0.6**; the change counter started at 0.0.1.
 It appears in the running window
 title, ROM launcher, pause/settings and `--version` output of all three binaries.
 Every committed project change, including documentation, must advance it with
-`python3 tools/project_version.py bump`; the next version is 0.0.6. The tool
+`python3 tools/project_version.py bump`; the next version is 0.0.7. The tool
 updates Cargo.toml, Cargo.lock and the plan's current-version header together.
 Patch/minor roll over at 100:
 0.0.99 → 0.1.0 and 0.99.99 → 1.0.0. Run
@@ -447,12 +451,11 @@ is never spawned; it is listed in `AreaObjects::skipped` with the reason.
 
 Linux Intel GPU startup, offscreen drawing and recorded-run replay were checked
 locally in session 24; human controller and Windows playtesting remains.
-Coins, Bob-ombs and carrying and throwing them work. King Bob-omb's standard
-movement and grab/release helpers are now ported and component-compared,
-including Mario's heavy actions with original animations. Next is his behavior
-and animations, authoritative held-Mario render callback, dialogs, time-stop,
-the star and the camera cutscenes the first mission needs. Original-execution
-traces remain the eventual authority. Skybox and placement models remain M1 work.
+Coins, Bob-ombs, conversations and the King Bob-omb encounter work. Next is
+his star spawn, its camera cutscene and collection, then an end-to-end act-1
+mission test. A three-hit fight driven solely by controller inputs remains a
+separate acceptance check. Original-execution traces remain the eventual
+authority. Skybox and object shadows remain presentation work.
 
 Movement and grabbing checks without a ROM:
 `cargo test --locked --release -p rustario64-oracle --test standard_motion --test grab`.
@@ -478,3 +481,7 @@ With your supported ROM, run the whole integration suite locally:
 RUSTARIO64_ROM=/path/to/sm64.z64 RUSTARIO64_REQUIRE_GPU=1 \
   cargo test --locked --release --workspace --all-targets -- --include-ignored
 ```
+
+Boss comparisons: `cargo test --locked --release -p rustario64-oracle --test king_bobomb`.
+Add `RUSTARIO64_ROM=/path/to/sm64.z64` and `-- --include-ignored --nocapture`
+for the private ROM summit trajectories; no ROM data is published.

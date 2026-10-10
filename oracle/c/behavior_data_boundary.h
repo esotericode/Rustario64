@@ -19,4 +19,5 @@
 /* actors/common0.h's Bob-omb animation table; the harness fills a host
  * copy from the Rust side's ROM decode (object_anims_unit.c). */
 extern const struct Animation *bobomb_seg8_anims_0802396C[];
+extern const struct Animation *king_bobomb_seg5_anims_0500FE30[];
 #endif

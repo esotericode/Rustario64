@@ -11,7 +11,9 @@
 #define set_camera_shake_from_hit oracle_camera_native_hit
 #define set_camera_mode oracle_camera_native_set_mode
 #define set_environmental_camera_shake oracle_camera_native_env_shake
+#define set_camera_shake_from_point oracle_camera_native_point_shake
 #include "excerpts/camera.c"
+#undef set_camera_shake_from_point
 #undef set_environmental_camera_shake
 #undef set_camera_mode
 #undef set_camera_shake_from_hit
@@ -743,6 +745,7 @@ void oracle_camera_snapshot(OraclePut put) {
     put_s("camera.objCutsceneDone", gObjCutsceneDone);
     put_s("camera.cutsceneFocusIsNull", gCutsceneFocus == NULL);
     put_s("camera.secondCameraFocusIsNull", gSecondCameraFocus == NULL);
+    put_s("camera.secondCameraFocus", oracle_object_slot(gSecondCameraFocus));
     put_word("camera.unused8032CFC8", unused8032CFC8);
     put_word("camera.unused8032CFCC", unused8032CFCC);
     put_s("camera.unused8033B316", unused8033B316);

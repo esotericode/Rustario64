@@ -215,7 +215,7 @@ pub fn traversal(segments: &Segments, layout: u32) -> Result<ObjectModel> {
             .find(|(_, a)| *a == address)
             .map(|(name, _)| *name)
     };
-    let nodes = decoded
+    let nodes: Vec<RenderNode> = decoded
         .nodes
         .iter()
         .map(|node| {
@@ -230,9 +230,11 @@ pub fn traversal(segments: &Segments, layout: u32) -> Result<ObjectModel> {
                     },
                 },
                 GeoNodeKind::CullingRadius { radius } => RenderNodeKind::CullingRadius { radius },
-                GeoNodeKind::Generated { callback: f, .. } => match callback(f) {
+                GeoNodeKind::Generated { param, callback: f } => match callback(f) {
                     Some("geo_update_held_mario_pos") => RenderNodeKind::HeldMarioPos,
-                    Some("geo_update_layer_transparency") => RenderNodeKind::LayerTransparency,
+                    Some("geo_update_layer_transparency") if param == 0 => {
+                        RenderNodeKind::LayerTransparency
+                    }
                     _ => RenderNodeKind::Unaudited {
                         what: format!("geo callback 0x{f:08X}"),
                     },
@@ -260,7 +262,15 @@ pub fn traversal(segments: &Segments, layout: u32) -> Result<ObjectModel> {
             }
         })
         .collect();
-    Ok(ObjectModel { nodes, root })
+    let anchor_layout = nodes
+        .iter()
+        .any(|n| matches!(n.kind, RenderNodeKind::HeldMarioPos))
+        .then_some(decoded);
+    Ok(ObjectModel {
+        nodes,
+        root,
+        anchor_layout,
+    })
 }
 
 /// The model registrations a level script makes between its pool allocation
@@ -366,6 +376,7 @@ impl ObjectContent {
                         children: vec![],
                     }],
                     root: 0,
+                    anchor_layout: None,
                 })
             };
             models.insert(model, traversal);

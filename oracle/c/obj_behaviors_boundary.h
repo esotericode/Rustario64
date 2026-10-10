@@ -8,6 +8,8 @@
 #define ORACLE_OBJ_BEHAVIORS_BOUNDARY_H
 #include "sm64.h"
 #include "audio/external.h"
+#include "seq_ids.h"
+#include "game/behavior_actions.h"
 #include "behavior_data.h"
 #include "engine/behavior_script.h"
 #include "engine/graph_node.h"
@@ -28,6 +30,8 @@
 #include "game/level_update.h"
 #include "game/mario_actions_cutscene.h"
 #include "game/save_file.h"
+#include "game/debug.h"
+#include "game/rendering_graph_node.h"
 
 void *oracle_frame_alloc_display_list(u32 size);
 #define alloc_display_list oracle_frame_alloc_display_list

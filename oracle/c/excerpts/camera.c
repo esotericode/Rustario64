@@ -2015,6 +2015,120 @@ void set_handheld_shake(u8 mode) {
     }
 }
 
+/* src/game/camera.c: reduce_by_dist_from_camera */
+s16 reduce_by_dist_from_camera(s16 value, f32 maxDist, f32 posX, f32 posY, f32 posZ) {
+    Vec3f pos;
+    f32 dist;
+    s16 pitch;
+    s16 yaw;
+    s16 goalPitch;
+    s16 goalYaw;
+    s16 result = 0;
+    // Direction from pos to (Lakitu's) goalPos
+    f32 goalDX = gLakituState.goalPos[0] - posX;
+    f32 goalDY = gLakituState.goalPos[1] - posY;
+    f32 goalDZ = gLakituState.goalPos[2] - posZ;
+
+    dist = sqrtf(goalDX * goalDX + goalDY * goalDY + goalDZ * goalDZ);
+    if (maxDist > dist) {
+        pos[0] = posX;
+        pos[1] = posY;
+        pos[2] = posZ;
+        vec3f_get_dist_and_angle(gLakituState.goalPos, pos, &dist, &pitch, &yaw);
+        if (dist < maxDist) {
+            calculate_angles(gLakituState.goalPos, gLakituState.goalFocus, &goalPitch, &goalYaw);
+            //! Must be same line to match on -O2
+            pitch -= goalPitch; yaw -= goalYaw;
+            dist -= 2000.f;
+            if (dist < 0.f) {
+                dist = 0.f;
+            }
+            maxDist -= 2000.f;
+            if (maxDist < 2000.f) {
+                maxDist = 2000.f;
+            }
+            result = value * (1.f - dist / maxDist);
+            if (pitch < -0x1800 || pitch > 0x400 ||
+                yaw   < -0x1800 || yaw >   0x1800) {
+                result /= 2;
+            }
+        }
+    }
+    return result;
+}
+
+/* src/game/camera.c: set_pitch_shake_from_point */
+void set_pitch_shake_from_point(s16 mag, s16 decay, s16 inc, f32 maxDist, f32 posX, f32 posY, f32 posZ) {
+    Vec3f pos;
+    f32 dist;
+    s16 dummyPitch;
+    s16 dummyYaw;
+
+    pos[0] = posX;
+    pos[1] = posY;
+    pos[2] = posZ;
+    vec3f_get_dist_and_angle(gLakituState.goalPos, pos, &dist, &dummyPitch, &dummyYaw);
+    mag = reduce_by_dist_from_camera(mag, maxDist, posX, posY, posZ);
+    if (mag != 0) {
+        set_camera_pitch_shake(mag, decay, inc);
+    }
+}
+
+/* src/game/camera.c: set_fov_shake_from_point */
+void set_fov_shake_from_point(s16 amplitude, s16 decay, s16 shakeSpeed, f32 maxDist, f32 posX, f32 posY, f32 posZ) {
+    amplitude = reduce_by_dist_from_camera(amplitude, maxDist, posX, posY, posZ);
+
+    if (amplitude != 0) {
+        if (amplitude > sFOVState.shakeAmplitude) { // literally use the function above you silly nintendo, smh
+            sFOVState.shakeAmplitude = amplitude;
+            sFOVState.decay = decay;
+            sFOVState.shakeSpeed = shakeSpeed;
+        }
+    }
+}
+
+/* src/game/camera.c: set_fov_shake_from_point_preset */
+void set_fov_shake_from_point_preset(u8 preset, f32 posX, f32 posY, f32 posZ) {
+    switch (preset) {
+        case SHAKE_FOV_SMALL:
+            set_fov_shake_from_point(0x100, 0x30, 0x8000, 3000.f, posX, posY, posZ);
+            break;
+        case SHAKE_FOV_MEDIUM:
+            set_fov_shake_from_point(0x200, 0x30, 0x8000, 4000.f, posX, posY, posZ);
+            break;
+        case SHAKE_FOV_LARGE:
+            set_fov_shake_from_point(0x300, 0x30, 0x8000, 6000.f, posX, posY, posZ);
+            break;
+        case SHAKE_FOV_UNUSED:
+            set_fov_shake_from_point(0x800, 0x20, 0x4000, 3000.f, posX, posY, posZ);
+            break;
+    }
+}
+
+/* src/game/camera.c: set_camera_shake_from_point */
+void set_camera_shake_from_point(s16 shake, f32 posX, f32 posY, f32 posZ) {
+    switch (shake) {
+        case SHAKE_POS_BOWLING_BALL:
+            set_pitch_shake_from_point(0x28, 0x8, 0x4000, 2000.f, posX, posY, posZ);
+            break;
+
+        case SHAKE_POS_SMALL:
+            set_pitch_shake_from_point(0x80, 0x8, 0x4000, 4000.f, posX, posY, posZ);
+            set_fov_shake_from_point_preset(SHAKE_FOV_SMALL, posX, posY, posZ);
+            break;
+
+        case SHAKE_POS_MEDIUM:
+            set_pitch_shake_from_point(0xC0, 0x8, 0x4000, 6000.f, posX, posY, posZ);
+            set_fov_shake_from_point_preset(SHAKE_FOV_MEDIUM, posX, posY, posZ);
+            break;
+
+        case SHAKE_POS_LARGE:
+            set_pitch_shake_from_point(0x100, 0x8, 0x3000, 8000.f, posX, posY, posZ);
+            set_fov_shake_from_point_preset(SHAKE_FOV_LARGE, posX, posY, posZ);
+            break;
+    }
+}
+
 /* src/game/camera.c: play_sound_cbutton_up */
 void play_sound_cbutton_up(void) {
     play_sound(SOUND_MENU_CAMERA_ZOOM_IN, gGlobalSoundSource);

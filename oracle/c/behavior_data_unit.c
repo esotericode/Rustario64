@@ -17,6 +17,8 @@ static const OracleScript sScripts[] = {
     SCRIPT(bhvBobomb),             SCRIPT(bhvBobombFuseSmoke),    SCRIPT(bhvCarrySomething3),
     SCRIPT(bhvCarrySomething4),    SCRIPT(bhvCarrySomething5),    SCRIPT(bhvExplosion),
     SCRIPT(bhvBobombBullyDeathSmoke), SCRIPT(bhvRespawner),     SCRIPT(bhvBobombBuddy),
+    SCRIPT(bhvKingBobomb), SCRIPT(bhvBobombAnchorMario),
+    SCRIPT(bhvWhitePuffExplosion), SCRIPT(bhvBreakBoxTriangle),
 };
 
 s32 oracle_script_count(void) {

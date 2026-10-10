@@ -63,7 +63,7 @@ pub fn player_performed_grab_escape_action(w: &mut StepWorld<'_>) -> bool {
 
 /// common_anchor_mario_behavior (chuckya.inc.c), shared by King Bob-omb.
 /// State 1 places Mario's graphics at the animated anchor; 2 and 3 release
-/// him on his next action update. The boss and anchor remain unspawned.
+/// him on his next action update. The boss and anchor run in complete frames.
 pub fn common_anchor_mario_behavior(
     m: &mut MarioState,
     w: &mut StepWorld<'_>,

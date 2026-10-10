@@ -275,6 +275,24 @@ void set_environmental_camera_shake(s16 shake) {
     }
 }
 
+void set_camera_shake_from_point(s16 shake, f32 x, f32 y, f32 z) {
+    oracle_event(ORACLE_EVENT_POINT_CAMERA_SHAKE, shake, 0);
+    if (gOracleCameraLinked) {
+        oracle_camera_native_point_shake(shake, x, y, z);
+    }
+}
+
+void stop_background_music(u16 seqId) {
+    oracle_event(ORACLE_EVENT_STOP_BACKGROUND_MUSIC, seqId, 0);
+}
+
+s16 cutscene_object_without_dialog(u8 cutscene, struct Object *o) {
+    (void) cutscene;
+    (void) o;
+    fprintf(stderr, "oracle: object cutscene without dialog is not modelled\n");
+    abort();
+}
+
 /* Audio requests from the dialog box and the dialog cutscene. */
 void play_dialog_sound(u8 dialogID) {
     oracle_event(ORACLE_EVENT_DIALOG_SOUND, dialogID, 0);
@@ -374,7 +392,7 @@ void spawn_default_star(f32 homeX, f32 homeY, f32 homeZ) {
     (void) homeX;
     (void) homeY;
     (void) homeZ;
-    unreachable_without_objects("spawn_default_star");
+    oracle_event(ORACLE_EVENT_UNSUPPORTED, ORACLE_UNSUPPORTED_STAR_SPAWN, 0);
 }
 
 u16 level_control_timer(s32 timerOp) {
@@ -391,14 +409,20 @@ void *virtual_to_segmented(u32 segment, const void *addr) {
     return (void *) addr;
 }
 
-/* The display list's per-frame arena (alloc_display_list in game_init.c) as
- * obj_orient_graph uses it: Mat4-sized blocks, reset when each frame starts.
+/* The display list's per-frame arena (alloc_display_list in game_init.c):
+ * object matrices and the transparency callback's three-command lists.
+ * Both reset when each frame starts.
  * Exhausting the original's pool is not modelled. */
 #define ORACLE_FRAME_MATRICES 1024
 static Mat4 sFrameMatrices[ORACLE_FRAME_MATRICES];
 static s32 sFrameMatrixCount;
+static Gfx sFrameTransparency[ORACLE_FRAME_MATRICES][3];
+static s32 sFrameTransparencyCount;
 
 void *oracle_frame_alloc_display_list(u32 size) {
+    if (size == sizeof(Gfx) * 3 && sFrameTransparencyCount < ORACLE_FRAME_MATRICES) {
+        return sFrameTransparency[sFrameTransparencyCount++];
+    }
     if (size != sizeof(Mat4) || sFrameMatrixCount >= ORACLE_FRAME_MATRICES) {
         fprintf(stderr, "oracle: unexpected display-list allocation\n");
         abort();
@@ -408,6 +432,7 @@ void *oracle_frame_alloc_display_list(u32 size) {
 
 void oracle_frame_arena_reset(void) {
     sFrameMatrixCount = 0;
+    sFrameTransparencyCount = 0;
 }
 
 /* A matrix in the frame arena, or NULL. */
@@ -527,6 +552,13 @@ void try_print_debug_mario_level_info(void) {
 }
 
 void try_do_mario_debug_object_spawn(void) {
+}
+
+/* Original debug controls remain at their boot-time zero values. */
+s16 gDebugInfo[6][8];
+void print_debug_bottom_up(const char *str, s32 number) {
+    (void) str;
+    (void) number;
 }
 
 void print_debug_top_down_objectinfo(const char *str, s32 number) {

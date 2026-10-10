@@ -12,6 +12,7 @@
 /* actors/common0.h's table: NULL-terminated. The definition drops the
  * declaration's second const so the harness can fill it. */
 const struct Animation *bobomb_seg8_anims_0802396C[8];
+const struct Animation *king_bobomb_seg5_anims_0500FE30[32];
 
 typedef struct {
     u32 segmented;
@@ -23,33 +24,42 @@ typedef struct {
 } OracleAnimation;
 
 #define MAX_ANIMATIONS 32
-static struct Animation sAnimations[MAX_ANIMATIONS];
-static u32 sAnimationAddresses[MAX_ANIMATIONS];
-static s32 sAnimationCount;
-static u32 sBobombTable;
+typedef struct {
+    struct Animation animations[MAX_ANIMATIONS];
+    u32 addresses[MAX_ANIMATIONS];
+    s32 count;
+    u32 segmented;
+} HostAnimationTable;
+static HostAnimationTable sTables[2];
 
 static void fail(const char *what) {
     fprintf(stderr, "object animation oracle: %s\n", what);
     abort();
 }
 
-/* The Bob-omb's table at segmented address `table`, with its animations in
- * entry order. */
-void oracle_set_bobomb_animations(u32 table, const OracleAnimation *anims, s32 count) {
+/* Both imported tables are copied independently, including their arrays.
+ * Zero entries clears an unused table between scenarios. */
+void oracle_set_object_animations(s32 kind, u32 table, const OracleAnimation *anims, s32 count) {
     s32 i;
-    for (i = 0; i < sAnimationCount; i++) {
-        free((void *) sAnimations[i].index);
-        free((void *) sAnimations[i].values);
+    HostAnimationTable *t;
+    const struct Animation **pointers;
+    s32 capacity;
+    if (kind < 0 || kind >= 2) fail("table kind");
+    t = &sTables[kind];
+    pointers = kind == 0 ? bobomb_seg8_anims_0802396C : king_bobomb_seg5_anims_0500FE30;
+    capacity = kind == 0 ? 8 : 32;
+    if (count < 0 || count >= capacity) fail("table size");
+    for (i = 0; i < t->count; i++) {
+        free((void *) t->animations[i].index);
+        free((void *) t->animations[i].values);
     }
-    memset(sAnimations, 0, sizeof(sAnimations));
-    memset(bobomb_seg8_anims_0802396C, 0, sizeof(bobomb_seg8_anims_0802396C));
-    if (count < 0 || count >= MAX_ANIMATIONS || count >= 8) {
-        fail("table size");
-    }
+    memset(t, 0, sizeof(*t));
+    memset(pointers, 0, sizeof(*pointers) * capacity);
     for (i = 0; i < count; i++) {
-        struct Animation *a = &sAnimations[i];
+        struct Animation *a = &t->animations[i];
         u16 *index = malloc(sizeof(u16) * (size_t) anims[i].indexCount);
         s16 *values = malloc(sizeof(s16) * (size_t) anims[i].valueCount);
+        if (!index || !values) fail("allocation");
         memcpy(index, anims[i].index, sizeof(u16) * (size_t) anims[i].indexCount);
         memcpy(values, anims[i].values, sizeof(s16) * (size_t) anims[i].valueCount);
         a->flags = anims[i].flags;
@@ -60,29 +70,25 @@ void oracle_set_bobomb_animations(u32 table, const OracleAnimation *anims, s32 c
         a->unusedBoneCount = anims[i].boneCount;
         a->index = index;
         a->values = values;
-        a->length = 0;
-        sAnimationAddresses[i] = anims[i].segmented;
-        bobomb_seg8_anims_0802396C[i] = a;
+        t->addresses[i] = anims[i].segmented;
+        pointers[i] = a;
     }
-    sAnimationCount = count;
-    sBobombTable = table;
+    t->count = count;
+    t->segmented = table;
 }
 
-/* A loaded animation's segmented address; 0 if it is not one. */
 u32 oracle_object_animation_address(const void *p) {
-    s32 i;
-    for (i = 0; i < sAnimationCount; i++) {
-        if (p == &sAnimations[i]) {
-            return sAnimationAddresses[i];
+    s32 kind, i;
+    for (kind = 0; kind < 2; kind++) {
+        for (i = 0; i < sTables[kind].count; i++) {
+            if (p == &sTables[kind].animations[i]) return sTables[kind].addresses[i];
         }
     }
     return 0;
 }
 
-/* A table pointer's segmented address; 0 if it is not one. */
 u32 oracle_object_animation_table_address(const void *p) {
-    if (p == (const void *) bobomb_seg8_anims_0802396C && sBobombTable != 0) {
-        return sBobombTable;
-    }
+    if (p == (const void *) bobomb_seg8_anims_0802396C) return sTables[0].segmented;
+    if (p == (const void *) king_bobomb_seg5_anims_0500FE30) return sTables[1].segmented;
     return 0;
 }

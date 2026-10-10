@@ -18,7 +18,7 @@ use rustario64::simulation::{
 };
 
 /// The verbatim scripts c/behavior_data_unit.c compiles, in its order.
-pub const VERBATIM_SCRIPTS: [Behavior; 18] = [
+pub const VERBATIM_SCRIPTS: [Behavior; 22] = [
     Behavior::CoinFormationSpawn,
     Behavior::CoinFormation,
     Behavior::YellowCoin,
@@ -37,6 +37,10 @@ pub const VERBATIM_SCRIPTS: [Behavior; 18] = [
     Behavior::BobombBullyDeathSmoke,
     Behavior::Respawner,
     Behavior::BobombBuddy,
+    Behavior::KingBobomb,
+    Behavior::BobombAnchorMario,
+    Behavior::WhitePuffExplosion,
+    Behavior::BreakBoxTriangle,
 ];
 
 /// One animation of a host table (c/object_anims_unit.c's OracleAnimation).
@@ -82,10 +86,14 @@ pub struct NativeObjects {
     /// bobomb_seg8_anims_0802396C.
     pub bobomb_table: u32,
     pub bobomb_animations: Vec<NativeAnimation>,
+    pub king_bobomb_table: u32,
+    pub king_bobomb_animations: Vec<NativeAnimation>,
     /// MODEL_MARIO's graph for c/mario_render_unit.c (empty without one),
     /// and its root's index.
     pub mario_model: Vec<OracleGeoNode>,
     pub mario_root: i32,
+    pub king_model: Vec<OracleGeoNode>,
+    pub king_root: i32,
     /// seg2_dialog_table as the Rust importer decoded it.
     pub dialogs: Vec<rustario64::content::dialog::DialogEntry>,
 }
@@ -93,13 +101,6 @@ pub struct NativeObjects {
 /// MODEL_MARIO's nodes in registration order with their parents, as
 /// c/mario_render_unit.c builds them.
 pub fn mario_geo_nodes(model: &MarioModel) -> (Vec<OracleGeoNode>, i32) {
-    let layout = &model.layout;
-    let mut parent = vec![-1i32; layout.nodes.len()];
-    for (i, node) in layout.nodes.iter().enumerate() {
-        for &child in &node.children {
-            parent[child] = i as i32;
-        }
-    }
     let role = |i: usize| match model.role(i) {
         None => -1,
         Some(role) => match role {
@@ -118,6 +119,19 @@ pub fn mario_geo_nodes(model: &MarioModel) -> (Vec<OracleGeoNode>, i32) {
             MarioCallback::HandGrabPos => 12,
         },
     };
+    geo_nodes(&model.layout, role)
+}
+
+fn geo_nodes(
+    layout: &rustario64::import::geo::GeoLayout,
+    role: impl Fn(usize) -> i32,
+) -> (Vec<OracleGeoNode>, i32) {
+    let mut parent = vec![-1i32; layout.nodes.len()];
+    for (i, node) in layout.nodes.iter().enumerate() {
+        for &child in &node.children {
+            parent[child] = i as i32;
+        }
+    }
     let nodes = layout
         .nodes
         .iter()
@@ -255,6 +269,18 @@ impl NativeObjects {
         if let Some(model) = objects.models.mario_model() {
             (out.mario_model, out.mario_root) = mario_geo_nodes(model);
         }
+        if let Some(model) = objects
+            .models
+            .traversal(rustario64::simulation::mario::constants::MODEL_KING_BOBOMB as u16)
+            && let Some(layout) = &model.anchor_layout
+        {
+            (out.king_model, out.king_root) = geo_nodes(layout, |i| match model.nodes[i].kind {
+                RenderNodeKind::HeldMarioPos => 13,
+                RenderNodeKind::AnimStateSwitch { .. } => 14,
+                RenderNodeKind::Unaudited { .. } => panic!("unaudited boss model callback"),
+                _ => -1,
+            });
+        }
         for model in objects.models.ids() {
             let mut native = NativeModel {
                 model: i32::from(model),
@@ -266,9 +292,8 @@ impl NativeObjects {
                     let (kind, param) = match node.kind {
                         // Audited callbacks with no simulated effect on
                         // the objects compared so far.
-                        RenderNodeKind::Plain
-                        | RenderNodeKind::HeldMarioPos
-                        | RenderNodeKind::LayerTransparency => (0, 0),
+                        RenderNodeKind::Plain | RenderNodeKind::HeldMarioPos => (0, 0),
+                        RenderNodeKind::LayerTransparency => (4, 0),
                         RenderNodeKind::AnimStateSwitch { num_cases } => (1, i32::from(num_cases)),
                         RenderNodeKind::CullingRadius { radius } => (2, i32::from(radius)),
                         RenderNodeKind::Unaudited { .. } => (3, 0),
@@ -284,27 +309,39 @@ impl NativeObjects {
             }
             out.models.push(native);
         }
-        let bobomb = scripts.address(Behavior::Bobomb);
-        if let Ok(tables) = scripts.animation_tables(bobomb) {
-            let table = *tables
-                .iter()
-                .next()
-                .expect("bhvBobomb loads one animation table");
-            out.bobomb_table = table;
-            if let Some(entries) = objects.animations.tables.get(&table) {
-                for address in entries {
-                    let a = &objects.animations.animations[address];
-                    out.bobomb_animations.push(NativeAnimation {
-                        segmented: *address,
-                        flags: a.flags,
-                        y_trans_divisor: a.y_trans_divisor,
-                        start_frame: a.start_frame,
-                        loop_start: a.loop_start,
-                        loop_end: a.loop_end,
-                        bone_count: a.bone_count,
-                        index: a.index.clone(),
-                        values: a.values.clone(),
-                    });
+        for (behavior, table_out, animations_out) in [
+            (
+                Behavior::Bobomb,
+                &mut out.bobomb_table,
+                &mut out.bobomb_animations,
+            ),
+            (
+                Behavior::KingBobomb,
+                &mut out.king_bobomb_table,
+                &mut out.king_bobomb_animations,
+            ),
+        ] {
+            if let Ok(tables) = scripts.animation_tables(scripts.address(behavior)) {
+                let table = *tables
+                    .iter()
+                    .next()
+                    .expect("animated behavior loads one animation table");
+                *table_out = table;
+                if let Some(entries) = objects.animations.tables.get(&table) {
+                    for address in entries {
+                        let a = &objects.animations.animations[address];
+                        animations_out.push(NativeAnimation {
+                            segmented: *address,
+                            flags: a.flags,
+                            y_trans_divisor: a.y_trans_divisor,
+                            start_frame: a.start_frame,
+                            loop_start: a.loop_start,
+                            loop_end: a.loop_end,
+                            bone_count: a.bone_count,
+                            index: a.index.clone(),
+                            values: a.values.clone(),
+                        });
+                    }
                 }
             }
         }
@@ -476,6 +513,11 @@ pub fn capture_objects(o: &mut Words, m: &MarioState, w: &StepWorld<'_>) {
     o.i("world.marioObject", object_id(mario));
     o.i("world.currentObject", object_id(w.objects.current));
     o.put("world.timeStopState", w.time_stop_state);
+    o.put("world.objectCounter", w.object_counter);
+    o.i(
+        "world.prevFrameObjectCount",
+        i32::from(w.prev_frame_object_count),
+    );
     let d = &w.dialog;
     o.i("dialog.menuState", i32::from(d.menu_state));
     o.f("dialog.angle", d.angle);

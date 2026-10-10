@@ -32,10 +32,10 @@ pub enum RenderNodeKind {
     /// GEO_CULLING_RADIUS (read by obj_is_in_view when it is the root).
     CullingRadius { radius: i16 },
     /// GEO_ASM(geo_update_held_mario_pos) (King Bob-omb): it moves the
-    /// object's prevObj, which nothing sets for him, so it does nothing.
+    /// object's prevObj using its animated matrix (the Mario anchor).
     HeldMarioPos,
     /// GEO_ASM(geo_update_layer_transparency) (mist): it sets the node's
-    /// layer and display-list alpha from oOpacity, drawing only.
+    /// layer and display-list alpha from oOpacity, and writes oAnimState.
     LayerTransparency,
     /// A node whose callback or traversal the port has not audited.
     Unaudited { what: String },
@@ -53,6 +53,8 @@ pub struct RenderNode {
 pub struct ObjectModel {
     pub nodes: Vec<RenderNode>,
     pub root: usize,
+    /// Full matrix/animation traversal when a callback moves another object.
+    pub anchor_layout: Option<crate::import::geo::GeoLayout>,
 }
 
 /// gLoadedGraphNodes as the simulation needs it: which model IDs are
@@ -150,9 +152,15 @@ pub fn obj_is_in_view(
 pub(crate) fn process_model(o: &mut Object, model: &ObjectModel, node: usize) {
     let n = &model.nodes[node];
     match &n.kind {
-        RenderNodeKind::Plain
-        | RenderNodeKind::CullingRadius { .. }
-        | RenderNodeKind::LayerTransparency => {
+        RenderNodeKind::Plain | RenderNodeKind::CullingRadius { .. } => {
+            for &child in &n.children {
+                process_model(o, model, child);
+            }
+        }
+        RenderNodeKind::LayerTransparency => {
+            // geo_update_layer_transparency for the supported mist model.
+            o.raw
+                .set_s32(O_ANIM_STATE, i32::from(o.raw.s32(O_OPACITY) != 255));
             for &child in &n.children {
                 process_model(o, model, child);
             }
@@ -211,7 +219,12 @@ pub fn placement(trig: &TrigTables, o: &Object, camera: &Mat4) -> Mat4 {
 /// geo_process_object's state changes for one object other than Mario
 /// under the camera transform `camera`. Returns the terrain matrix the pass
 /// placed the object with (it clears it), for presentation.
-pub fn render_object(o: &mut Object, w: &StepWorld<'_>, camera: &Mat4, fov: f32) -> Option<Mat4> {
+pub fn render_object(
+    o: &mut Object,
+    w: &mut StepWorld<'_>,
+    camera: &Mat4,
+    fov: f32,
+) -> Option<Mat4> {
     if o.gfx.node_flags & GRAPH_RENDER_ACTIVE == 0 {
         o.gfx.throw_matrix = None;
         return None;
@@ -235,7 +248,11 @@ pub fn render_object(o: &mut Object, w: &StepWorld<'_>, camera: &Mat4, fov: f32)
             .models
             .traversal(model)
             .unwrap_or_else(|| panic!("model {model}'s render traversal was not imported"));
-        process_model(o, traversal, traversal.root);
+        if traversal.anchor_layout.is_some() {
+            super::render_anchor::process(o, w, camera, &matrix, traversal, true);
+        } else {
+            process_model(o, traversal, traversal.root);
+        }
     }
     o.gfx.throw_matrix = None;
     used
@@ -282,6 +299,8 @@ pub struct VisibleObject {
     pub pos: [f32; 3],
     pub angle: [i16; 3],
     pub scale: [f32; 3],
+    /// Completed oOpacity, used by the mist transparency callback.
+    pub opacity: u8,
     /// GRAPH_RENDER_BILLBOARD: drawn facing the camera (mtxf_billboard).
     pub billboard: bool,
     /// The terrain matrix the pass placed the object with, if any.
@@ -375,6 +394,7 @@ pub fn visible_objects(
                 pos: o.gfx.pos,
                 angle: o.gfx.angle,
                 scale: o.gfx.scale,
+                opacity: o.raw.s32(O_OPACITY) as u8,
                 billboard,
                 throw_matrix,
                 animation: match o.gfx.anim.cur_anim {
@@ -415,7 +435,11 @@ pub fn authored_models() -> ObjectModels {
                 children: vec![],
             });
         }
-        ObjectModel { nodes, root: 0 }
+        ObjectModel {
+            nodes,
+            root: 0,
+            anchor_layout: None,
+        }
     };
     let mut models = ObjectModels::default();
     models.insert(
@@ -426,6 +450,7 @@ pub fn authored_models() -> ObjectModels {
                 children: vec![],
             }],
             root: 0,
+            anchor_layout: None,
         }),
     );
     models.set_mario_model(crate::simulation::mario::render::authored_mario_model());

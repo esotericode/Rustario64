@@ -13,6 +13,7 @@ fn main() {
         "c/interaction_unit.c",
         "c/behavior_data_unit.c",
         "c/object_render_unit.c",
+        "c/object_transparency_unit.c",
         "c/object_step_unit.c",
         "c/standard_motion_unit.c",
         "c/grab_unit.c",

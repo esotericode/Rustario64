@@ -168,6 +168,10 @@ impl<'a> Game<'a> {
         // area_update_objects.
         w.area_update_counter = w.area_update_counter.wrapping_add(1);
         let reported = m.camera_status;
+        // Mario updates before the boss's actor list. His mode requests must
+        // read the boss position from that point, even though the camera
+        // requests are dispatched after the remaining objects update.
+        let request_second_focus = second_focus_view(camera, m, w);
         update_objects(m, w);
         camera.take_object_cutscene_state(&w.cutscene);
         camera.rig.movement = w.camera_movement_flags as u16;
@@ -203,7 +207,7 @@ impl<'a> Game<'a> {
             };
             let mario = view(m, w);
             let focus = focus_view(camera, m, w);
-            let second_focus = second_focus_view(camera, m, w);
+            let second_focus = request_second_focus;
             let mut frame = Frame {
                 world: w.collision,
                 trig: w.trig,

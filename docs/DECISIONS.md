@@ -1110,3 +1110,45 @@ reports scripts that reach them as `Unported::AwaitingComparison`, so their
 placements are recorded as unported exactly like untranslated ones. King
 Bob-omb is the first: his behavior and helpers are in place, and the gate is
 lifted in the session that adds his comparisons.
+
+## Boss animation callback and comparison gate — 2026-10-10 (session 32)
+
+The earlier no-op audit missed bhv_cmd_spawn_obj: SPAWN_OBJ sets the parent's
+prevObj to the spawned anchor. King Bob-omb's geo_update_held_mario_pos therefore
+writes that anchor through the animated matrix stack, and its next behavior
+frame positions Mario while grabbed. Import keeps his full geo layout in
+ObjectModel.anchor_layout; other objects keep their existing audited traversal.
+The boss pass shares Mario's animation-global setup and animated-part arithmetic,
+then ports create_transformation_from_matrices and
+obj_update_pos_from_parent_transformation in original operation order. His
+billboards have display-list-only children and no simulated descendants; a
+changed topology fails explicitly. A held boss traverses the same tree, but
+this callback reads gCurGraphNodeObject (Mario) and his unset prevObj, so it
+must not move the boss's anchor while held. The native oracle builds the full
+boss graph with the original constructors and runs the original processors.
+
+The boss gate is lifted after authored and ROM complete-frame comparisons,
+including all nine actions, his dialogs, the animated anchor, grabs/escapes,
+heavy pickup/throw, damage, return jump, defeat particles and camera side
+effects. Numeric state seeding is limited to a single initialization after the
+first frame, explicitly labeled in tests/docs; no state is copied per frame.
+Star spawning remains an unsupported event and runtime stop. These tests do
+not claim a controller-only three-hit fight or completed act 1.
+
+The mist callback also writes oAnimState (0 for opacity 255, otherwise 1).
+The native harness executes the verbatim function, discarding only its drawing
+commands; the port mirrors the state write. Presentation accepts the audited
+parameter-0 callback and caches static builds by completed 8-bit opacity,
+setting environment alpha before the mist display list. Other parameters remain
+unsupported. This bounds the additional mist cache to 256 configurations.
+
+Mario updates before the boss actor list. Deferred Mario camera requests retain
+the second-focus position/held state seen before the objects update; the normal
+camera update reads the current boss state afterward. An existing BOB randomized
+replay exposed the old timing error when leaving C-Up into boss-fight mode.
+The held-boss focus also includes the original yaw-velocity sine offset.
+
+Headless GPU tests serialize adapter lifetimes with a test-only mutex. A concurrent
+run of eight GPU tests ended in SIGSEGV on Intel Vulkan locally; the same debug
+checks pass serially. The underlying driver cause has not been isolated. This keeps the default test command bounded
+without changing runtime rendering or skipping GPU assertions.

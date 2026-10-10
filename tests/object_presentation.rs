@@ -94,6 +94,7 @@ fn object(case: usize, generation: u64, pos: [f32; 3]) -> VisibleObject {
         pos,
         angle: [0; 3],
         scale: [1.0; 3],
+        opacity: 255,
         billboard: true,
         throw_matrix: None,
         animation: None,

@@ -485,3 +485,55 @@ const BehaviorScript bhvBobombBuddy[] = {
         CALL_NATIVE(bhv_bobomb_buddy_loop),
     END_LOOP(),
 };
+
+/* data/behavior_data.c: const BehaviorScript bhvKingBobomb[] */
+const BehaviorScript bhvKingBobomb[] = {
+    BEGIN(OBJ_LIST_GENACTOR),
+    OR_INT(oFlags, (OBJ_FLAG_COMPUTE_ANGLE_TO_MARIO | OBJ_FLAG_ACTIVE_FROM_AFAR | OBJ_FLAG_COMPUTE_DIST_TO_MARIO | OBJ_FLAG_SET_FACE_YAW_TO_MOVE_YAW | OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE)),
+    LOAD_ANIMATIONS(oAnimations, king_bobomb_seg5_anims_0500FE30),
+    SET_INT(oInteractType, INTERACT_GRABBABLE),
+    SET_HITBOX(/*Radius*/ 100, /*Height*/ 100),
+    SET_OBJ_PHYSICS(/*Wall hitbox radius*/ 30, /*Gravity*/ -400, /*Bounciness*/ -50, /*Drag strength*/ 1000, /*Friction*/ 1000, /*Buoyancy*/ 200, /*Unused*/ 0, 0),
+    SET_INT(oIntangibleTimer, 0),
+    DROP_TO_FLOOR(),
+    SET_HOME(),
+    SPAWN_OBJ(/*Model*/ MODEL_NONE, /*Behavior*/ bhvBobombAnchorMario),
+    SET_INT(oHealth, 3),
+    SET_INT(oDamageOrCoinValue, 1),
+    BEGIN_LOOP(),
+        CALL_NATIVE(bhv_king_bobomb_loop),
+    END_LOOP(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvBobombAnchorMario[] */
+const BehaviorScript bhvBobombAnchorMario[] = {
+    BEGIN(OBJ_LIST_GENACTOR),
+    OR_INT(oFlags, (OBJ_FLAG_SET_FACE_YAW_TO_MOVE_YAW | OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE)),
+    BILLBOARD(),
+    SET_FLOAT(oParentRelativePosX, 100),
+    SET_FLOAT(oParentRelativePosZ, 150),
+    BEGIN_LOOP(),
+        CALL_NATIVE(bhv_bobomb_anchor_mario_loop),
+    END_LOOP(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvWhitePuffExplosion[] */
+const BehaviorScript bhvWhitePuffExplosion[] = {
+    BEGIN(OBJ_LIST_UNIMPORTANT),
+    OR_INT(oFlags, OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE),
+    BILLBOARD(),
+    BEGIN_LOOP(),
+        CALL_NATIVE(bhv_white_puff_exploding_loop),
+    END_LOOP(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvBreakBoxTriangle[] */
+const BehaviorScript bhvBreakBoxTriangle[] = {
+    BEGIN(OBJ_LIST_UNIMPORTANT),
+    OR_INT(oFlags, OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE),
+    BEGIN_REPEAT(18),
+        CALL_NATIVE(cur_obj_rotate_face_angle_using_vel),
+        CALL_NATIVE(cur_obj_move_using_fvel_and_gravity),
+    END_REPEAT(),
+    DEACTIVATE(),
+};

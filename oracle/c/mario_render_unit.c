@@ -25,6 +25,7 @@
 #include "excerpts/rendering_traversal.c"
 #include "excerpts/shadow_geo.c"
 
+Gfx *geo_update_held_mario_pos(s32 run, struct GraphNode *node, Mat4 mtx);
 Gfx *geo_move_mario_part_from_parent(s32 run, struct GraphNode *node, Mat4 mtx);
 Gfx *geo_switch_anim_state(s32 callContext, struct GraphNode *node, void *context);
 void oracle_camera_graph_nodes(struct GraphNodeCamera **camera, struct GraphNodePerspective **perspective);
@@ -115,6 +116,8 @@ static GraphNodeFunc callback_function(s32 role) {
         case 10: return (GraphNodeFunc) geo_mario_hand_foot_scaler;
         case 11: return (GraphNodeFunc) geo_move_mario_part_from_parent;
         case 12: return (GraphNodeFunc) geo_switch_mario_hand_grab_pos;
+        case 13: return (GraphNodeFunc) geo_update_held_mario_pos;
+        case 14: return (GraphNodeFunc) geo_switch_anim_state;
     }
     fail("unknown Mario callback role");
     return NULL;
@@ -234,6 +237,42 @@ void oracle_render_load_mario(void) {
     gLoadedGraphNodes[MODEL_MARIO] = built[sMarioRootIndex];
 }
 
+
+/* The boss's graph uses the same verbatim constructors and traversal, with
+ * its own animation globals and original anchor callback. */
+static OracleGeoNode *sKingNodes;
+static s32 sKingCount, sKingRoot;
+static void *sKingGraph[2048];
+static s32 sKingGraphCount;
+void oracle_render_set_king_model(const OracleGeoNode *nodes, s32 count, s32 root) {
+    free(sKingNodes);
+    sKingNodes = NULL;
+    sKingCount = count;
+    sKingRoot = root;
+    if (count == 0) return;
+    if (count < 0 || count > 2048 || root < 0 || root >= count) fail("boss graph size");
+    sKingNodes = malloc(sizeof(*nodes) * count);
+    if (!sKingNodes) fail("boss graph allocation");
+    memcpy(sKingNodes, nodes, sizeof(*nodes) * count);
+}
+void oracle_render_load_king(void) {
+    s32 i;
+    for (i = 0; i < sKingGraphCount; i++) free(sKingGraph[i]);
+    sKingGraphCount = 0;
+    for (i = 0; i < sKingCount; i++) {
+        const OracleGeoNode *in = &sKingNodes[i];
+        struct GraphNode *node = build_node(in);
+        sKingGraph[sKingGraphCount++] = node;
+        if (node->flags != (s16) in->flags) fail("boss node flags");
+        if (in->parent >= 0) {
+            if (in->parent >= i) fail("boss parent order");
+            geo_add_child(sKingGraph[in->parent], node);
+        }
+    }
+    if (sKingCount) gLoadedGraphNodes[MODEL_KING_BOBOMB] = sKingGraph[sKingRoot];
+}
+s32 oracle_render_has_king(void) { return sKingCount > 0; }
+
 /* geo_mario_hand_foot_scaler keeps a function-local counter from boot. The
  * oracle runs many entries in one process, so each entry sets it to the
  * value a fresh boot gives at area update 0 (0) through the verbatim
@@ -257,11 +296,10 @@ void oracle_render_prime_scaler(void) {
 /* geo_process_node_and_siblings over gObjParentGraphNode's first child,
  * Mario's object node, under the camera node: geo_process_root's identity,
  * then geo_process_camera's transform. */
-void oracle_render_mario(s8 rootAreaIndex) {
+static void render_original_object(struct Object *node, s8 rootAreaIndex) {
     struct GraphNodeRoot root;
     struct GraphNodeCamera *camera;
     struct GraphNodePerspective *perspective;
-    struct Object *node = gMarioObject;
     Mat4 cameraTransform;
     Mtx *mtx;
     memset(&root, 0, sizeof(root));
@@ -291,3 +329,6 @@ void oracle_render_mario(s8 rootAreaIndex) {
     gMatStackIndex = 0;
     gCurGraphNodeRoot = NULL;
 }
+
+void oracle_render_mario(s8 rootAreaIndex) { render_original_object(gMarioObject, rootAreaIndex); }
+void oracle_render_king_object(struct Object *obj, s8 rootAreaIndex) { render_original_object(obj, rootAreaIndex); }

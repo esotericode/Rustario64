@@ -218,6 +218,7 @@ void oracle_render_begin(void);
 /* Mario's object node through the verbatim traversal (mario_render_unit.c). */
 s32 oracle_render_has_mario(void);
 void oracle_render_load_mario(void);
+void oracle_render_load_king(void);
 void oracle_render_prime_scaler(void);
 void oracle_render_mario(s8 rootAreaIndex);
 
@@ -322,6 +323,8 @@ void oracle_tick_begin(const OracleTickSetup *s) {
     gDebugLevelSelect = FALSE;
     gShowDebugText = FALSE;
     gTimeStopState = 0;
+    gObjectCounter = 0;
+    gPrevFrameObjectCount = 0;
     gMarioPlatform = NULL;
     gMarioObject = NULL;
     gCurrentObject = NULL;
@@ -364,6 +367,7 @@ void oracle_tick_begin(const OracleTickSetup *s) {
     clear_objects();
     oracle_render_load_models();
     oracle_render_load_mario();
+    oracle_render_load_king();
     oracle_render_prime_scaler();
 
     /* level_cmd_init_mario and level_cmd_set_mario_start_pos */
@@ -742,7 +746,15 @@ static void put_object(const char *prefix, struct Object *o) {
         char field[32];
         u32 word = o->rawData.asU32[i];
         const void *pointer = o->ptrData.asVoidPtr[i];
-        if (pointer != NULL) {
+        if (i == 0x4E) {
+            /* Standard movement's floor pointer, canonical surface index+1. */
+            word = oracle_surface_index(o->oFloor) + 1;
+        } else if (i == 0x02 && o->behavior == bhvKingBobomb) {
+            word = ((u32) (u16) o->oDialogResponse << 16) | (u16) o->oDialogState;
+        } else if (i == 0x4C) {
+            /* The N64 halfword order, independent of host endianness. */
+            word = ((u32) (u16) o->oFloorType << 16) | (u16) o->oFloorRoom;
+        } else if (pointer != NULL) {
             if (word != 0) {
                 fail("an object field used as both a pointer and a number");
             }
@@ -819,6 +831,8 @@ static void snapshot_objects(void) {
     put_i("world.marioObject", object_id(gMarioObject));
     put_i("world.currentObject", object_id(gCurrentObject));
     put("world.timeStopState", gTimeStopState);
+    put("world.objectCounter", gObjectCounter);
+    put_i("world.prevFrameObjectCount", gPrevFrameObjectCount);
     oracle_dialog_snapshot(put);
     put_i("world.rngSeed", oracle_rng_seed());
     for (i = 0; i < sMacroCount; i++) {
@@ -933,4 +947,26 @@ s32 oracle_tick_snapshot(const char *const **names, const u32 **words) {
     *names = sNamePtrs;
     *words = sWords;
     return sCount;
+}
+
+/* Development fixture input: initialize numeric boss fields once after its
+ * script's first frame. The two engines subsequently evolve independently.
+ * Pointer and packed-halfword fields are deliberately excluded. */
+void oracle_tick_seed_boss_field(s32 slot, s32 field, u32 word) {
+    if (slot < 0 || slot >= OBJECT_POOL_CAPACITY || gObjectPool[slot].behavior != bhvKingBobomb) {
+        fail("boss fixture slot");
+    }
+    switch (field) {
+        case 0x01: case 0x05: /* flags and intangible timer */
+        case 0x06: case 0x07: case 0x08: /* position */
+        case 0x09: case 0x0A: case 0x0B: /* velocity */
+        case 0x0C: /* forward velocity */
+        case 0x19: /* move flags */
+        case 0x31: case 0x32: case 0x33: /* action, sub-action, timer */
+        case 0x3F: /* health */
+        case 0x41: /* previous action */
+            gObjectPool[slot].rawData.asU32[field] = word;
+            return;
+        default: fail("non-numeric boss fixture field");
+    }
 }

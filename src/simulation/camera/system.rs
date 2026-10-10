@@ -1810,7 +1810,7 @@ impl CameraSystem {
         }
     }
 
-    /// update_boss_fight_camera without a boss: it circles the area center.
+    /// update_boss_fight_camera: the boss focus, or the area's center.
     fn update_boss_fight_camera(
         &mut self,
         f: &mut Frame<'_, '_>,
@@ -1888,6 +1888,10 @@ impl CameraSystem {
             }
         }
         focus[1] = (m[1] + second_focus[1]) / 2.0 + 100.0;
+        if held_state == 1 {
+            let yaw_velocity = i32::from(f.mario.angle_vel_yaw);
+            focus[1] += 300.0 * trig.sins(yaw_velocity.abs());
+        }
         if focus_distance < 400.0 {
             focus_distance = 400.0;
         }

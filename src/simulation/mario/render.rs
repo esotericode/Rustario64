@@ -141,7 +141,7 @@ const ANIM_TYPE_ROTATION: u8 = 5;
 
 /// The gCurrAnim* globals geo_set_animation_globals sets.
 #[derive(Clone, Copy)]
-struct AnimGlobals<'a> {
+pub(crate) struct AnimGlobals<'a> {
     kind: u8,
     frame: i16,
     multiplier: f32,
@@ -151,6 +151,47 @@ struct AnimGlobals<'a> {
 }
 
 impl AnimGlobals<'_> {
+    /// geo_process_animated_part.
+    pub(crate) fn animated_part(
+        &mut self,
+        trig: &TrigTables,
+        translation: [i16; 3],
+        top: &Mat4,
+    ) -> Mat4 {
+        let a = self;
+        let mut t = translation.map(f32::from);
+        let mut r = [0i16; 3];
+        match a.kind {
+            ANIM_TYPE_TRANSLATION => {
+                t[0] += f32::from(a.next()) * a.multiplier;
+                t[1] += f32::from(a.next()) * a.multiplier;
+                t[2] += f32::from(a.next()) * a.multiplier;
+                a.kind = ANIM_TYPE_ROTATION;
+            }
+            ANIM_TYPE_LATERAL_TRANSLATION => {
+                t[0] += f32::from(a.next()) * a.multiplier;
+                a.attribute += 1;
+                t[2] += f32::from(a.next()) * a.multiplier;
+                a.kind = ANIM_TYPE_ROTATION;
+            }
+            ANIM_TYPE_VERTICAL_TRANSLATION => {
+                a.attribute += 1;
+                t[1] += f32::from(a.next()) * a.multiplier;
+                a.attribute += 1;
+                a.kind = ANIM_TYPE_ROTATION;
+            }
+            ANIM_TYPE_NO_TRANSLATION => {
+                a.attribute += 3;
+                a.kind = ANIM_TYPE_ROTATION;
+            }
+            _ => {}
+        }
+        if a.kind == ANIM_TYPE_ROTATION {
+            r = [a.next(), a.next(), a.next()];
+        }
+        mtxf_mul(&mtxf_rotate_xyz_and_translate(trig, t, r), top)
+    }
+
     /// gCurrAnimData[retrieve_animation_index(gCurrAnimFrame, &gCurrAnimAttribute)].
     fn next(&mut self) -> i16 {
         let data = self
@@ -183,7 +224,7 @@ fn resolve<'a>(
 
 /// geo_set_animation_globals: advance `o`'s frame (once per area update)
 /// and set the globals the animated parts read.
-fn geo_set_animation_globals<'a>(
+pub(crate) fn geo_set_animation_globals<'a>(
     o: &mut Object,
     w: &StepWorld<'_>,
     anims: &'a MarioAnimations,
@@ -347,40 +388,8 @@ impl Pass<'_, '_> {
         }
     }
 
-    /// geo_process_animated_part.
     fn animated_part(&mut self, translation: [i16; 3], top: &Mat4) -> Mat4 {
-        let a = &mut self.anim;
-        let mut t = translation.map(f32::from);
-        let mut r = [0i16; 3];
-        match a.kind {
-            ANIM_TYPE_TRANSLATION => {
-                t[0] += f32::from(a.next()) * a.multiplier;
-                t[1] += f32::from(a.next()) * a.multiplier;
-                t[2] += f32::from(a.next()) * a.multiplier;
-                a.kind = ANIM_TYPE_ROTATION;
-            }
-            ANIM_TYPE_LATERAL_TRANSLATION => {
-                t[0] += f32::from(a.next()) * a.multiplier;
-                a.attribute += 1;
-                t[2] += f32::from(a.next()) * a.multiplier;
-                a.kind = ANIM_TYPE_ROTATION;
-            }
-            ANIM_TYPE_VERTICAL_TRANSLATION => {
-                a.attribute += 1;
-                t[1] += f32::from(a.next()) * a.multiplier;
-                a.attribute += 1;
-                a.kind = ANIM_TYPE_ROTATION;
-            }
-            ANIM_TYPE_NO_TRANSLATION => {
-                a.attribute += 3;
-                a.kind = ANIM_TYPE_ROTATION;
-            }
-            _ => {}
-        }
-        if a.kind == ANIM_TYPE_ROTATION {
-            r = [a.next(), a.next(), a.next()];
-        }
-        mtxf_mul(&mtxf_rotate_xyz_and_translate(self.trig, t, r), top)
+        self.anim.animated_part(self.trig, translation, top)
     }
 
     /// A switch node's callback: the case it selects.
@@ -631,7 +640,24 @@ impl Pass<'_, '_> {
             .models
             .traversal(model)
             .unwrap_or_else(|| panic!("model {model}'s render traversal was not imported"));
-        process_model(&mut o, traversal, traversal.root);
+        if traversal.anchor_layout.is_some() {
+            // The original callback reads gCurGraphNodeObject (Mario) during
+            // a held-object subtree; his prevObj is unset in supported play.
+            assert!(
+                m.obj.prev_obj.is_none(),
+                "held callback through Mario prevObj"
+            );
+            crate::simulation::object::render_anchor::process(
+                &mut o,
+                w,
+                &self.view.camera,
+                &matrix,
+                traversal,
+                false,
+            );
+        } else {
+            process_model(&mut o, traversal, traversal.root);
+        }
         *w.objects.slot_mut(held) = o;
         self.anim = saved;
         self.held = Some(held);
@@ -741,6 +767,7 @@ pub fn held_visible_object(
         pos: o.gfx.pos,
         angle: o.gfx.angle,
         scale: o.gfx.scale,
+        opacity: o.raw.s32(O_OPACITY) as u8,
         billboard: false,
         throw_matrix: Some(matrix),
         animation: match o.gfx.anim.cur_anim {

@@ -3,6 +3,10 @@
 use rustario64::content::visual::*;
 use rustario64_render::{RenderOptions, Renderer, camera::FlyCamera};
 
+// Native drivers create worker pools per device. Keep adapter lifetimes
+// sequential so the test runner does not exhaust driver resources.
+static GPU_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 const SHADE: CombinerCycle = CombinerCycle {
     rgb: [15, 15, 31, 4],
     alpha: [7, 7, 7, 4],
@@ -86,6 +90,7 @@ fn options() -> RenderOptions {
 
 #[test]
 fn original_shadow_blends_on_coplanar_floor_and_hides_when_absent() {
+    let _gpu = GPU_TESTS.lock().unwrap_or_else(|e| e.into_inner());
     use rustario64::{
         import::shadow::ShadowSource,
         presentation::shadow::{Shadow, ShadowDrawer, ShadowVertex},
@@ -175,6 +180,7 @@ fn original_shadow_blends_on_coplanar_floor_and_hides_when_absent() {
 
 #[test]
 fn shade_combiner_draws_vertex_colors_and_culls_back_faces() {
+    let _gpu = GPU_TESTS.lock().unwrap_or_else(|e| e.into_inner());
     let Some(mut renderer) = renderer(options()) else {
         return;
     };
@@ -205,6 +211,7 @@ fn shade_combiner_draws_vertex_colors_and_culls_back_faces() {
 
 #[test]
 fn dynamic_object_batches_grow_shrink_empty_and_reappear_without_stale_geometry() {
+    let _gpu = GPU_TESTS.lock().unwrap_or_else(|e| e.into_inner());
     let Some(mut renderer) = renderer(options()) else {
         return;
     };
@@ -254,6 +261,7 @@ fn dynamic_object_batches_grow_shrink_empty_and_reappear_without_stale_geometry(
 #[test]
 #[ignore = "requires RUSTARIO64_ROM and a GPU adapter; draws every ROM coin/sparkle case"]
 fn rom_coins_and_sparkles_draw_as_camera_facing_textured_cutouts() {
+    let _gpu = GPU_TESTS.lock().unwrap_or_else(|e| e.into_inner());
     use rustario64::{
         import::{engine, objects, rom::Rom},
         presentation::objects::ObjectDrawer,
@@ -298,6 +306,7 @@ fn rom_coins_and_sparkles_draw_as_camera_facing_textured_cutouts() {
                     pos: [0.0, -32.0, 0.0],
                     angle: [0; 3],
                     scale: [1.0; 3],
+                    opacity: 255,
                     billboard: true,
                     throw_matrix: None,
                     animation: None,
@@ -337,6 +346,7 @@ fn rom_coins_and_sparkles_draw_as_camera_facing_textured_cutouts() {
 
 #[test]
 fn modulate_combiner_multiplies_texture_by_shade_and_cutout_discards() {
+    let _gpu = GPU_TESTS.lock().unwrap_or_else(|e| e.into_inner());
     let Some(mut renderer) = renderer(options()) else {
         return;
     };
@@ -383,6 +393,7 @@ fn modulate_combiner_multiplies_texture_by_shade_and_cutout_discards() {
 
 #[test]
 fn model_transform_translates_and_turns_a_model() {
+    let _gpu = GPU_TESTS.lock().unwrap_or_else(|e| e.into_inner());
     let Some(mut renderer) = renderer(options()) else {
         return;
     };
@@ -418,6 +429,7 @@ fn model_transform_translates_and_turns_a_model() {
 /// original's alpha, with white text on the open page. Authored text.
 #[test]
 fn dialog_overlay_draws_on_the_first_offscreen_capture() {
+    let _gpu = GPU_TESTS.lock().unwrap_or_else(|e| e.into_inner());
     use rustario64::{
         content::dialog::{DialogEntry, DialogTable},
         simulation::dialog::{DialogBox, MENU_STATE_DIALOG_OPEN},
@@ -475,4 +487,75 @@ fn dialog_overlay_draws_on_the_first_offscreen_capture() {
     assert!(bright > 40, "no text drawn ({bright} bright pixels)");
     // Nothing outside the box changes.
     assert_eq!(pixel(&plain, 5, h - 5), pixel(&boxed, 5, h - 5));
+}
+
+#[test]
+#[ignore = "requires RUSTARIO64_ROM and a GPU adapter; mist's completed opacity"]
+fn rom_mist_fades_with_the_original_environment_alpha() {
+    let _gpu = GPU_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+    use rustario64::{
+        import::{engine, objects, rom::Rom},
+        presentation::objects::ObjectDrawer,
+        simulation::{
+            mario::constants as c,
+            object::{ObjectId, render::VisibleObject},
+        },
+    };
+    use rustario64_render::play::{ObjectModelView, billboard_basis};
+    let Some(mut renderer) = renderer(options()) else {
+        return;
+    };
+    let path = std::env::var_os("RUSTARIO64_ROM").expect("set RUSTARIO64_ROM");
+    let rom = Rom::open(std::path::Path::new(&path)).unwrap();
+    let content = objects::import(&rom).unwrap();
+    let trig = engine::trig_tables(&rom).unwrap();
+    let mut drawer = ObjectDrawer::new(&content, &trig);
+    let mut view = ObjectModelView::default();
+    let camera = FlyCamera::looking_at([0.0, 0.0, 1000.0], [0.0; 3]);
+    let mut images = vec![];
+    for opacity in [255, 128, 0] {
+        drawer
+            .update(vec![VisibleObject {
+                id: ObjectId(1),
+                generation: 1,
+                behavior: 0,
+                model: c::MODEL_MIST as u16,
+                pos: [0.0; 3],
+                angle: [0; 3],
+                scale: [1.0; 3],
+                opacity,
+                billboard: true,
+                throw_matrix: None,
+                animation: None,
+                cases: vec![],
+            }])
+            .unwrap();
+        let frames = drawer.frame(1.0, false, billboard_basis(&camera));
+        assert!(
+            frames
+                .iter()
+                .flat_map(|f| &f.template.batches)
+                .any(|b| b.material.env_color[3] == opacity)
+        );
+        view.show(&mut renderer, frames);
+        images.push(renderer.capture(128, 128, &camera).unwrap());
+    }
+    let intensity = |pixels: &Vec<u8>| {
+        pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|p| u64::from(p[0]) + u64::from(p[1]))
+            .sum::<u64>()
+    };
+    assert!(intensity(&images[0]) > intensity(&images[1]));
+    assert!(intensity(&images[1]) > 0);
+    assert_eq!(intensity(&images[2]), 0);
+    assert!(
+        images[2]
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|p| *p == [0, 0, 255, 255])
+    );
 }

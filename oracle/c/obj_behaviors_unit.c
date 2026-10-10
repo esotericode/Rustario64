@@ -8,3 +8,7 @@
 #include "excerpts/bobomb.c"
 #include "excerpts/explosion.c"
 #include "excerpts/corkbox.c"
+#include "excerpts/grand_star.c"
+#include "excerpts/king_bobomb.c"
+#include "excerpts/white_puff_explode.c"
+#include "excerpts/break_particles.c"

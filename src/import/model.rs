@@ -58,6 +58,7 @@ struct Walker<'a, 'b> {
     layout: &'a GeoLayout,
     /// The child a switch node draws, by switch node index; None draws case 0.
     select: &'a dyn Fn(usize) -> Option<usize>,
+    object_opacity: Option<u8>,
     builder: Builder<'b>,
     issues: Vec<ImportIssue>,
     background: Option<Background>,
@@ -223,6 +224,19 @@ impl Walker<'_, '_> {
                     None => Background::Color(background as u16),
                 });
             }
+            GeoNodeKind::Generated { param: 0, callback }
+                if self.object_opacity.is_some()
+                    && super::version::OBJECT_GEO_CALLBACKS
+                        .iter()
+                        .any(|(name, address)| {
+                            *name == "geo_update_layer_transparency" && *address == callback
+                        }) =>
+            {
+                // Mist has a following transparent display list. The callback
+                // sets its environment alpha before the display list runs.
+                self.builder
+                    .set_env_color([255, 255, 255, self.object_opacity.unwrap()]);
+            }
             GeoNodeKind::Generated { param, callback } => self.issue(
                 address,
                 format!(
@@ -269,9 +283,21 @@ pub fn build_selected(
     z_buffer: bool,
     select: &dyn Fn(usize) -> Option<usize>,
 ) -> Result<BuiltModel> {
+    build_object_selected(segments, layout, z_buffer, select, None)
+}
+
+/// Selected object geometry with the completed opacity for mist.
+pub(crate) fn build_object_selected(
+    segments: &Segments,
+    layout: &GeoLayout,
+    z_buffer: bool,
+    select: &dyn Fn(usize) -> Option<usize>,
+    object_opacity: Option<u8>,
+) -> Result<BuiltModel> {
     let mut walker = Walker {
         layout,
         select,
+        object_opacity,
         builder: Builder::new(segments),
         issues: vec![],
         background: None,

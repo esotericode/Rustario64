@@ -1,6 +1,6 @@
 # Provenance ledger
 
-Checked 2026-10-08; updated 2026-10-10 (session 30: Bob-omb Buddies, the dialog cutscene and the dialog box). Only the exact revisions below supplied format knowledge or
+Checked 2026-10-08; updated 2026-10-10 (session 32: King Bob-omb and the animated anchor). Only the exact revisions below supplied format knowledge or
 adaptations in this increment. Full notices are retained in LICENSES/.
 No ROM, ROM-derived assets, original terrain/animation files, or full C runtime
 is tracked or published. Owner-ROM validation exports are local and ignored.
@@ -387,3 +387,22 @@ are in oracle/README.md. Existing complete Mario sources and the interaction
 excerpt execute the original action/interaction without modification. The
 fixture C/Rust boundary and independently authored scenario tests are MIT.
 No runtime C integration, ROM bytes, models or screenshots are committed.
+
+## Session 32: boss frame comparisons and animated anchor
+
+Same pinned CC0 n64decomp/sm64 revision: king_bobomb.inc.c (including
+geo_update_held_mario_pos), white_puff_explode.inc.c, break_particles.inc.c,
+grand_star.inc.c's arc_to_goal_pos, behavior_data.c scripts, object_helpers.c
+animation/dialog/particle helpers and geo_update_layer_transparency, spawn_sound.c's exec_anim_sound_state and
+camera.c's positional shakes. Verbatim excerpts are generated, not hand-edited;
+item hashes are in oracle/README.md. Rust adaptation adds the animated anchor
+pass and shares Mario's original animated-part arithmetic. The earlier claim
+that the boss never sets prevObj was incorrect; SPAWN_OBJ sets his anchor.
+
+The original boss geo tree and three callback addresses are independently
+checked by tools/check_object_model_reference.py (117 boss commands, six mist
+commands, plus existing coin/sparkle layouts). The reference checkout and ROM
+remain private. Authored geometry/animations/dialog text and seeded numeric
+boss states are invented fixtures. Host animation tables, node construction,
+canonical pointer/halfword transport and unsupported star boundary are authored
+MIT oracle glue, never linked into or distributed with the Rust runtime.

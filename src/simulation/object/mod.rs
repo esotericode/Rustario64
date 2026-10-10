@@ -27,6 +27,7 @@ pub mod obj_behaviors;
 pub mod particles;
 pub mod processor;
 pub mod render;
+pub(crate) mod render_anchor;
 pub mod script;
 pub mod sound;
 pub mod spawn;

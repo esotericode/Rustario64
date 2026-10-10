@@ -94,7 +94,7 @@ fn bob_act_1_spawns_its_coins_and_bobombs_and_records_the_rest() {
         .iter()
         .filter(|i| scripts.check(i.behavior_script).is_ok())
         .collect();
-    // The spin airborne warp and act 1's two Bob-omb Buddies (pinned
+    // King Bob-omb, the spin airborne warp and act 1's two Bob-omb Buddies (pinned
     // levels/bob/script.c: BPARAM2(DIALOG_002) and BPARAM2(DIALOG_001)).
     let ported: Vec<_> = ported_infos
         .iter()
@@ -105,12 +105,13 @@ fn bob_act_1_spawns_its_coins_and_bobombs_and_records_the_rest() {
             )
         })
         .collect();
-    assert_eq!(ported.len(), 3, "{ported:?}");
+    assert_eq!(ported.len(), 4, "{ported:?}");
     assert!(
         ported
             .iter()
             .any(|(b, _)| *b == Some(Behavior::SpinAirborneWarp))
     );
+    assert!(ported.iter().any(|(b, _)| *b == Some(Behavior::KingBobomb)));
     for dialog in [c::DIALOG_001, c::DIALOG_002] {
         assert!(ported.contains(&(Some(Behavior::BobombBuddy), dialog as u32)));
     }
@@ -132,7 +133,7 @@ fn bob_act_1_spawns_its_coins_and_bobombs_and_records_the_rest() {
     let skipped = &w.area.skipped;
     assert_eq!(
         skipped.len(),
-        macros.len() - ported_macros + content.area.spawn_infos.len() - 3
+        macros.len() - ported_macros + content.area.spawn_infos.len() - 4
     );
     let behavior_of = |id| scripts.behavior_at(w.objects.slot(id).behavior);
     let level = w.objects.list(ObjectList::Level);
@@ -272,6 +273,7 @@ fn every_coin_and_sparkle_case_builds_from_the_rom() {
                     pos: [0.0; 3],
                     angle: [0; 3],
                     scale: [1.0; 3],
+                    opacity: 255,
                     billboard: true,
                     throw_matrix: None,
                     animation: None,
@@ -567,4 +569,100 @@ fn bob_bobomb_is_picked_up_carried_and_thrown() {
         "the held Bob-omb was not drawn in his hand"
     );
     assert!(thrown, "the throw did not launch the Bob-omb");
+}
+
+/// An initial-state defeat fixture checks every visible ROM model, including
+/// the mist callback and debris, throughout the development star boundary.
+#[test]
+#[ignore = "requires RUSTARIO64_ROM"]
+fn bob_king_defeat_draws_its_animated_model_and_fading_particles() {
+    let rom = rom().expect("set RUSTARIO64_ROM");
+    let imported = bob::import(&rom).unwrap();
+    let trig = engine::trig_tables(&rom).unwrap();
+    let anims = rustario64::import::animation::mario_animations(&rom).unwrap();
+    let world = CollisionWorld::load_area_terrain(&imported.collision).unwrap();
+    let content = objects::bob(&rom, &imported.level, Act::new(1).unwrap()).unwrap();
+    let king = content.content.scripts.address(Behavior::KingBobomb);
+    let home = content
+        .area
+        .spawn_infos
+        .iter()
+        .find(|s| s.behavior_script == king)
+        .unwrap()
+        .start_pos;
+    let mut entry = GameEntry::script_start(
+        &imported.level,
+        &imported.visual.as_ref().unwrap().camera.unwrap(),
+    )
+    .unwrap();
+    entry.mario.spawn =
+        SpawnPoint::from_level_script(1, 1, 180, [home[0], home[1] + 40, home[2] + 650]);
+    let mut game = rustario64::simulation::game::Game::enter(
+        &world,
+        &trig,
+        &anims,
+        &content.level_objects(),
+        &entry,
+    );
+    let mut drawer = ObjectDrawer::for_level(
+        &content.content,
+        LevelModels {
+            segments: &content.level_segments,
+            registrations: &content.level_models,
+            animations: &content.animations,
+        },
+        &trig,
+    );
+    let basis = BillboardBasis {
+        right: [1.0, 0.0, 0.0],
+        up: [0.0, 1.0, 0.0],
+        toward: [0.0, 0.0, 1.0],
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    let mut alphas = std::collections::BTreeSet::new();
+    for frame in 0..700 {
+        let buttons = if frame > 40 && frame % 20 == 0 {
+            rustario64::simulation::controller::A_BUTTON
+        } else {
+            0
+        };
+        game.frame(buttons, [0, 0]).1.camera.unwrap();
+        if frame == 0 {
+            let id = game
+                .world
+                .objects
+                .list(ObjectList::GeneralActor)
+                .into_iter()
+                .find(|id| game.world.objects.slot(*id).behavior == king)
+                .unwrap();
+            let o = game.world.objects.slot_mut(id);
+            o.raw.set_s32(c::O_ACTION, 4);
+            o.raw.set_s32(c::O_PREV_ACTION, 4);
+            o.raw.set_s32(c::O_TIMER, 0);
+            o.raw.set_f32(c::O_POS_Y, f32::from(home[1]) + 140.0);
+            o.raw.set_f32(c::O_VEL_Y, -5.0);
+            o.raw.set_s32(c::O_HEALTH, 1);
+            o.raw.set_u32(c::O_MOVE_FLAGS, c::OBJ_MOVE_IN_AIR);
+        }
+        let visible = visible_objects(&game.world, &game.camera.graph, &game.rendered_matrices);
+        for object in &visible {
+            seen.insert(object.model);
+            if object.model == c::MODEL_MIST as u16 {
+                alphas.insert(object.opacity);
+            }
+        }
+        drawer.update(visible).unwrap();
+        assert!(
+            drawer
+                .frame(0.5, true, basis)
+                .iter()
+                .flat_map(|f| &f.vertices)
+                .flatten()
+                .all(|v| v.position.iter().all(|p| p.is_finite()))
+        );
+    }
+    assert!(seen.contains(&(c::MODEL_KING_BOBOMB as u16)));
+    assert!(seen.contains(&(c::MODEL_MIST as u16)));
+    assert!(seen.contains(&(c::MODEL_DIRT_ANIMATION as u16)));
+    assert!(alphas.len() > 10, "mist did not fade: {alphas:?}");
 }

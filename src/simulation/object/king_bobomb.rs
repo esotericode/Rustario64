@@ -6,9 +6,9 @@
 //! his last action), sKingBobombActions' dispatch, sKingBobombSoundStates,
 //! king_bobomb_move and bhv_king_bobomb_loop. US version (non-JP branches).
 //!
-//! His geo layout's geo_update_held_mario_pos acts only through prevObj,
-//! which nothing sets for him, so the render pass leaves it a no-op (see
-//! `render`). The star he spawns at his defeat (spawn_default_star) is a
+//! His script sets prevObj to the Mario anchor. The render pass runs the
+//! animated geo_update_held_mario_pos callback to position that anchor (see
+//! `render_anchor`). The star he spawns at his defeat (spawn_default_star) is a
 //! recorded `Unsupported::StarSpawn` stop: the star object, its cutscene and
 //! collection are not ported.
 use super::{
