@@ -92,12 +92,16 @@ pub const BEHAVIOR_SEGMENT: u8 = 0x13;
 
 /// The segmented addresses of the behavior scripts the port names, from the
 /// same layout (the checker verifies each entry).
-pub const BEHAVIOR_SCRIPTS: [(&str, u32); 21] = [
+pub const BEHAVIOR_SCRIPTS: [(&str, u32); 25] = [
+    ("bhvKingBobomb", 0x130001F4),
+    ("bhvBobombAnchorMario", 0x13000254),
+    ("bhvWhitePuffExplosion", 0x130007DC),
     ("bhvCoinFormationSpawn", 0x130008D0),
     ("bhvCoinFormation", 0x130008EC),
     ("bhvYellowCoin", 0x1300091C),
     ("bhvCoinSparkles", 0x130009E0),
     ("bhvGoldenCoinSparkles", 0x13000A14),
+    ("bhvBreakBoxTriangle", 0x13000DB4),
     ("bhvSoundSpawner", 0x1300229C),
     ("bhvMario", 0x13002EC0),
     ("bhvSpinAirborneWarp", 0x13002F74),
@@ -118,9 +122,14 @@ pub const BEHAVIOR_SCRIPTS: [(&str, u32); 21] = [
 
 /// The CALL_NATIVE targets the port translates, by decomp name and address
 /// in this revision: the words that follow CALL_NATIVE in the layout above.
-pub const BEHAVIOR_NATIVES: [(&str, u32); 23] = [
+pub const BEHAVIOR_NATIVES: [(&str, u32); 28] = [
     ("bhv_mario_update", 0x8029CA58),
+    ("cur_obj_move_using_fvel_and_gravity", 0x802A2644),
+    ("cur_obj_rotate_face_angle_using_vel", 0x802A2BC4),
     ("bhv_dust_smoke_loop", 0x802A399C),
+    ("bhv_bobomb_anchor_mario_loop", 0x802A7230),
+    ("bhv_king_bobomb_loop", 0x802A8064),
+    ("bhv_white_puff_exploding_loop", 0x802AAC48),
     ("bhv_yellow_coin_init", 0x802AB650),
     ("bhv_yellow_coin_loop", 0x802AB70C),
     ("bhv_coin_formation_spawn_loop", 0x802ABA40),
@@ -153,7 +162,11 @@ pub const MACRO_PRESET_TABLE: Range<usize> = 0xEC7E0..0xED350;
 /// name and address. tools/check_object_model_reference.py walks the coin
 /// and sparkle layouts the main scripts register alongside the pinned
 /// actors/coin and actors/sparkle geo sources.
-pub const OBJECT_GEO_CALLBACKS: [(&str, u32); 1] = [("geo_switch_anim_state", 0x8029DB48)];
+pub const OBJECT_GEO_CALLBACKS: [(&str, u32); 3] = [
+    ("geo_switch_anim_state", 0x8029DB48),
+    ("geo_update_layer_transparency", 0x8029D924),
+    ("geo_update_held_mario_pos", 0x802A719C),
+];
 
 /// level_main_scripts_entry's loads (segment, ROM range, MIO0). group0 is
 /// Mario's (above); common1 holds the coin models (sm64tools

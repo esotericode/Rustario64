@@ -38,3 +38,44 @@ pub fn bhv_sound_spawner_init(m: &mut MarioState, w: &mut StepWorld<'_>, id: Obj
         .u32(O_SOUND_EFFECT_UNK_F4);
     w.play_sound(sound);
 }
+
+/// struct SoundState: whether the state plays its sound, the two animation
+/// frames that play it (-1 for none) and the sound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SoundState {
+    pub play_sound: i16,
+    pub anim_frame1: i8,
+    pub anim_frame2: i8,
+    pub sound_magic: u32,
+}
+
+/// exec_anim_sound_state: the object's sound state (oSoundStateID) plays
+/// its sound on its animation frames.
+pub fn exec_anim_sound_state(
+    m: &mut MarioState,
+    w: &mut StepWorld<'_>,
+    id: ObjectId,
+    states: &[SoundState],
+) {
+    let o = object(&w.objects, &m.obj, id);
+    let index = o.raw.s32(O_SOUND_STATE_I_D);
+    let state = *usize::try_from(index)
+        .ok()
+        .and_then(|i| states.get(i))
+        .unwrap_or_else(|| panic!("sound state {index} is outside the object's table"));
+    match state.play_sound {
+        0 => {}
+        1 => {
+            for frame in [state.anim_frame1, state.anim_frame2] {
+                if frame >= 0
+                    && i32::from(object(&w.objects, &m.obj, id).gfx.anim.anim_frame)
+                        == i32::from(frame)
+                {
+                    cur_obj_play_sound_2(m, w, id, state.sound_magic);
+                }
+            }
+        }
+        // The original's switch has no case for other values.
+        _ => {}
+    }
+}

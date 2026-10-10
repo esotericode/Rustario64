@@ -363,6 +363,22 @@ pub fn cur_obj_move_standard(o: &mut Object, w: &mut StepWorld<'_>, degrees: i16
     }
 }
 
+/// cur_obj_move_using_vel_and_gravity: inclusive 12,000-unit bounds are
+/// checked before motion; no terminal speed.
+pub fn cur_obj_move_using_vel_and_gravity(o: &mut Object) {
+    if o.pos().iter().any(|v| *v < -12000.0 || 12000.0 < *v) {
+        return;
+    }
+    o.raw
+        .set_f32(O_POS_X, o.raw.f32(O_POS_X) + o.raw.f32(O_VEL_X));
+    o.raw
+        .set_f32(O_POS_Z, o.raw.f32(O_POS_Z) + o.raw.f32(O_VEL_Z));
+    o.raw
+        .set_f32(O_VEL_Y, o.raw.f32(O_VEL_Y) + o.raw.f32(O_GRAVITY));
+    o.raw
+        .set_f32(O_POS_Y, o.raw.f32(O_POS_Y) + o.raw.f32(O_VEL_Y));
+}
+
 /// cur_obj_move_using_fvel_and_gravity: King Bob-omb's return-home arc.
 /// Inclusive 12,000-unit bounds are checked before motion; no terminal speed.
 pub fn cur_obj_move_using_fvel_and_gravity(o: &mut Object, trig: &TrigTables) {

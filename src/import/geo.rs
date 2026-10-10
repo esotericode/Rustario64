@@ -241,6 +241,10 @@ pub fn decode(segments: &Segments, entry: u32) -> Result<GeoLayout> {
     };
     let mut list: [Option<usize>; MAX_DEPTH] = [None; MAX_DEPTH];
     let mut depth = 0usize;
+    // GEO_CLOSE_NODEs past the root: the original's index goes negative,
+    // which is harmless only when nothing but GEO_END follows (King
+    // Bob-omb's layout has one more close than opens).
+    let mut below_root = 0usize;
     let mut stack = vec![
         StackEntry::Address(None),
         StackEntry::Return {
@@ -257,6 +261,12 @@ pub fn decode(segments: &Segments, entry: u32) -> Result<GeoLayout> {
             return Ok(layout);
         };
         let opcode = segments.read(address, 1)?[0];
+        if below_root > 0 && !matches!(opcode, 0x01 | 0x05) {
+            return Err(err(
+                address,
+                format!("geo command 0x{opcode:02X} after closing past the root"),
+            ));
+        }
         // Every command is at least four bytes; longer reads are checked below.
         let r = Reader::new(segments.tail(address)?, "geo command");
         let push = |stack: &mut Vec<StackEntry>, entry: StackEntry| {
@@ -299,6 +309,7 @@ pub fn decode(segments: &Segments, entry: u32) -> Result<GeoLayout> {
                     return Err(err(address, "GEO_END without return address".into()));
                 };
                 depth = saved_depth;
+                below_root = 0;
                 return_index = saved_return;
                 target
             }
@@ -323,9 +334,10 @@ pub fn decode(segments: &Segments, entry: u32) -> Result<GeoLayout> {
                 Some(address + 4)
             }
             0x05 => {
-                depth = depth
-                    .checked_sub(1)
-                    .ok_or_else(|| err(address, "GEO_CLOSE_NODE at depth zero".into()))?;
+                match depth.checked_sub(1) {
+                    Some(d) => depth = d,
+                    None => below_root += 1,
+                }
                 Some(address + 4)
             }
             0x06 => {

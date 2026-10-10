@@ -193,6 +193,9 @@ impl fmt::Display for Stop {
             Stop::Unsupported(Unsupported::HundredCoinStar) => {
                 write!(f, "the 100-coin star is not ported")
             }
+            Stop::Unsupported(Unsupported::StarSpawn) => {
+                write!(f, "a star spawned; stars are not ported yet")
+            }
             Stop::Camera(what) => write!(f, "{}", game::describe(*what)),
             Stop::Warp(op) => write!(f, "warp operation {op:#x} requested; warps are not ported"),
         }

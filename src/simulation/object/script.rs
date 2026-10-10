@@ -31,6 +31,10 @@ pub enum Behavior {
     Bobomb,
     BobombFuseSmoke,
     BobombBuddy,
+    KingBobomb,
+    BobombAnchorMario,
+    WhitePuffExplosion,
+    BreakBoxTriangle,
     Explosion,
     Respawner,
     BobombBullyDeathSmoke,
@@ -47,7 +51,7 @@ pub enum Behavior {
 }
 
 impl Behavior {
-    pub const ALL: [Behavior; 21] = [
+    pub const ALL: [Behavior; 25] = [
         Behavior::Mario,
         Behavior::YellowCoin,
         Behavior::CoinFormation,
@@ -58,6 +62,10 @@ impl Behavior {
         Behavior::Bobomb,
         Behavior::BobombFuseSmoke,
         Behavior::BobombBuddy,
+        Behavior::KingBobomb,
+        Behavior::BobombAnchorMario,
+        Behavior::WhitePuffExplosion,
+        Behavior::BreakBoxTriangle,
         Behavior::Explosion,
         Behavior::Respawner,
         Behavior::BobombBullyDeathSmoke,
@@ -84,6 +92,10 @@ impl Behavior {
             Behavior::Bobomb => "bhvBobomb",
             Behavior::BobombFuseSmoke => "bhvBobombFuseSmoke",
             Behavior::BobombBuddy => "bhvBobombBuddy",
+            Behavior::KingBobomb => "bhvKingBobomb",
+            Behavior::BobombAnchorMario => "bhvBobombAnchorMario",
+            Behavior::WhitePuffExplosion => "bhvWhitePuffExplosion",
+            Behavior::BreakBoxTriangle => "bhvBreakBoxTriangle",
             Behavior::Explosion => "bhvExplosion",
             Behavior::Respawner => "bhvRespawner",
             Behavior::BobombBullyDeathSmoke => "bhvBobombBullyDeathSmoke",
@@ -125,6 +137,11 @@ pub enum Native {
     BhvBobombFuseSmokeInit,
     BhvBobombBuddyInit,
     BhvBobombBuddyLoop,
+    BhvKingBobombLoop,
+    BhvBobombAnchorMarioLoop,
+    BhvWhitePuffExplodingLoop,
+    CurObjRotateFaceAngleUsingVel,
+    CurObjMoveUsingFvelAndGravity,
     BhvDustSmokeLoop,
     BhvExplosionInit,
     BhvExplosionLoop,
@@ -136,7 +153,7 @@ pub enum Native {
 }
 
 impl Native {
-    pub const ALL: [Native; 23] = [
+    pub const ALL: [Native; 28] = [
         Native::TryPrintDebugMarioLevelInfo,
         Native::BhvMarioUpdate,
         Native::TryDoMarioDebugObjectSpawn,
@@ -152,6 +169,11 @@ impl Native {
         Native::BhvBobombFuseSmokeInit,
         Native::BhvBobombBuddyInit,
         Native::BhvBobombBuddyLoop,
+        Native::BhvKingBobombLoop,
+        Native::BhvBobombAnchorMarioLoop,
+        Native::BhvWhitePuffExplodingLoop,
+        Native::CurObjRotateFaceAngleUsingVel,
+        Native::CurObjMoveUsingFvelAndGravity,
         Native::BhvDustSmokeLoop,
         Native::BhvExplosionInit,
         Native::BhvExplosionLoop,
@@ -180,6 +202,11 @@ impl Native {
             Native::BhvBobombFuseSmokeInit => "bhv_bobomb_fuse_smoke_init",
             Native::BhvBobombBuddyInit => "bhv_bobomb_buddy_init",
             Native::BhvBobombBuddyLoop => "bhv_bobomb_buddy_loop",
+            Native::BhvKingBobombLoop => "bhv_king_bobomb_loop",
+            Native::BhvBobombAnchorMarioLoop => "bhv_bobomb_anchor_mario_loop",
+            Native::BhvWhitePuffExplodingLoop => "bhv_white_puff_exploding_loop",
+            Native::CurObjRotateFaceAngleUsingVel => "cur_obj_rotate_face_angle_using_vel",
+            Native::CurObjMoveUsingFvelAndGravity => "cur_obj_move_using_fvel_and_gravity",
             Native::BhvDustSmokeLoop => "bhv_dust_smoke_loop",
             Native::BhvExplosionInit => "bhv_explosion_init",
             Native::BhvExplosionLoop => "bhv_explosion_loop",
@@ -193,6 +220,12 @@ impl Native {
 
     pub fn from_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|n| n.name() == name)
+    }
+
+    /// Translated but not yet compared against the decomp in complete
+    /// frames: King Bob-omb (session 31). His placement stays unspawned.
+    pub fn awaits_comparison(self) -> bool {
+        self == Native::BhvKingBobombLoop
     }
 
     /// The behaviors the function can spawn, for [`BehaviorScripts::check`].
@@ -217,6 +250,11 @@ impl Native {
             Native::BhvExplosionInit => &[Behavior::SoundSpawner],
             Native::BhvExplosionLoop => &[Behavior::BobombBullyDeathSmoke],
             Native::BhvMovingYellowCoinLoop => &[Behavior::GoldenCoinSparkles],
+            Native::BhvKingBobombLoop => &[
+                Behavior::WhitePuffExplosion,
+                Behavior::BreakBoxTriangle,
+                Behavior::SoundSpawner,
+            ],
             _ => &[],
         }
     }
@@ -235,6 +273,9 @@ pub enum Unported {
     Flags { command: u32, flags: u32 },
     /// An address outside the loaded behavior segment.
     Address(u32),
+    /// A translated native whose behavior has no native frame comparison
+    /// yet: placements running it are not spawned until it has one.
+    AwaitingComparison { command: u32, native: Native },
 }
 
 /// Object flags cur_obj_update handles with transforms the port lacks.
@@ -422,6 +463,12 @@ impl BehaviorScripts {
                                 command: at,
                                 function,
                             })?;
+                            if native.awaits_comparison() {
+                                return Err(Unported::AwaitingComparison {
+                                    command: at,
+                                    native,
+                                });
+                            }
                             scripts.extend(native.spawns().iter().map(|b| self.address(*b)));
                         }
                         0x1C | 0x29 | 0x2C => scripts.push(arg(2)),
@@ -800,6 +847,66 @@ pub fn authored_scripts() -> BehaviorScripts {
         .set_int(O_INTANGIBLE_TIMER, 0)
         .call_native(native(Native::BhvBobombBuddyLoop))
         .end_loop();
+    behaviors.push((Behavior::KingBobomb, b.here()));
+    // bhvKingBobomb is 24 words long.
+    let anchor = b.here() + 4 * 24;
+    b.begin(OBJ_LIST_GENACTOR as u8)
+        .or_int(
+            O_FLAGS,
+            OBJ_FLAG_COMPUTE_ANGLE_TO_MARIO
+                | OBJ_FLAG_ACTIVE_FROM_AFAR
+                | OBJ_FLAG_COMPUTE_DIST_TO_MARIO
+                | OBJ_FLAG_SET_FACE_YAW_TO_MOVE_YAW
+                | OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE,
+        )
+        .load_animations(
+            O_ANIMATIONS,
+            super::animation::AUTHORED_KING_BOBOMB_ANIMATIONS,
+        )
+        .set_int(O_INTERACT_TYPE, INTERACT_GRABBABLE as i16)
+        .set_hitbox(100, 100)
+        .set_obj_physics([30, -400, -50, 1000, 1000, 200, 0, 0])
+        .set_int(O_INTANGIBLE_TIMER, 0)
+        .drop_to_floor()
+        .set_home()
+        .spawn_obj(MODEL_NONE as u32, anchor)
+        .set_int(O_HEALTH, 3)
+        .set_int(O_DAMAGE_OR_COIN_VALUE, 1)
+        .begin_loop()
+        .call_native(native(Native::BhvKingBobombLoop))
+        .end_loop();
+    assert_eq!(
+        b.here(),
+        anchor,
+        "bhvBobombAnchorMario follows bhvKingBobomb"
+    );
+    behaviors.push((Behavior::BobombAnchorMario, b.here()));
+    b.begin(OBJ_LIST_GENACTOR as u8)
+        .or_int(
+            O_FLAGS,
+            OBJ_FLAG_SET_FACE_YAW_TO_MOVE_YAW | OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE,
+        )
+        .billboard()
+        .set_float(O_PARENT_RELATIVE_POS_X, 100)
+        .set_float(O_PARENT_RELATIVE_POS_Z, 150)
+        .begin_loop()
+        .call_native(native(Native::BhvBobombAnchorMarioLoop))
+        .end_loop();
+    behaviors.push((Behavior::WhitePuffExplosion, b.here()));
+    b.begin(OBJ_LIST_UNIMPORTANT as u8)
+        .or_int(O_FLAGS, OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE)
+        .billboard()
+        .begin_loop()
+        .call_native(native(Native::BhvWhitePuffExplodingLoop))
+        .end_loop();
+    behaviors.push((Behavior::BreakBoxTriangle, b.here()));
+    b.begin(OBJ_LIST_UNIMPORTANT as u8)
+        .or_int(O_FLAGS, OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE)
+        .begin_repeat(18)
+        .call_native(native(Native::CurObjRotateFaceAngleUsingVel))
+        .call_native(native(Native::CurObjMoveUsingFvelAndGravity))
+        .end_repeat()
+        .deactivate();
     behaviors.push((Behavior::Explosion, b.here()));
     b.begin(OBJ_LIST_DESTRUCTIVE as u8)
         .or_int(
@@ -1383,6 +1490,23 @@ fn call_native(native: Native, m: &mut MarioState, w: &mut StepWorld<'_>, id: Ob
         Native::BhvBobombFuseSmokeInit => bobomb::bhv_bobomb_fuse_smoke_init(m, w, id),
         Native::BhvBobombBuddyInit => bobomb::bhv_bobomb_buddy_init(m, w, id),
         Native::BhvBobombBuddyLoop => bobomb::bhv_bobomb_buddy_loop(m, w, id),
+        Native::BhvKingBobombLoop => super::king_bobomb::bhv_king_bobomb_loop(m, w, id),
+        Native::BhvBobombAnchorMarioLoop => {
+            super::king_bobomb::bhv_bobomb_anchor_mario_loop(m, w, id)
+        }
+        Native::BhvWhitePuffExplodingLoop => {
+            super::particles::bhv_white_puff_exploding_loop(m, w, id)
+        }
+        Native::CurObjRotateFaceAngleUsingVel => {
+            helpers::cur_obj_rotate_face_angle_using_vel(object_mut(&mut w.objects, &mut m.obj, id))
+        }
+        Native::CurObjMoveUsingFvelAndGravity => {
+            let trig = w.trig;
+            super::standard_motion::cur_obj_move_using_fvel_and_gravity(
+                object_mut(&mut w.objects, &mut m.obj, id),
+                trig,
+            )
+        }
         Native::BhvDustSmokeLoop => {
             helpers::bhv_dust_smoke_loop(object_mut(&mut w.objects, &mut m.obj, id))
         }

@@ -292,6 +292,114 @@ impl Rig {
         }
     }
 
+    /// reduce_by_dist_from_camera: `value` scaled down with the point's
+    /// distance from Lakitu's goal position, halved when the point is far
+    /// from the goal direction.
+    pub fn reduce_by_dist_from_camera(
+        &self,
+        value: i16,
+        mut max_dist: f32,
+        point: [f32; 3],
+        trig: &TrigTables,
+    ) -> i16 {
+        let goal = self.lakitu.goal_pos;
+        let mut result: i16 = 0;
+        let [dx, dy, dz] = std::array::from_fn(|i| goal[i] - point[i]);
+        let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+        if max_dist > dist {
+            let (mut dist, mut pitch, mut yaw) = get_dist_angle(goal, point, trig);
+            if dist < max_dist {
+                let [goal_pitch, goal_yaw] = calculate_angles(goal, self.lakitu.goal_focus, trig);
+                pitch = pitch.wrapping_sub(goal_pitch);
+                yaw = yaw.wrapping_sub(goal_yaw);
+                dist -= 2000.0;
+                if dist < 0.0 {
+                    dist = 0.0;
+                }
+                max_dist -= 2000.0;
+                if max_dist < 2000.0 {
+                    max_dist = 2000.0;
+                }
+                result = crate::simulation::mario::f32_to_s16(
+                    f32::from(value) * (1.0 - dist / max_dist),
+                );
+                if !(-0x1800..=0x400).contains(&pitch) || !(-0x1800..=0x1800).contains(&yaw) {
+                    result /= 2;
+                }
+            }
+        }
+        result
+    }
+
+    /// set_pitch_shake_from_point.
+    fn set_pitch_shake_from_point(
+        &mut self,
+        mag: i16,
+        decay: i16,
+        inc: i16,
+        max_dist: f32,
+        point: [f32; 3],
+        trig: &TrigTables,
+    ) {
+        let mag = self.reduce_by_dist_from_camera(mag, max_dist, point, trig);
+        if mag != 0 {
+            self.set_pitch_shake(mag, decay, inc);
+        }
+    }
+
+    /// set_fov_shake_from_point.
+    fn set_fov_shake_from_point(
+        &mut self,
+        amplitude: i16,
+        decay: i16,
+        speed: i16,
+        max_dist: f32,
+        point: [f32; 3],
+        trig: &TrigTables,
+    ) {
+        let amplitude = self.reduce_by_dist_from_camera(amplitude, max_dist, point, trig);
+        if amplitude != 0 {
+            self.set_fov_shake(amplitude, decay, speed);
+        }
+    }
+
+    /// set_camera_shake_from_point.
+    pub fn shake_from_point(&mut self, shake: i16, point: [f32; 3], trig: &TrigTables) {
+        let fov = |rig: &mut Self, preset: i16| match preset {
+            c::SHAKE_FOV_SMALL => {
+                rig.set_fov_shake_from_point(0x100, 0x30, i16::MIN, 3000.0, point, trig)
+            }
+            c::SHAKE_FOV_MEDIUM => {
+                rig.set_fov_shake_from_point(0x200, 0x30, i16::MIN, 4000.0, point, trig)
+            }
+            c::SHAKE_FOV_LARGE => {
+                rig.set_fov_shake_from_point(0x300, 0x30, i16::MIN, 6000.0, point, trig)
+            }
+            c::SHAKE_FOV_UNUSED => {
+                rig.set_fov_shake_from_point(0x800, 0x20, 0x4000, 3000.0, point, trig)
+            }
+            _ => {}
+        };
+        match shake {
+            c::SHAKE_POS_BOWLING_BALL => {
+                self.set_pitch_shake_from_point(0x28, 0x8, 0x4000, 2000.0, point, trig)
+            }
+            c::SHAKE_POS_SMALL => {
+                self.set_pitch_shake_from_point(0x80, 0x8, 0x4000, 4000.0, point, trig);
+                fov(self, c::SHAKE_FOV_SMALL);
+            }
+            c::SHAKE_POS_MEDIUM => {
+                self.set_pitch_shake_from_point(0xC0, 0x8, 0x4000, 6000.0, point, trig);
+                fov(self, c::SHAKE_FOV_MEDIUM);
+            }
+            c::SHAKE_POS_LARGE => {
+                self.set_pitch_shake_from_point(0x100, 0x8, 0x3000, 8000.0, point, trig);
+                fov(self, c::SHAKE_FOV_LARGE);
+            }
+            _ => {}
+        }
+    }
+
     /// set_camera_shake_from_hit. `action` is sMarioCamState's; the shock
     /// shake draws twice from the shared random sequence.
     pub fn shake_from_hit(&mut self, shake: i16, action: u32, rng: &mut Rng) {

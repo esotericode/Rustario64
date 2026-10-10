@@ -93,8 +93,10 @@ What works now:
 - King Bob-omb's **standard movement foundation**: floor/wall queries, drag,
   slope/edge avoidance, ground/air/water transitions, return-home arc movement
   and moving throw/drop release. 537,435 component comparisons match the native
-  decomp exactly, including BOB collision/trig data. The boss itself is still
-  disabled pending behavior, animated anchors, dialogs and cutscenes.
+  decomp exactly, including BOB collision/trig data. His behavior, particles,
+  positional camera shakes and the boss camera's focus on him are translated
+  (session 31) but not yet compared against the decomp, so his placement is
+  still not spawned.
 - Shared boss **grab/release interactions**: enemy grabs, Mario's thrown action
   transition, anchor placement, escape controls and non-Bowser object release.
   2,860 component calls match native C, including heavy pickup/walk/throw with
@@ -126,11 +128,11 @@ without a GPU or window.
 
 ## Build and test
 
-The current project version is **0.0.4**; the change counter started at 0.0.1.
+The current project version is **0.0.5**; the change counter started at 0.0.1.
 It appears in the running window
 title, ROM launcher, pause/settings and `--version` output of all three binaries.
 Every committed project change, including documentation, must advance it with
-`python3 tools/project_version.py bump`; the next version is 0.0.5. The tool
+`python3 tools/project_version.py bump`; the next version is 0.0.6. The tool
 updates Cargo.toml, Cargo.lock and the plan's current-version header together.
 Patch/minor roll over at 100:
 0.0.99 → 0.1.0 and 0.99.99 → 1.0.0. Run

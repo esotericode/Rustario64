@@ -230,8 +230,14 @@ pub fn traversal(segments: &Segments, layout: u32) -> Result<ObjectModel> {
                     },
                 },
                 GeoNodeKind::CullingRadius { radius } => RenderNodeKind::CullingRadius { radius },
-                GeoNodeKind::Generated { callback: f, .. }
-                | GeoNodeKind::HeldObject { callback: f, .. } => RenderNodeKind::Unaudited {
+                GeoNodeKind::Generated { callback: f, .. } => match callback(f) {
+                    Some("geo_update_held_mario_pos") => RenderNodeKind::HeldMarioPos,
+                    Some("geo_update_layer_transparency") => RenderNodeKind::LayerTransparency,
+                    _ => RenderNodeKind::Unaudited {
+                        what: format!("geo callback 0x{f:08X}"),
+                    },
+                },
+                GeoNodeKind::HeldObject { callback: f, .. } => RenderNodeKind::Unaudited {
                     what: format!("geo callback 0x{f:08X}"),
                 },
                 GeoNodeKind::Perspective {

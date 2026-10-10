@@ -1100,3 +1100,13 @@ the time-stop state and the dialog box through `Frame`. `play_cutscene` runs
 the ported cutscenes (the dialog cutscene); others remain an `Unsupported`
 stop. Sound and music requests are recorded events (kinds 15–20 on both
 sides), not audio.
+
+## Translated but awaiting comparison — 2026-10-10 (session 31)
+
+A behavior can be translated before its native frame comparison exists, but
+it must not change play or the existing comparisons until it has one.
+`Native::awaits_comparison` lists such natives; `BehaviorScripts::check`
+reports scripts that reach them as `Unported::AwaitingComparison`, so their
+placements are recorded as unported exactly like untranslated ones. King
+Bob-omb is the first: his behavior and helpers are in place, and the gate is
+lifted in the session that adds his comparisons.

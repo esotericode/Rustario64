@@ -204,6 +204,9 @@ pub enum Unsupported {
     /// interact_coin reached 100 coins in a main course, which spawns the
     /// 100-coin star (bhv_spawn_star_no_level_exit).
     HundredCoinStar,
+    /// An object spawned a star (spawn_default_star): the star object, its
+    /// cutscene and collection are not ported.
+    StarSpawn,
 }
 
 /// Calls into systems outside the simulated state, in call order. Mirrors the
@@ -262,6 +265,14 @@ pub enum Event {
     },
     /// play_race_fanfare.
     RaceFanfare,
+    /// set_camera_shake_from_point from an object (cur_obj_shake_screen),
+    /// with the point's coordinates as f32 bits.
+    PointCameraShake {
+        shake: i16,
+        point: [u32; 3],
+    },
+    /// stop_background_music(seqId).
+    StopBackgroundMusic(u16),
 }
 
 impl Event {
@@ -286,6 +297,7 @@ impl Event {
                 Unsupported::SubmergedGroup(action) => (13, 2, action as i32),
                 Unsupported::InfiniteStairs => (13, 3, 0),
                 Unsupported::HundredCoinStar => (13, 4, 0),
+                Unsupported::StarSpawn => (13, 5, 0),
             },
             Event::DialogSound(id) => (15, i32::from(id), 0),
             Event::SeqLowerVolume {
@@ -311,6 +323,8 @@ impl Event {
             ),
             Event::SeqFadeOut { player, duration } => (19, i32::from(player), i32::from(duration)),
             Event::RaceFanfare => (20, 0, 0),
+            Event::PointCameraShake { shake, .. } => (21, i32::from(shake), 0),
+            Event::StopBackgroundMusic(seq) => (22, i32::from(seq), 0),
         }
     }
 }
@@ -390,6 +404,11 @@ pub struct StepWorld<'a> {
     /// The camera.c globals objects use to request cutscenes (the game
     /// frame copies them from the camera and back around the object update).
     pub cutscene: crate::simulation::camera::cutscene::ObjectCutsceneState,
+    /// gObjectCounter and gPrevFrameObjectCount: the objects the update
+    /// visited (spawner, then surface, then the rest), kept from the last
+    /// frame for particle limits.
+    pub object_counter: u32,
+    pub prev_frame_object_count: i16,
 }
 
 impl<'a> StepWorld<'a> {
@@ -437,6 +456,8 @@ impl<'a> StepWorld<'a> {
             dialog: Default::default(),
             dialogs: &crate::content::dialog::NO_DIALOGS,
             cutscene: Default::default(),
+            object_counter: 0,
+            prev_frame_object_count: 0,
         }
     }
 

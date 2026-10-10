@@ -97,7 +97,109 @@ pub fn authored_object_animations() -> ObjectAnimations {
         .insert(AUTHORED_BOBOMB_ANIMATIONS, vec![walk, held]);
     out.animations.insert(walk, animation(0, 0, 0, 25, 37));
     out.animations.insert(held, animation(0, 4, 2, 15, -53));
+    // A King Bob-omb-shaped table: twelve entries, some not looping, with
+    // loop ends around the ones his actions wait for.
+    let mut king = vec![];
+    for i in 0..12i16 {
+        let address = 0x0500_2000 + 0x100 * i as u32;
+        let flags = if [0, 2, 7, 9, 10].contains(&i) {
+            crate::content::animation::ANIM_FLAG_NOLOOP
+        } else {
+            0
+        };
+        let loop_end = 18 + 5 * (i % 5) + 2 * i;
+        out.animations
+            .insert(address, animation(flags, 0, i % 3, loop_end, 11 + 7 * i));
+        king.push(address);
+    }
+    out.tables.insert(AUTHORED_KING_BOBOMB_ANIMATIONS, king);
     out
+}
+
+/// Where [`authored_object_animations`] places its King Bob-omb-shaped
+/// table.
+pub const AUTHORED_KING_BOBOMB_ANIMATIONS: u32 = 0x0500_1000;
+
+/// The animation the object's graph node plays (curAnim), which the
+/// original dereferences: NULL panics.
+fn current_animation<'a>(o: &Object, anims: &'a ObjectAnimations) -> &'a Animation {
+    match o.gfx.anim.cur_anim {
+        Some(AnimRef::Object(address)) => anims
+            .get(address)
+            .unwrap_or_else(|| panic!("animation 0x{address:08X} was not imported")),
+        other => panic!("the object's curAnim is {other:?}, not an object animation"),
+    }
+}
+
+/// cur_obj_init_animation_with_sound: the animation and its sound state.
+pub fn cur_obj_init_animation_with_sound(o: &mut Object, anims: &ObjectAnimations, index: i32) {
+    cur_obj_init_animation(o, anims, index);
+    o.raw.set_s32(
+        crate::simulation::mario::constants::O_SOUND_STATE_I_D,
+        index,
+    );
+}
+
+/// cur_obj_init_animation_and_anim_frame.
+pub fn cur_obj_init_animation_and_anim_frame(
+    o: &mut Object,
+    anims: &ObjectAnimations,
+    index: i32,
+    frame: i32,
+) {
+    cur_obj_init_animation_with_sound(o, anims, index);
+    o.gfx.anim.anim_frame = frame as i16;
+}
+
+/// cur_obj_check_anim_frame.
+pub fn cur_obj_check_anim_frame(o: &Object, frame: i32) -> bool {
+    i32::from(o.gfx.anim.anim_frame) == frame
+}
+
+/// cur_obj_check_if_near_animation_end.
+pub fn cur_obj_check_if_near_animation_end(o: &Object, anims: &ObjectAnimations) -> bool {
+    let anim = current_animation(o, anims);
+    let anim_flags = i32::from(anim.flags) as u32;
+    let anim_frame = i32::from(o.gfx.anim.anim_frame);
+    let near_loop_end = i32::from(anim.loop_end) - 2;
+    let mut is_near_end = false;
+    if anim_flags & crate::content::animation::ANIM_FLAG_NOLOOP as u32 != 0
+        && near_loop_end + 1 == anim_frame
+    {
+        is_near_end = true;
+    }
+    if anim_frame == near_loop_end {
+        is_near_end = true;
+    }
+    is_near_end
+}
+
+/// cur_obj_init_animation_and_check_if_near_end.
+pub fn cur_obj_init_animation_and_check_if_near_end(
+    o: &mut Object,
+    anims: &ObjectAnimations,
+    index: i32,
+) -> bool {
+    cur_obj_init_animation_with_sound(o, anims, index);
+    cur_obj_check_if_near_animation_end(o, anims)
+}
+
+/// cur_obj_extend_animation_if_at_end: hold the frame before the loop end.
+pub fn cur_obj_extend_animation_if_at_end(o: &mut Object, anims: &ObjectAnimations) {
+    let near_end = i32::from(current_animation(o, anims).loop_end) - 2;
+    if i32::from(o.gfx.anim.anim_frame) == near_end {
+        o.gfx.anim.anim_frame = o.gfx.anim.anim_frame.wrapping_sub(1);
+    }
+}
+
+/// cur_obj_init_animation_and_extend_if_at_end.
+pub fn cur_obj_init_animation_and_extend_if_at_end(
+    o: &mut Object,
+    anims: &ObjectAnimations,
+    index: i32,
+) {
+    cur_obj_init_animation_with_sound(o, anims, index);
+    cur_obj_extend_animation_if_at_end(o, anims);
 }
 
 #[cfg(test)]

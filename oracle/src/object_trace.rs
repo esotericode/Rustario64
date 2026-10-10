@@ -264,7 +264,11 @@ impl NativeObjects {
                 native.root = traversal.root as i32;
                 for node in &traversal.nodes {
                     let (kind, param) = match node.kind {
-                        RenderNodeKind::Plain => (0, 0),
+                        // Audited callbacks with no simulated effect on
+                        // the objects compared so far.
+                        RenderNodeKind::Plain
+                        | RenderNodeKind::HeldMarioPos
+                        | RenderNodeKind::LayerTransparency => (0, 0),
                         RenderNodeKind::AnimStateSwitch { num_cases } => (1, i32::from(num_cases)),
                         RenderNodeKind::CullingRadius { radius } => (2, i32::from(radius)),
                         RenderNodeKind::Unaudited { .. } => (3, 0),

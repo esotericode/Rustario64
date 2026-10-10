@@ -508,11 +508,24 @@ fn geo_layout_rejects_unknown_commands_imbalance_and_cycles() {
         .unwrap();
     let error = geo::decode(&segments, 0x0E00_0000).unwrap_err();
     assert!(error.detail.contains("0x21"));
+    // A close past the root is harmless before GEO_END, as in the original
+    // (King Bob-omb's layout ends that way); any other command after it is
+    // rejected.
     let mut segments = Segments::default();
     segments
         .insert(0x0E, words(&[0x0500_0000, 0x0100_0000]))
         .unwrap();
-    assert!(geo::decode(&segments, 0x0E00_0000).is_err());
+    assert!(geo::decode(&segments, 0x0E00_0000).is_ok());
+    let mut segments = Segments::default();
+    segments
+        .insert(0x0E, words(&[0x0500_0000, 0x0400_0000, 0x0100_0000]))
+        .unwrap();
+    assert!(
+        geo::decode(&segments, 0x0E00_0000)
+            .unwrap_err()
+            .detail
+            .contains("past the root")
+    );
     let mut segments = Segments::default();
     segments
         .insert(0x0E, words(&[0x0200_0000, 0x0E00_0000]))

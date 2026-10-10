@@ -27,6 +27,13 @@ pub struct CutsceneVariable {
     pub unused2: i16,
 }
 
+/// What the boss-fight camera reads from gSecondCameraFocus.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct SecondFocusView {
+    pub pos: [f32; 3],
+    pub held_state: i32,
+}
+
 /// What the camera reads from its cutscene focus object (gCutsceneFocus).
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct FocusView {
@@ -52,6 +59,8 @@ pub struct ObjectCutsceneState {
     pub dialog_id: i16,
     /// sCutsceneDialogResponse.
     pub dialog_response: u8,
+    /// gSecondCameraFocus: the boss the boss-fight camera frames.
+    pub second_focus: Option<ObjectId>,
 }
 
 impl ObjectCutsceneState {
@@ -115,6 +124,7 @@ impl CameraSystem {
             obj_cutscene_done: self.obj_cutscene_done,
             dialog_id: self.cutscene_dialog_id,
             dialog_response: self.cutscene_dialog_response,
+            second_focus: self.second_camera_focus,
         }
     }
 
@@ -130,6 +140,7 @@ impl CameraSystem {
         self.obj_cutscene_done = s.obj_cutscene_done;
         self.cutscene_dialog_id = s.dialog_id;
         self.cutscene_dialog_response = s.dialog_response;
+        self.second_camera_focus = s.second_focus;
     }
 
     /// Whether play_cutscene runs this cutscene here.

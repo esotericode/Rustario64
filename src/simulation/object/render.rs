@@ -31,6 +31,12 @@ pub enum RenderNodeKind {
     AnimStateSwitch { num_cases: i16 },
     /// GEO_CULLING_RADIUS (read by obj_is_in_view when it is the root).
     CullingRadius { radius: i16 },
+    /// GEO_ASM(geo_update_held_mario_pos) (King Bob-omb): it moves the
+    /// object's prevObj, which nothing sets for him, so it does nothing.
+    HeldMarioPos,
+    /// GEO_ASM(geo_update_layer_transparency) (mist): it sets the node's
+    /// layer and display-list alpha from oOpacity, drawing only.
+    LayerTransparency,
     /// A node whose callback or traversal the port has not audited.
     Unaudited { what: String },
 }
@@ -144,7 +150,18 @@ pub fn obj_is_in_view(
 pub(crate) fn process_model(o: &mut Object, model: &ObjectModel, node: usize) {
     let n = &model.nodes[node];
     match &n.kind {
-        RenderNodeKind::Plain | RenderNodeKind::CullingRadius { .. } => {
+        RenderNodeKind::Plain
+        | RenderNodeKind::CullingRadius { .. }
+        | RenderNodeKind::LayerTransparency => {
+            for &child in &n.children {
+                process_model(o, model, child);
+            }
+        }
+        RenderNodeKind::HeldMarioPos => {
+            assert!(
+                o.prev_obj.is_none(),
+                "geo_update_held_mario_pos with prevObj set moves another object, which is not ported"
+            );
             for &child in &n.children {
                 process_model(o, model, child);
             }
@@ -284,7 +301,10 @@ pub(crate) fn selected_cases(
 ) {
     let n = &model.nodes[node];
     match &n.kind {
-        RenderNodeKind::Plain | RenderNodeKind::CullingRadius { .. } => {
+        RenderNodeKind::Plain
+        | RenderNodeKind::CullingRadius { .. }
+        | RenderNodeKind::HeldMarioPos
+        | RenderNodeKind::LayerTransparency => {
             for &child in &n.children {
                 selected_cases(o, model, child, out);
             }

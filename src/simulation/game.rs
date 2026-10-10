@@ -18,7 +18,7 @@ use crate::{
     simulation::{
         TickInput,
         camera::{
-            cutscene::FocusView,
+            cutscene::{FocusView, SecondFocusView},
             system::{self, CameraSystem, Frame, GeoCamera, Level, MarioView, Unsupported},
         },
         collision::CollisionWorld,
@@ -26,8 +26,8 @@ use crate::{
         mario::{
             Event, MarioState, PlayerCameraState, StepWorld,
             constants::{
-                ACTIVE_FLAG_MOVE_THROUGH_GRATE, MARIO_VANISH_CAP, O_POS_X, O_POS_Y, O_POS_Z,
-                SHAKE_SHOCK,
+                ACTIVE_FLAG_MOVE_THROUGH_GRATE, MARIO_VANISH_CAP, O_HELD_STATE, O_POS_X, O_POS_Y,
+                O_POS_Z, SHAKE_SHOCK,
             },
             render::{RenderView, render_mario},
             tick::{LevelEntry, LevelObjects, RenderedFrame, enter_level_with, update_objects},
@@ -182,6 +182,12 @@ impl<'a> Game<'a> {
                 camera.rig.environmental_shake(shake);
                 continue;
             }
+            if let Event::PointCameraShake { shake, point } = event {
+                camera
+                    .rig
+                    .shake_from_point(shake, point.map(f32::from_bits), w.trig);
+                continue;
+            }
             if !matches!(event, Event::CameraMode { .. } | Event::CameraShake(_)) {
                 continue;
             }
@@ -197,6 +203,7 @@ impl<'a> Game<'a> {
             };
             let mario = view(m, w);
             let focus = focus_view(camera, m, w);
+            let second_focus = second_focus_view(camera, m, w);
             let mut frame = Frame {
                 world: w.collision,
                 trig: w.trig,
@@ -209,6 +216,7 @@ impl<'a> Game<'a> {
                 time_stop_state: &mut w.time_stop_state,
                 dialog: &mut w.dialog,
                 focus,
+                second_focus,
             };
             match event {
                 Event::CameraMode { mode, frames } => {
@@ -233,6 +241,7 @@ impl<'a> Game<'a> {
         // update_camera.
         let mario = view(m, w);
         let focus = focus_view(camera, m, w);
+        let second_focus = second_focus_view(camera, m, w);
         let result = camera.update(&mut Frame {
             world: w.collision,
             trig: w.trig,
@@ -245,6 +254,7 @@ impl<'a> Game<'a> {
             time_stop_state: &mut w.time_stop_state,
             dialog: &mut w.dialog,
             focus,
+            second_focus,
         });
         share(camera, w);
         // render_game: the camera nodes enclose the object nodes, Mario's first.
@@ -297,6 +307,21 @@ fn focus_view(camera: &CameraSystem, m: &MarioState, w: &StepWorld<'_>) -> Optio
         FocusView {
             pos: [o.raw.f32(O_POS_X), o.raw.f32(O_POS_Y), o.raw.f32(O_POS_Z)],
             hitbox_height: o.hitbox_height,
+        }
+    })
+}
+
+/// gSecondCameraFocus's position and held state.
+fn second_focus_view(
+    camera: &CameraSystem,
+    m: &MarioState,
+    w: &StepWorld<'_>,
+) -> Option<SecondFocusView> {
+    camera.second_camera_focus.map(|id| {
+        let o = object(&w.objects, &m.obj, id);
+        SecondFocusView {
+            pos: o.pos(),
+            held_state: o.raw.s32(O_HELD_STATE),
         }
     })
 }

@@ -13,7 +13,7 @@
 //! All of this runs once per 30 Hz tick; presentation reads `graph`.
 #![allow(clippy::too_many_arguments)]
 use super::{
-    cutscene::{CutsceneVariable, FocusView},
+    cutscene::{CutsceneVariable, FocusView, SecondFocusView},
     lakitu::{Rig, get_dist_angle},
     obstruction::{is_range_behind_surface, rotate_camera_around_walls},
     radial::RadialMovement,
@@ -222,6 +222,8 @@ pub struct Frame<'a, 'w> {
     /// gCutsceneFocus's position and hitbox, read when the camera starts
     /// a cutscene about it (None while it is NULL).
     pub focus: Option<FocusView>,
+    /// gSecondCameraFocus's position and held state (None while NULL).
+    pub second_focus: Option<SecondFocusView>,
 }
 
 /// One area's camera and every camera.c global it uses.
@@ -284,6 +286,8 @@ pub struct CameraSystem {
     pub cutscene_vars: [CutsceneVariable; 10],
     /// gCutsceneFocus.
     pub cutscene_focus: Option<ObjectId>,
+    /// gSecondCameraFocus.
+    pub second_camera_focus: Option<ObjectId>,
     /// sCutsceneDialogID and sCutsceneDialogResponse.
     pub cutscene_dialog_id: i16,
     pub cutscene_dialog_response: u8,
@@ -367,6 +371,7 @@ impl CameraSystem {
             store_cutscene: StoredInfo::default(),
             cutscene_vars: [CutsceneVariable::default(); 10],
             cutscene_focus: None,
+            second_camera_focus: None,
             cutscene_dialog_id: 0,
             cutscene_dialog_response: c::DIALOG_RESPONSE_NONE as u8,
             credits_spline_pos_index: [0; 32],
@@ -414,6 +419,7 @@ impl CameraSystem {
         self.cutscene_obj_spawn = 0;
         self.obj_cutscene_done = 0;
         self.cutscene_focus = None;
+        self.second_camera_focus = None;
         self.unused_8032cfc8 = 0;
         self.unused_8032cfcc = 0;
         self.c_buttons_pressed = 0;
@@ -1823,14 +1829,21 @@ impl CameraSystem {
             f.mario_cam.camera_event = 0;
         }
         let yaw = self.rig.mode_offset_yaw.wrapping_add(degrees(45));
-        // gSecondCameraFocus is the boss object; none is simulated.
-        let second_focus = [self.radial.center[0], m[1], self.radial.center[1]];
+        // The boss, or the area's center when there is none.
+        let (mut second_focus, held_state) = match f.second_focus {
+            Some(boss) => (boss.pos, boss.held_state),
+            None => ([self.radial.center[0], m[1], self.radial.center[1]], 0),
+        };
         let mut focus_distance = calc_abs_dist(m, second_focus) * 1.6;
         if focus_distance < 800.0 {
             focus_distance = 800.0;
         }
         if focus_distance > 5000.0 {
             focus_distance = 5000.0;
+        }
+        // Holding the boss pulls the focus to spin with Mario.
+        if held_state == 1 {
+            second_focus = offset_rotated(m, [0.0, -150.0, -125.0], f.mario_cam.face_angle, trig);
         }
         focus[0] = (m[0] + second_focus[0]) / 2.0;
         focus[1] = (m[1] + second_focus[1]) / 2.0 + 125.0;
