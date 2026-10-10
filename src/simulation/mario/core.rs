@@ -907,8 +907,8 @@ impl SpawnPoint {
 }
 
 /// init_mario_from_save_file. Coins, lives, health and the animation Y
-/// translation get their file-load values; the HUD is outside the simulation.
-pub fn init_mario_from_save_file(m: &mut MarioState, w: &StepWorld<'_>) {
+/// translation get their file-load values, and the HUD's coins and wedges.
+pub fn init_mario_from_save_file(m: &mut MarioState, w: &mut StepWorld<'_>) {
     m.unk00 = 0;
     m.flags = 0;
     m.action = 0;
@@ -919,6 +919,8 @@ pub fn init_mario_from_save_file(m: &mut MarioState, w: &StepWorld<'_>) {
     m.health = 0x880;
     m.prev_num_stars_for_dialog = m.num_stars;
     m.unk_b0 = 0xBD;
+    w.hud.coins = 0;
+    w.hud.wedges = 8;
 }
 
 /// init_mario: place Mario at the spawn point on the floor and start idle.

@@ -224,6 +224,9 @@ struct Coverage {
     respawns: usize,
     unloads: usize,
     shadowless: usize,
+    /// The HUD counter's highest value and its coin sounds.
+    hud_coins: u32,
+    coin_sounds: usize,
     stops: Vec<String>,
 }
 
@@ -238,6 +241,13 @@ fn tally(
     let sparkles = scripts.address(Behavior::CoinSparkles);
     let formation = scripts.address(Behavior::CoinFormation);
     cov.coins = cov.coins.max(words["m.numCoins"]);
+    cov.hud_coins = cov.hud_coins.max(words["hud.coins"]);
+    for i in 0..words["events.count"] {
+        cov.coin_sounds += usize::from(
+            words[&format!("events[{i}].kind")] == 1
+                && words[&format!("events[{i}].a")] == c::SOUND_GENERAL_COIN,
+        );
+    }
     let mut objects = 0;
     for (name, value) in words {
         if let Some(rest) = name.strip_prefix("objects[") {
@@ -300,7 +310,8 @@ fn report(label: &str, cov: &Coverage) {
     println!(
         "{label}: {} frames identical; {} coins collected at most, up to {} objects, \
          {} golden-sparkle and {} coin-sparkle object-frames, {} formation respawn frames, \
-         {} frames with unloads, {} shadowless-coin object-frames",
+         {} frames with unloads, {} shadowless-coin object-frames; the HUD counted to {} \
+         with {} coin sounds",
         cov.frames,
         cov.coins,
         cov.max_objects,
@@ -308,7 +319,9 @@ fn report(label: &str, cov: &Coverage) {
         cov.coin_sparkles,
         cov.respawns,
         cov.unloads,
-        cov.shadowless
+        cov.shadowless,
+        cov.hud_coins,
+        cov.coin_sounds
     );
     for stop in &cov.stops {
         println!("{label}: stopped: {stop}");
@@ -350,6 +363,10 @@ fn authored_coins_and_formations_match_the_decomp() {
     assert!(cov.respawns > 0, "no formation respawned");
     assert!(cov.unloads > 0, "no object was unloaded");
     assert!(cov.shadowless > 0, "no coin used the shadowless model");
+    assert!(
+        cov.hud_coins >= 10 && cov.coin_sounds >= 10,
+        "the HUD counter did not count the coins"
+    );
     let _ = (
         U_CBUTTONS, D_CBUTTONS, L_CBUTTONS, R_CBUTTONS, R_TRIG, Z_TRIG, B_BUTTON,
     );
@@ -436,5 +453,9 @@ fn bob_coins_match_the_decomp_with_rom_data() {
     }
     report("BOB coins", &cov);
     assert!(cov.coins >= 5, "too few BOB coins collected");
+    assert!(
+        cov.hud_coins >= 5 && cov.coin_sounds >= 5,
+        "the HUD counter did not count BOB's coins"
+    );
     assert!(cov.golden_sparkles > 0 && cov.coin_sparkles > 0);
 }

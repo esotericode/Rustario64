@@ -17,6 +17,7 @@ fn main() {
         "c/excerpts/geo_layout.c",
         "c/excerpts/game_init.c",
         "c/excerpts/graph_node.c",
+        "c/excerpts/level_update.c",
         "c/excerpts/rendering_graph_node.c",
         "c/excerpts/macro_special_objects.c",
         "c/excerpts/object_helpers.c",

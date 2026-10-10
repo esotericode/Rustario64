@@ -1740,6 +1740,7 @@ pub const O_WHITE_PUFF_UNK_F_C: usize = 0x1D;
 pub const AREA_BOWSER_2: i32 = 529;
 pub const SURFACE_CAMERA_ROTATE_RIGHT: i16 = 111;
 pub const ACT_FLAG_PAUSE_EXIT: u32 = 0x8000000;
+pub const O_HOMING_AMP_AVG_Y: usize = 0x1D;
 pub const CAM_FOV_DEFAULT: u8 = 0x2;
 pub const SOUND_GENERAL_OPEN_CHEST: u32 = 0x31208081;
 pub const O_TREASURE_CHEST_UNK_F4: usize = 0x1B;
@@ -1750,7 +1751,6 @@ pub const O_HIDDEN_BLUE_COIN_SWITCH: usize = 0x1C;
 pub const O_POKEY_BODY_PART_DEATH_DELAY_AFTER_HEAD_KILLED: usize = 0x1C;
 pub const O_BIT_S_PLATFORM_TIMER: usize = 0x1D;
 pub const AREA_HMC: i32 = 113;
-pub const O_HOMING_AMP_AVG_Y: usize = 0x1D;
 pub const O_BLUE_FISH_RANDOM_TIME: usize = 0x1C;
 pub const O_BOO_INITIAL_MOVE_YAW: usize = 0x22;
 pub const MODEL_SL_CRACKED_ICE: i32 = 55;
@@ -2877,6 +2877,8 @@ pub const HUD_DISPLAY_FLAG_KEYS: u16 = 0x10;
 pub const HUD_DISPLAY_FLAG_UNKNOWN_0020: u16 = 0x20;
 pub const HUD_DISPLAY_FLAG_TIMER: u16 = 0x40;
 pub const HUD_DISPLAY_FLAG_EMPHASIZE_POWER: u16 = 0x8000;
+pub const HUD_DISPLAY_NONE: u16 = 0x0;
+pub const HUD_DISPLAY_DEFAULT: u16 = 0x3F;
 pub const COURSE_NONE: i16 = 0;
 pub const COURSE_BOB: i16 = 1;
 pub const COURSE_WF: i16 = 2;
@@ -2925,7 +2927,7 @@ pub const OBJ_LIST_SPAWNER: i32 = 11;
 pub const OBJ_LIST_UNIMPORTANT: i32 = 12;
 
 /// Every generated constant by original name, for the oracle consistency test.
-pub static ALL: [(&str, i64); 2919] = [
+pub static ALL: [(&str, i64); 2921] = [
     ("oBowserKeyScale", O_BOWSER_KEY_SCALE as i64),
     ("SOUND_BANK_MOVING", SOUND_BANK_MOVING as i64),
     ("ACTIVE_PARTICLE_H_STAR", ACTIVE_PARTICLE_H_STAR as i64),
@@ -6282,6 +6284,7 @@ pub static ALL: [(&str, i64); 2919] = [
         SURFACE_CAMERA_ROTATE_RIGHT as i64,
     ),
     ("ACT_FLAG_PAUSE_EXIT", ACT_FLAG_PAUSE_EXIT as i64),
+    ("oHomingAmpAvgY", O_HOMING_AMP_AVG_Y as i64),
     ("CAM_FOV_DEFAULT", CAM_FOV_DEFAULT as i64),
     ("SOUND_GENERAL_OPEN_CHEST", SOUND_GENERAL_OPEN_CHEST as i64),
     ("oTreasureChestUnkF4", O_TREASURE_CHEST_UNK_F4 as i64),
@@ -6301,7 +6304,6 @@ pub static ALL: [(&str, i64); 2919] = [
     ),
     ("oBitSPlatformTimer", O_BIT_S_PLATFORM_TIMER as i64),
     ("AREA_HMC", AREA_HMC as i64),
-    ("oHomingAmpAvgY", O_HOMING_AMP_AVG_Y as i64),
     ("oBlueFishRandomTime", O_BLUE_FISH_RANDOM_TIME as i64),
     ("oBooInitialMoveYaw", O_BOO_INITIAL_MOVE_YAW as i64),
     ("MODEL_SL_CRACKED_ICE", MODEL_SL_CRACKED_ICE as i64),
@@ -8652,6 +8654,8 @@ pub static ALL: [(&str, i64); 2919] = [
         "HUD_DISPLAY_FLAG_EMPHASIZE_POWER",
         HUD_DISPLAY_FLAG_EMPHASIZE_POWER as i64,
     ),
+    ("HUD_DISPLAY_NONE", HUD_DISPLAY_NONE as i64),
+    ("HUD_DISPLAY_DEFAULT", HUD_DISPLAY_DEFAULT as i64),
     ("COURSE_NONE", COURSE_NONE as i64),
     ("COURSE_BOB", COURSE_BOB as i64),
     ("COURSE_WF", COURSE_WF as i64),

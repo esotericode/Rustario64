@@ -214,6 +214,106 @@ pub fn render_objects(w: &mut StepWorld<'_>, camera: &GraphCamera) {
     }
 }
 
+/// An object the render pass draws this frame, after its writes: where
+/// geo_process_object places it and the child each anim-state switch of its
+/// model selects. Presentation reads this; nothing in the simulation does.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VisibleObject {
+    pub id: ObjectId,
+    /// The object's behavior script (segmented), to tell a reused slot apart.
+    pub behavior: u32,
+    pub model: u16,
+    pub pos: [f32; 3],
+    pub angle: [i16; 3],
+    pub scale: [f32; 3],
+    /// GRAPH_RENDER_BILLBOARD: drawn facing the camera (mtxf_billboard).
+    pub billboard: bool,
+    /// (switch node, selected child node), in traversal order.
+    pub cases: Vec<(usize, usize)>,
+}
+
+fn selected_cases(o: &Object, model: &ObjectModel, node: usize, out: &mut Vec<(usize, usize)>) {
+    let n = &model.nodes[node];
+    match &n.kind {
+        RenderNodeKind::Plain | RenderNodeKind::CullingRadius { .. } => {
+            for &child in &n.children {
+                selected_cases(o, model, child, out);
+            }
+        }
+        RenderNodeKind::AnimStateSwitch { num_cases } => {
+            let state = o.raw.s32(O_ANIM_STATE);
+            let selected = if state >= i32::from(*num_cases) {
+                0
+            } else {
+                state as i16
+            };
+            if !n.children.is_empty() {
+                let index = if selected > 0 {
+                    selected as usize % n.children.len()
+                } else {
+                    0
+                };
+                out.push((node, n.children[index]));
+                selected_cases(o, model, n.children[index], out);
+            }
+        }
+        // The simulation's pass stops at these; so does drawing.
+        RenderNodeKind::Unaudited { .. } => {}
+    }
+}
+
+/// The objects other than Mario that the render pass at `camera` draws, in
+/// `render_objects`' order: the same conditions (active, in the rendered
+/// area, `obj_is_in_view` with the original matrices), read without writing.
+/// Run after the frame, the switches select what the pass selected.
+pub fn visible_objects(w: &StepWorld<'_>, camera: &GraphCamera) -> Vec<VisibleObject> {
+    let matrix = camera_matrix(w.trig, camera);
+    let mut out = vec![];
+    for list in super::UPDATE_ORDER {
+        for id in w.objects.list(list) {
+            if w.objects.mario == Some(id) {
+                continue;
+            }
+            let o = w.objects.slot(id);
+            if o.gfx.node_flags & GRAPH_RENDER_ACTIVE == 0
+                || o.gfx.area_index != w.area_index
+                || o.gfx.throw_matrix.is_some()
+            {
+                continue;
+            }
+            let billboard = o.gfx.node_flags & GRAPH_RENDER_BILLBOARD != 0;
+            let placed = if billboard {
+                mtxf_billboard(w.trig, &matrix, o.gfx.pos, 0)
+            } else {
+                let local = mtxf_rotate_zxy_and_translate(w.trig, o.gfx.pos, o.gfx.angle);
+                mtxf_mul(&local, &matrix)
+            };
+            let placed = mtxf_scale_vec3f(&placed, o.gfx.scale);
+            let Some(model) = o.gfx.shared_child else {
+                continue;
+            };
+            if !obj_is_in_view(w.trig, o, w.models, &placed, camera.fov) {
+                continue;
+            }
+            let mut cases = vec![];
+            if let Some(traversal) = w.models.traversal(model) {
+                selected_cases(o, traversal, traversal.root, &mut cases);
+            }
+            out.push(VisibleObject {
+                id,
+                behavior: o.behavior,
+                model,
+                pos: o.gfx.pos,
+                angle: o.gfx.angle,
+                scale: o.gfx.scale,
+                billboard,
+                cases,
+            });
+        }
+    }
+    out
+}
+
 /// An authored model table for ROM-free tests: MODEL_MARIO loaded, and the
 /// coin and sparkle models with the traversal structure of the pinned
 /// actors/coin and actors/sparkle layouts (a shadow over an 8-case

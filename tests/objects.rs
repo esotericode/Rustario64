@@ -160,4 +160,6 @@ fn bob_act_1_spawns_its_coins_and_records_the_rest() {
         });
     }
     assert!(sparkles, "collecting a coin spawns golden sparkles");
+    // The HUD's counter has caught up (one step every other frame).
+    assert_eq!(session.world().hud.coins, 1);
 }

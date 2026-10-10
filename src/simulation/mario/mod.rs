@@ -295,8 +295,8 @@ pub struct StepWorld<'a> {
     /// gDebugLevelSelect and gShowDebugText.
     pub debug_level_select: i8,
     pub show_debug_text: i8,
-    /// gHudDisplay.flags.
-    pub hud_flags: i16,
+    /// gHudDisplay.
+    pub hud: crate::simulation::hud::HudDisplay,
     pub save: SaveInputs,
     pub interaction: InteractionGlobals,
     /// gMarioPlatform.
@@ -347,7 +347,7 @@ impl<'a> StepWorld<'a> {
             audio_random: 0,
             debug_level_select: 0,
             show_debug_text: 0,
-            hud_flags: 0,
+            hud: Default::default(),
             save: SaveInputs::default(),
             interaction: InteractionGlobals::default(),
             mario_platform: None,

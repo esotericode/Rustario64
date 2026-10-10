@@ -232,7 +232,7 @@ Every handoff should report the working result, commands actually run, missing f
 | Bob-omb Battlefield | Imported level: 1,101 visible area triangles (24 batches, 18 textures) from eight script-named dependent segments, plus the gate/seesaw/grate geo models; collision (570 vertices, 1,060 triangles), 17 specials, 30 script placements, 88 macros, seven warps. Every visible triangle and texture matches independent decomp-derived references. Renders in the viewer with collision and placement overlays. Collision loads into the ported original partition and answers queries identically to the decomp. Mario's complete ticks run identically to the decomp on it with the ROM's animations (64,158 compared ticks). Its camera runs from the area's camera node (validated callbacks) through BOB's surface rules, radial/close/C-Up/boss-fight modes and R/C-button controls identically to the decomp (77,112 compared frames). Mario can be moved around it in the viewer with his ROM model and animations, seen through the reference camera; recorded runs replay exactly. Original nine-vertex Mario shadow from the ROM, checked against native C. Act 1's 14 coin placements (five yellow coins, nine formations) spawn from the ROM's scripts, presets and models and run identically to the decomp (9,600 compared frames); the other 94 placements are recorded as unported. Coins are collected in viewer play but not drawn; no skybox, other objects, cutscenes, warps or missions |
 | Fidelity coverage | Component checks against the natively compiled decomp, all bitwise-identical. Collision: loader and floor/ceiling/wall/water/gas queries (857k authored comparisons in CI; 4.08M on BOB). Math: ROM trig tables, sins/coss/atan2s/atan2f/approach (3.99M). Mario steps: ground/air/stationary steps, ledge grabs, gravity, wind, moving sand, bonk, velocity helpers from generated states (124k authored in CI; 1.18M on BOB with ROM tables). Exact trace comparator tested; 300 synthetic counter/input ticks identical at 30/60/120/144 Hz. Input stage: 196,608 controller/intent cases on authored and again on ROM tables; 10,009 authored and 20,000 BOB geometry cases; 1,200 chained ticks at multiple presentation rates. **Complete Mario ticks** (Mario's object only, against the native decomp): 28,158 authored ticks (69 actions) and 64,158 BOB ticks with ROM animations (60 actions), all identical, also at 15–144 Hz presentation. **Played sessions:** 3,600 CI ticks of held-control sessions replay identically in the decomp; two recorded BOB viewer runs (233 ticks) replay identically. Camera helpers/radial goals and persistent Lakitu/transition updates have exact authored and owner-ROM native comparisons. **Complete frames with the original camera** (Mario's object plus every camera.c word, the RNG seed and the graph camera, per frame): 19,512 authored frames (45 actions; radial, close, free-roam, C-Up and boss-fight modes) and 77,112 BOB frames with ROM data (62 actions; radial, close, C-Up, boss-fight), identical, also at 15–144 Hz presentation; 3,600 CI frames of played sessions with C buttons and R; a 1,800-frame built-in BOB camera program and two windowed reference-camera recordings (904 and 124 frames) replay identically. **Objects and coins** (every object word, the lists and the free list, per frame, with the camera linked): 5,400 authored frames (every formation type, respawns, sparkles, 12 coins) and 9,600 BOB frames with ROM scripts/models, identical; the BOB camera frames include act 1's coins. No other object behavior, cutscene, other-area camera mode, cutscene/submerged or original-N64 coverage |
 | Optional enhancements | Graphics-only options: higher resolution, 4x MSAA, culling and fog toggles, interpolation toggle, free inspection camera. Mario's skinned model and the reference camera's view interpolate between ticks at any frame rate (the view snaps across cuts). Local launcher and pause/settings offer interpolation, fog, VSync and fullscreen; optional remembered path and window size. No enhanced lighting/shadows, no optional gameplay camera |
-| Immediate next task | Draw the coins in the viewer (ROM coin/sparkle models billboarded by animation state) with a coin counter, then the first mission's actors (King Bob-omb, Bob-ombs, the star) with their camera cutscenes. Continue D3 physical-GPU Windows/Linux playtests of D1/D2 and smooth presentation. D1 local ROM selection and D2 development pause/settings work; original pause-camera behavior (`zoom_out_if_paused_and_outside`) remains unreached. The camera's cutscene paths (star dance, death, dialog, doors) are needed with the first mission. D0 native Windows/Linux build/CI bundles passed again at 520a2bd; the owner reports smooth Mario animation after that fix (OS/GPU unspecified). |
+| Immediate next task | Finish drawing the coins in the viewer (see the session 17 follow-up: the builder and visible-object query exist) (ROM coin/sparkle models billboarded by animation state) with a coin counter, then the first mission's actors (King Bob-omb, Bob-ombs, the star) with their camera cutscenes. Continue D3 physical-GPU Windows/Linux playtests of D1/D2 and smooth presentation. D1 local ROM selection and D2 development pause/settings work; original pause-camera behavior (`zoom_out_if_paused_and_outside`) remains unreached. The camera's cutscene paths (star dance, death, dialog, doors) are needed with the first mission. D0 native Windows/Linux build/CI bundles passed again at 520a2bd; the owner reports smooth Mario animation after that fix (OS/GPU unspecified). |
 
 ### Implementation session 1 — 2026-10-08 (M0 and early M1)
 
@@ -763,6 +763,27 @@ Every handoff should report the working result, commands actually run, missing f
 - **Next:** Draw the coins and a coin counter in the viewer, then King
   Bob-omb's act (Bob-ombs, the boss, the star) with the camera cutscenes it
   needs.
+
+### Session 17 follow-up — original HUD values, viewer coins in progress (2026-10-10)
+
+- **Done and verified:** `update_hud_values` (pinned level_update.c) runs in
+  both frame paths between the objects and the camera (`simulation::hud`,
+  `StepWorld::hud`); init_mario_from_save_file and init_level set the entry
+  values. The HUD coin counter steps toward Mario's coins every other frame
+  with the original coin sound, and lives/coins clamp as in US. The oracle
+  runs the verbatim excerpt and compares every `hud.*` word: authored and BOB
+  object frames identical (the HUD counted to 12 and 6), Mario ticks and BOB
+  camera frames identical. `tests/objects.rs` checks the HUD in play.
+- **Started, not wired into the viewer yet:** `import::model::build_selected`
+  (a geo build with chosen switch cases and the master list's Z-buffer) and
+  `simulation::object::render::visible_objects` (what the render pass draws
+  after a frame, read-only). Remaining for coin drawing: a
+  `presentation::objects` drawer that builds the ROM coin/sparkle models per
+  selected case and interpolates positions; a renderer method for
+  variable-length batches; billboards placed with the presentation camera's
+  axes (mtxf_billboard with roll 0); a HUD overlay reading `w.hud.coins` when
+  `HUD_DISPLAY_FLAG_COIN_COUNT` is set; docs. Coin shadows (4-vertex circle)
+  are a later step.
 
 ### Bob-omb Battlefield acceptance tracker
 

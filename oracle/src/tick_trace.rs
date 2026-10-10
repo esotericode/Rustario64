@@ -295,6 +295,14 @@ pub fn capture(m: &MarioState, w: &StepWorld<'_>) -> BTreeMap<String, u32> {
         "world.animDmaLoaded",
         w.anim_dma_loaded.map_or(-1, i32::from),
     );
+    let hud = &w.hud;
+    o.i("hud.lives", i32::from(hud.lives));
+    o.i("hud.coins", i32::from(hud.coins));
+    o.i("hud.stars", i32::from(hud.stars));
+    o.i("hud.wedges", i32::from(hud.wedges));
+    o.i("hud.keys", i32::from(hud.keys));
+    o.i("hud.flags", i32::from(hud.flags));
+    o.i("hud.timer", i32::from(hud.timer));
     let ctl = &w.controller;
     o.i("ctl.rawStickX", i32::from(ctl.raw_stick[0]));
     o.i("ctl.rawStickY", i32::from(ctl.raw_stick[1]));

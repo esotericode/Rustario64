@@ -372,6 +372,9 @@ UNREACHABLE_HANDLER(interact_text)
 /* gCurrAreaIndex (area.c): the loaded area, which the tick harness sets. */
 s16 gCurrAreaIndex;
 
+/* gCurrCreditsEntry (area.c): NULL, as no credits sequence runs. */
+struct CreditsEntry *gCurrCreditsEntry;
+
 /* gLoadedGraphNodes (area.c); the tick harness fills the loaded entries. */
 struct GraphNode *D_8033A160[0x100];
 struct GraphNode **gLoadedGraphNodes = D_8033A160;

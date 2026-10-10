@@ -9,8 +9,9 @@
 //! geo_set_animation_globals in rendering_graph_node.c; other objects'
 //! writes are in `object::render`).
 //!
-//! Outside the tick: the camera update (`simulation::game` links it), the
-//! HUD, warps, particle objects (bhv_mario_update's spawn_particle) and the
+//! update_hud_values (`simulation::hud`) runs after the objects. Outside the
+//! tick: the camera update (`simulation::game` links it), the HUD's drawing,
+//! warps, particle objects (bhv_mario_update's spawn_particle) and the
 //! render pass's presentation-only writes (matrices, torso and head angles,
 //! the hand-scale counter).
 use super::{
@@ -169,7 +170,9 @@ pub fn enter_level_with<'a>(
     w.area_index = entry.spawn.area_index;
     w.area.area_index = entry.spawn.area_index;
     let mut m = MarioState::default();
-    init_mario_from_save_file(&mut m, &w);
+    init_mario_from_save_file(&mut m, &mut w);
+    // init_level, with no credits entry.
+    w.hud.flags = HUD_DISPLAY_DEFAULT as i16;
     // INIT_LEVEL's clear_objects left the pool empty; load_area spawns the
     // area's macro objects (load_area_terrain) and spawn infos, then
     // load_mario_area spawns Mario.
@@ -313,6 +316,7 @@ pub fn tick(m: &mut MarioState, w: &mut StepWorld<'_>, input: TickInput) -> Rend
     // area_update_objects.
     w.area_update_counter = w.area_update_counter.wrapping_add(1);
     update_objects(m, w);
+    crate::simulation::hud::update_hud_values(m, w);
     // render_game, then display_and_vsync. Other objects' render-pass writes
     // need the camera's view, which this camera-less frame does not have.
     assert!(

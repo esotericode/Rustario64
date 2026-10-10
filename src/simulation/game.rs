@@ -1,6 +1,6 @@
 //! One frame of the original game loop in Mario's area with the original
-//! camera: the controller read, Mario's object update, Mario's requests to the
-//! camera, update_camera, and the render pass's authoritative stages (the
+//! camera: the controller read, the object update, Mario's requests to the
+//! camera, update_hud_values, update_camera, and the render pass's authoritative stages (the
 //! camera callbacks and Mario's animation frame), in the order of pinned CC0
 //! game_init.c, level_update.c and rendering_graph_node.c. The camera's yaw,
 //! which Mario's controls read, comes from the previous frame's update.
@@ -19,6 +19,7 @@ use crate::{
         TickInput,
         camera::system::{self, CameraSystem, Frame, GeoCamera, Level, MarioView, Unsupported},
         collision::CollisionWorld,
+        hud::update_hud_values,
         mario::{
             Event, MarioState, PlayerCameraState, StepWorld,
             constants::{ACTIVE_FLAG_MOVE_THROUGH_GRATE, MARIO_VANISH_CAP},
@@ -198,6 +199,7 @@ impl<'a> Game<'a> {
             "Mario's view of the camera mode diverged from the camera's"
         );
         w.camera_movement_flags = camera.rig.movement as i16;
+        update_hud_values(m, w);
         // update_camera.
         let mario = view(m, w);
         let result = camera.update(&mut Frame {

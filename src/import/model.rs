@@ -3,8 +3,9 @@
 //! through the Fast3D importer with the accumulated node transform.
 //!
 //! Runtime-only nodes are reported rather than guessed: native callbacks are not
-//! executed, switch cases use their initial case, level-of-detail nodes use the
-//! nearest range, and animated parts use their rest translation.
+//! executed, switch cases use their initial case (or the case a caller selects,
+//! as for an object whose switch callback the simulation ran), level-of-detail
+//! nodes use the nearest range, and animated parts use their rest translation.
 use super::{
     Result,
     geo::{GRAPH_RENDER_Z_BUFFER, GeoLayout, GeoNodeKind},
@@ -55,6 +56,8 @@ pub struct BuiltModel {
 
 struct Walker<'a, 'b> {
     layout: &'a GeoLayout,
+    /// The child a switch node draws, by switch node index; None draws case 0.
+    select: &'a dyn Fn(usize) -> Option<usize>,
     builder: Builder<'b>,
     issues: Vec<ImportIssue>,
     background: Option<Background>,
@@ -192,14 +195,17 @@ impl Walker<'_, '_> {
                     ),
                 );
             }
-            GeoNodeKind::SwitchCase { callback, .. } => {
-                // init_graph_node_switch_case starts every switch at case 0.
-                children = children.first().copied().into_iter().collect();
-                self.issue(
-                    address,
-                    format!("switch callback 0x{callback:08X} not executed; case 0 drawn"),
-                );
-            }
+            GeoNodeKind::SwitchCase { callback, .. } => match (self.select)(index) {
+                Some(child) if children.contains(&child) => children = vec![child],
+                _ => {
+                    // init_graph_node_switch_case starts every switch at case 0.
+                    children = children.first().copied().into_iter().collect();
+                    self.issue(
+                        address,
+                        format!("switch callback 0x{callback:08X} not executed; case 0 drawn"),
+                    );
+                }
+            },
             GeoNodeKind::Background {
                 background,
                 callback,
@@ -251,8 +257,21 @@ impl Walker<'_, '_> {
 
 /// Build a static model from a geo layout. Display lists must be in mapped segments.
 pub fn build(segments: &Segments, layout: &GeoLayout) -> Result<BuiltModel> {
+    build_selected(segments, layout, false, &|_| None)
+}
+
+/// `build` with each switch node drawing the child `select` names (a child
+/// node index), and the Z-buffer state of the enclosing master list: an
+/// object's model is drawn inside its area's master list.
+pub fn build_selected(
+    segments: &Segments,
+    layout: &GeoLayout,
+    z_buffer: bool,
+    select: &dyn Fn(usize) -> Option<usize>,
+) -> Result<BuiltModel> {
     let mut walker = Walker {
         layout,
+        select,
         builder: Builder::new(segments),
         issues: vec![],
         background: None,
@@ -266,7 +285,7 @@ pub fn build(segments: &Segments, layout: &GeoLayout) -> Result<BuiltModel> {
         );
     }
     if let Some(root) = layout.root {
-        walker.node(root, &IDENTITY, false)?;
+        walker.node(root, &IDENTITY, z_buffer)?;
     }
     let (model, mut dl_issues) = walker.builder.finish();
     walker.issues.append(&mut dl_issues);

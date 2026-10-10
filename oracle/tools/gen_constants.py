@@ -71,7 +71,7 @@ GROUPS = [
     (r"INTERACT_\w+", "u32"),
     (r"WARP_OP_\w+", "i32"),
     (r"TIMER_CONTROL_\w+", "i32"),
-    (r"HUD_DISPLAY_FLAG_\w+", "u16"),
+    (r"HUD_DISPLAY_\w+", "u16"),
     (r"ACTIVE_FLAG_\w+", "i16"),
     (r"ACTIVE_PARTICLE_\w+", "u32"),
     (r"OBJ_FLAG_\w+", "u32"),

@@ -7,7 +7,8 @@
  * gAreaUpdateCounter++, the verbatim update_objects (every list in
  * sObjectListUpdateOrder, object collisions, cur_obj_update interpreting the
  * verbatim behavior scripts, unloading, update_mario_platform), the
- * authoritative part of the render pass for Mario and the other objects,
+ * verbatim update_hud_values, the authoritative part of the render pass for
+ * Mario and the other objects,
  * and gGlobalTimer++. State persists across ticks and is only read back.
  *
  * The level entry is init_level's from a fresh boot: the pool as
@@ -62,6 +63,7 @@ void spawn_macro_objects(s16 areaIndex, s16 *macroObjList);
 void spawn_objects_from_info(s32 unused, struct SpawnInfo *spawnInfo);
 void clear_objects(void);
 void update_objects(s32 unused);
+void update_hud_values(void);
 void oracle_set_rng_seed(u16 seed);
 u16 oracle_rng_seed(void);
 extern struct Object gObjectPool[];
@@ -385,6 +387,8 @@ void oracle_tick_begin(const OracleTickSetup *s) {
      * Mario's. */
     gMarioState = &gMarioStates[0];
     init_mario_from_save_file();
+    /* init_level, with no credits entry. */
+    gHudDisplay.flags = HUD_DISPLAY_DEFAULT;
     if (sMacroCount > 0) {
         spawn_macro_objects(sRootAreaIndex, sMacroList);
     }
@@ -464,8 +468,8 @@ void oracle_tick_run(const OracleTickInput *in) {
     /* area_update_objects */
     gAreaUpdateCounter++;
     update_objects(0);
+    update_hud_values();
     if (sCameraLinked) {
-        /* update_hud_values does not touch the camera; then update_camera. */
         oracle_camera_update();
     }
     /* render_game: the camera nodes enclose the object nodes. */
@@ -813,6 +817,13 @@ static void snapshot_world(void) {
         }
     }
     put_i("world.animDmaLoaded", oracle_anim_dma_loaded());
+    put_i("hud.lives", gHudDisplay.lives);
+    put_i("hud.coins", gHudDisplay.coins);
+    put_i("hud.stars", gHudDisplay.stars);
+    put_i("hud.wedges", gHudDisplay.wedges);
+    put_i("hud.keys", gHudDisplay.keys);
+    put_i("hud.flags", gHudDisplay.flags);
+    put_i("hud.timer", gHudDisplay.timer);
     put_i("ctl.rawStickX", controller->rawStickX);
     put_i("ctl.rawStickY", controller->rawStickY);
     put_f("ctl.stickX", controller->stickX);

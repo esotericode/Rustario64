@@ -3,6 +3,7 @@ pub mod camera;
 pub mod collision;
 pub mod controller;
 pub mod game;
+pub mod hud;
 pub mod mario;
 pub mod math;
 pub mod object;
