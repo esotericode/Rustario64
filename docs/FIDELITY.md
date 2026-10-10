@@ -712,3 +712,17 @@ King Bob-omb needs a different movement family and dialog/cutscene mechanics.
 Dynamic surfaces, invalid/out-of-range conversions and original N64 execution
 remain outside this evidence. Existing Mario/camera/coin frame comparisons
 continue to protect the playable exploration baseline.
+
+## Controller comfort changes (session 21, 2026-10-10)
+
+Desktop profile v2 gates left-stick deflections at or below 10% before rounding,
+uses the west face button for N64 B, and releases disconnected inputs without
+requesting pause. Host tests cover the formerly admitted 9.4% drift, exact
+10% cardinal/diagonal boundaries, unchanged values outside the circle, west
+button taps with the east button held, disconnect cleanup, keyboard composition
+and neutral reconnection. Run them with
+`cargo test --locked -p rustario64-render --lib controller::tests`.
+
+The raw conversion and simulation controller are unchanged; recorded final
+tick bytes still replay through the reference controller. This is host-input
+behavior coverage, not physical USB/Bluetooth or native-window validation.

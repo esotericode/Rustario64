@@ -233,3 +233,10 @@ matrix allocation and water spawn/sound requests without porting those behaviors
 Original C math/collision run under the oracle lock. No source from a different
 revision, SDK header, dependency, ROM data, expanded placement or asset is added.
 The 123,200-call BOB comparison reads the owner's ROM only locally.
+
+### Controller comfort changes — session 21
+
+The 10% host center gate, west-button mapping, disconnect policy and regression
+tests are authored MIT Rust changes to the existing adapter. No new source,
+dependency, mapping database, notice or ROM-derived content is added. Original
+simulation controller processing and the pinned reference remain unchanged.

@@ -756,9 +756,7 @@ impl App {
                 && self.play.session.stopped().is_none(),
             self.focused,
         );
-        if actions.disconnected {
-            self.pause(true);
-        } else if actions.pause {
+        if actions.pause {
             self.pause(!self.paused);
         }
         let now = Instant::now();

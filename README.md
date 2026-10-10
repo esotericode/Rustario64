@@ -220,11 +220,13 @@ overlay. Coin shadows and original HUD glyphs remain pending. Offscreen
 
 #### Move Mario
 
-Basic controllers: left stick moves, A/Cross jumps, B/Circle attacks,
-LT/LB/RT crouches, RB changes camera, right stick or D-pad supplies C buttons,
-and Start pauses/resumes. Choose a controller in the launcher or pause menu.
-Disconnecting it pauses play. Center sticks and release buttons after a pause,
-focus change or restart before controller input resumes. Keyboard remains usable.
+Basic controllers: left stick moves with a 10% circular dead zone, A/Cross jumps,
+X/Square (left face button) attacks, LT/LB/RT crouches, RB changes camera,
+right stick or D-pad supplies C buttons, and Start pauses/resumes. Choose a
+controller in the launcher or pause menu.
+Disconnecting it releases its inputs and play continues. Center sticks and
+release buttons after a pause, focus change or restart before controller input
+resumes. Keyboard remains usable.
 Remapping, calibration, rumble and menu navigation are future work; see the
 mapping and hardware checklist in [docs/PLAYTEST.md](docs/PLAYTEST.md).
 

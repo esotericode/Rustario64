@@ -811,6 +811,8 @@ trigger press/release thresholds are 0.5/0.4. Buttons combine across sources,
 keyboard directions take precedence, and taps are consumed once on the next
 30 Hz tick. The first connected device is selected, with session-only selection
 or Keyboard only in the launcher/pause UI. Unplugging the selected device pauses.
+The dead-zone, attack mapping and disconnect policy are superseded by session 21
+below; this paragraph records the original session-19 profile.
 
 Focus, pause, restart, inspection, ROM and device boundaries discard pending
 input and require buttons released/sticks neutral before controller gameplay
@@ -858,3 +860,20 @@ ordered requests; it does not claim complete actor or frame equivalence.
 No new runtime dependency or ROM content is required. Finite s32 conversions
 and static terrain are covered; dynamic object surfaces and N64 conversion
 exceptions need separate validation.
+
+## Controller comfort changes — 2026-10-10 (session 21)
+
+At the owner's request, desktop input profile v2 adds a fixed 10% radial
+left-stick center gate before raw byte conversion. A deflection at or below
+0.10 produces zero; outside the circle the existing conversion is unchanged,
+without subtracting the radius or rescaling the remaining range. The original
+per-axis dead zone and radial clamp still process the resulting bytes at 30 Hz.
+This closes the small gap where rounding to raw 8 can admit movement below 10%.
+`play::analog_stick` remains the raw conversion helper for reference inputs.
+
+N64 B now uses the physical west/left face button: Xbox X or PlayStation Square.
+Disconnect only removes the device and clears its held controls/pending taps;
+the application keeps running with keyboard input. Reconnection does not change
+pause state. Start, focus-loss and existing menu/neutral boundaries retain their
+behavior. Final tick inputs remain recorded in schema-2 logs, so existing logs
+and reference comparisons require no migration. No simulation rule is changed.

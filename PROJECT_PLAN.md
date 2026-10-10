@@ -837,8 +837,8 @@ Every handoff should report the working result, commands actually run, missing f
 - **Result:** Mapped controllers provide analog movement, A/B/Z/R and C buttons,
   with Start pause/resume. Launcher/pause show device selection, controls and
   backend errors. Keyboard remains available. Short taps latch to one tick;
-  active-device unplug pauses; inactive events drain; boundary changes clear
-  pending input and require neutral controls before rearming. The original
+  active-device unplug pauses (superseded by session 21); inactive events drain;
+  boundary changes clear pending input and require neutral controls before rearming. The original
   controller and frame rules are unchanged; schema-2 logs capture final inputs.
 - **Desktop:** Added `rustario64-desktop`, a double-click Windows GUI entry point
   that starts the diagnostic viewer without a console and shows startup errors
@@ -903,6 +903,29 @@ Every handoff should report the working result, commands actually run, missing f
   coverage. Port enemy animation/interaction and apply motion outputs before
   enabling Bob-omb placements; King Bob-omb's standard movement, dialogs,
   holding/throwing, star/completion and camera cutscenes remain needed.
+
+### Session 21 — controller comfort corrections (2026-10-10)
+
+- **Starting point:** Continued session 20 / PR 10 (`ce1c803`); inspected the
+  existing host adapter and original controller dead zone. The owner's requested
+  controller corrections take priority over the next actor increment.
+- **Result:** Desktop input profile v2 adds a 10% circular center gate before
+  rounding to raw bytes, with unchanged deflection outside the gate and original
+  per-tick processing retained. N64 B maps to Xbox X / PlayStation Square, the
+  physical left face button. Disconnect releases controller inputs and gameplay
+  continues; reconnect does not alter pause state. Keyboard input remains usable.
+- **Documentation:** Updated README, playtest mapping/hardware checks and
+  decision/fidelity records. Session 19's unplug-pause policy is superseded.
+  Input-log schema and simulation rules are unchanged; no dependency or ROM
+  content is added.
+- **Checks:** All 25 renderer/desktop tests pass locally, including seven
+  controller tests, owner-ROM launcher/import and required software Vulkan
+  drawing checks. They cover dead-zone boundaries, short taps, physical button
+  position, unplug/reconnect cleanup and keyboard composition. Formatting and
+  warnings-denied workspace/all-target Clippy pass.
+- **Limits/next:** Physical-controller feel and USB/Bluetooth hotplug still
+  need a human check. Continue Bob-omb animation, interaction and movement-output
+  integration; first-mission and complete-course support remain pending.
 
 ### Bob-omb Battlefield acceptance tracker
 

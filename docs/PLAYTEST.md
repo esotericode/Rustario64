@@ -89,7 +89,7 @@ Mapped controllers use physical button positions (Xbox / PlayStation labels):
 | --- | --- |
 | Left stick | Analog N64 stick; partial deflection walks |
 | A / Cross (south face button) | A: jump |
-| B / Circle (east face button) | B: punch/dive |
+| X / Square (west/left face button) | B: punch/dive |
 | LT / L2, LB / L1, or RT / R2 | Z: crouch/ground pound |
 | RB / R1 | R: Lakitu/Mario camera |
 | Right stick or D-pad | C buttons: rotate, zoom and first person |
@@ -98,14 +98,20 @@ Mapped controllers use physical button positions (Xbox / PlayStation labels):
 The first connected controller is selected automatically. Select another or
 Keyboard only in the launcher or pause menu; this choice lasts for the session.
 Keyboard and controller buttons combine; held WASD takes movement priority.
-The left stick has no additional host dead zone: normalized axes map to a
-circular radius of 80 raw units, then the original controller applies its dead
-zone/clamp at 30 Hz. Right-stick camera directions use 0.55 press / 0.4 release
+The left stick has a 10% circular center dead zone: deflections at or below 0.10
+are neutral before byte rounding. Outside that circle, normalized axes map
+without rescaling to a circular radius of 80 raw units, then the original
+controller applies its per-axis dead zone and clamp at 30 Hz. Its raw threshold
+of 8 units is nominally 10% of 80, but byte rounding alone can admit motion just
+below 10%; the host gate prevents that. The original per-axis processing can
+also keep small diagonal deflections neutral beyond the host circle.
+Right-stick camera directions use 0.55 press / 0.4 release
 thresholds; analog triggers use 0.5 / 0.4. Short button/camera taps reach one tick.
-Disconnecting the selected controller pauses and releases inputs. After focus,
-pause, restart, inspection or device changes, release buttons and center sticks
-before controller gameplay rearms. Reconnection stays paused until resumed.
-Start works in play/pause; other menus currently use mouse and keyboard.
+Disconnecting the selected controller releases its inputs; gameplay continues
+and the keyboard remains usable. Reconnecting does not change the pause state.
+After focus, pause, restart, inspection or device changes, release buttons and
+center sticks before controller gameplay rearms. Start works in play/pause;
+other menus currently use mouse and keyboard.
 Unmapped devices may require an SDL-compatible mapping through
 `SDL_GAMECONTROLLERCONFIG`. A backend error appears in the menu and keyboard
 controls remain usable. Physical controller compatibility still needs testing.
@@ -142,10 +148,13 @@ importer; this remains exploration, not a completed mission.
 ## Controller and launcher checks
 
 Open the desktop launcher by double-click, browse to your local ROM, and play.
-Test gradual walk/run deflection, jump, dive, ground pound, C-button rotation,
+Check that drift within 10% stays neutral and X/Square attacks. Test gradual
+walk/run deflection, jump, dive, ground pound, C-button rotation,
 zoom/C-Up and R camera. Check brief taps at 60 Hz or faster and simultaneous
-keyboard/controller presses. Pause with Start, hold controls across a focus
-change, unplug while moving, reconnect, then resume: no stale movement or taps
-should occur. Try two controllers and Keyboard only. Choose another ROM, test
+keyboard/controller presses. Unplug while moving: the game should continue,
+controller inputs should release, and keyboard controls should still work.
+Reconnect and check for stale movement/taps. Pause with Start and hold controls
+across a focus change; release/center before resuming. Try two controllers and
+Keyboard only. Choose another ROM, test
 an unreadable/unsupported file, then select the valid ROM again. Report controller
 model, USB/Bluetooth, mapping and OS alongside the normal build/GPU details.

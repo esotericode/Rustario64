@@ -124,9 +124,9 @@ impl Pad {
     }
 }
 
-/// Desktop input profile v1: finite host axes, positive Y up, circular unit
-/// clamp, then round to raw N64 bytes at radius 80. No host dead zone or
-/// acceleration: the reference controller applies its own dead zone and clamp.
+/// Raw axis conversion: finite host axes, positive Y up, circular unit clamp,
+/// then round to raw N64 bytes at radius 80. The desktop adapter applies its
+/// center dead zone first; the reference controller processes these bytes.
 /// Replays store these bytes, not host events or device identity.
 pub fn analog_stick(x: f32, y: f32) -> [i8; 2] {
     let finite = |v: f32| {

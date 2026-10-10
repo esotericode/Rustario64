@@ -5,7 +5,8 @@ use gilrs::{Axis, Button, EventType, Gilrs, GilrsBuilder};
 use rustario64::play::{Pad, analog_stick};
 use std::collections::{BTreeMap, HashSet};
 
-const CONTROLS: &str = "Left stick: move · A/Cross: jump · B/Circle: attack\nLT/LB/RT: crouch · RB: R camera · Right stick/D-pad: C buttons · Start: pause";
+const LEFT_STICK_DEADZONE: f32 = 0.10;
+const CONTROLS: &str = "Left stick: move (10% deadzone) · A/Cross: jump · X/Square: attack\nLT/LB/RT: crouch · RB: R camera · Right stick/D-pad: C buttons · Start: pause";
 
 #[derive(Default)]
 struct Input {
@@ -19,10 +20,19 @@ struct Input {
 impl Input {
     fn held(&self) -> Pad {
         let has = |b| self.buttons.contains(&b);
+        let (x, y) = (self.axes[0], self.axes[1]);
+        // Gate before byte rounding: the reference per-axis threshold alone
+        // can admit drift just below 10%. Keep deflection outside the circle
+        // unchanged; the original controller still applies its own processing.
+        let stick = if x.hypot(y) <= LEFT_STICK_DEADZONE {
+            [0, 0]
+        } else {
+            analog_stick(x, y)
+        };
         Pad {
-            analog_stick: Some(analog_stick(self.axes[0], self.axes[1])),
+            analog_stick: Some(stick),
             a: has(Button::South),
-            b: has(Button::East),
+            b: has(Button::West),
             z: has(Button::LeftTrigger2) || has(Button::LeftTrigger) || has(Button::RightTrigger2),
             r: has(Button::RightTrigger),
             c_left: self.camera[0] || has(Button::DPadLeft),
@@ -138,7 +148,6 @@ pub struct Controllers {
 #[derive(Default)]
 pub struct Actions {
     pub pause: bool,
-    pub disconnected: bool,
 }
 
 impl Controllers {
@@ -148,7 +157,7 @@ impl Controllers {
             ..Self::default()
         };
         // Disable gilrs' stick dead-zone/rescaling and jitter filters. We handle
-        // both D-pad axis and button events and leave the left stick unfiltered.
+        // both D-pad sources and apply only our explicit left-stick center gate.
         match GilrsBuilder::new()
             .with_default_filters(false)
             .set_axis_to_btn(0.5, 0.4)
@@ -182,14 +191,11 @@ impl Controllers {
         }
     }
 
-    fn disconnect(&mut self, id: usize) -> bool {
+    fn disconnect(&mut self, id: usize) {
         self.devices.remove(&id);
         if self.active == Some(id) {
             self.active = None;
             self.clear();
-            true
-        } else {
-            false
         }
     }
 
@@ -224,7 +230,7 @@ impl Controllers {
                         .to_owned();
                     self.connect(id, name);
                 }
-                EventType::Disconnected => actions.disconnected |= self.disconnect(id),
+                EventType::Disconnected => self.disconnect(id),
                 _ => {
                     let Some(device) = self.devices.get_mut(&id) else {
                         continue;
@@ -313,7 +319,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn analog_axes_and_short_taps_reach_one_tick_without_host_deadzone() {
+    fn analog_axes_and_short_taps_reach_one_tick_without_rescaling() {
         let mut input = Input::default();
         input.arm_if_neutral();
         input.axis(Axis::LeftStickX, 0.1, true);
@@ -327,6 +333,49 @@ mod tests {
         input.axis(Axis::LeftStickX, 1.0, true);
         input.axis(Axis::LeftStickY, 1.0, true);
         assert_eq!(input.next_pad().stick(), [57, 57]);
+    }
+
+    #[test]
+    fn left_stick_deadzone_covers_ten_percent_before_byte_rounding() {
+        let mut input = Input::default();
+        input.arm_if_neutral();
+        for (x, y) in [
+            (0.094, 0.0),
+            (0.10, 0.0),
+            (-0.10, 0.0),
+            (0.0, 0.10),
+            (0.0, -0.10),
+            (0.06, 0.08),
+            (-0.06, -0.08),
+        ] {
+            input.axis(Axis::LeftStickX, x, true);
+            input.axis(Axis::LeftStickY, y, true);
+            assert_eq!(input.next_pad().stick(), [0, 0], "({x}, {y})");
+        }
+        for (x, y, expected) in [
+            (0.1001, 0.0, [8, 0]),
+            (-0.1001, 0.0, [-8, 0]),
+            (0.2, 0.0, [16, 0]),
+            (0.1, 0.5, [8, 40]),
+            (1.0, 0.0, [80, 0]),
+            (1.0, 1.0, [57, 57]),
+        ] {
+            input.axis(Axis::LeftStickX, x, true);
+            input.axis(Axis::LeftStickY, y, true);
+            assert_eq!(input.next_pad().stick(), expected, "({x}, {y})");
+        }
+    }
+
+    #[test]
+    fn attack_uses_the_left_face_button_and_preserves_short_taps() {
+        let mut input = Input::default();
+        input.arm_if_neutral();
+        input.button(Button::East, true, true);
+        assert!(!input.next_pad().b);
+        input.button(Button::West, true, true);
+        input.button(Button::West, false, true);
+        assert!(input.next_pad().b);
+        assert!(!input.next_pad().b);
     }
 
     #[test]
@@ -351,11 +400,11 @@ mod tests {
         let mut input = Input::default();
         input.arm_if_neutral();
         input.axis(Axis::LeftStickX, 1.0, true);
-        input.button(Button::East, true, true);
+        input.button(Button::West, true, true);
         input.clear();
         input.arm_if_neutral();
         assert_eq!(input.next_pad(), Pad::default());
-        input.button(Button::East, false, false);
+        input.button(Button::West, false, false);
         input.button(Button::South, true, false);
         input.button(Button::South, false, false);
         input.axis(Axis::LeftStickX, 0.0, false);
@@ -383,12 +432,29 @@ mod tests {
         assert!(!input.button(Button::Start, true, false));
         input.button(Button::Start, false, false);
         assert!(input.button(Button::Start, true, false));
-        assert!(!controllers.disconnect(3));
-        assert!(controllers.disconnect(2));
+        input.axis(Axis::LeftStickX, 1.0, true);
+        input.button(Button::West, true, true);
+        input.button(Button::South, true, true);
+        input.button(Button::South, false, true);
+        controllers.disconnect(3);
+        assert_eq!(controllers.active, Some(2));
+        controllers.disconnect(2);
+        assert_eq!(controllers.active, None);
+        assert!(!controllers.poll(true, true).pause);
         assert_eq!(controllers.next_pad(), Pad::default());
+        let keyboard = Pad {
+            up: true,
+            a: true,
+            ..Pad::default()
+        };
+        assert_eq!(keyboard.combined(&controllers.next_pad()), keyboard);
         controllers.connect(2, "Reconnected".into());
         assert_eq!(controllers.active, Some(2));
         assert_eq!(controllers.next_pad(), Pad::default());
+        assert!(!controllers.poll(true, true).pause);
+        let pad = controllers.next_pad();
+        assert_eq!(pad.stick(), [0, 0]);
+        assert_eq!(pad.buttons(), 0);
         controllers.select(None);
         controllers.auto_select = false;
         controllers.connect(4, "Third".into());
@@ -401,7 +467,7 @@ mod tests {
         input.arm_if_neutral();
         for button in [
             Button::South,
-            Button::East,
+            Button::West,
             Button::LeftTrigger2,
             Button::RightTrigger,
             Button::DPadLeft,
