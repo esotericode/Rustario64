@@ -640,6 +640,98 @@ u32 interact_grabbable(struct MarioState *m, u32 interactType, struct Object *o)
     return FALSE;
 }
 
+/* src/game/interaction.c: mario_can_talk */
+u32 mario_can_talk(struct MarioState *m, u32 arg) {
+    s16 val6;
+
+    if ((m->action & ACT_FLAG_IDLE) != 0x00000000) {
+        return TRUE;
+    }
+
+    if (m->action == ACT_WALKING) {
+        if (arg) {
+            return TRUE;
+        }
+
+        val6 = m->marioObj->header.gfx.animInfo.animID;
+
+        if (val6 == 0x0080 || val6 == 0x007F || val6 == 0x006C) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+/* src/game/interaction.c: #define READ_MASK (INPUT_B_PRESSED) */
+#ifdef VERSION_JP
+#define READ_MASK (INPUT_B_PRESSED)
+#else
+#define READ_MASK (INPUT_B_PRESSED | INPUT_A_PRESSED)
+#endif
+
+/* src/game/interaction.c: #define SIGN_RANGE 0x38E3 */
+#ifdef VERSION_JP
+#define SIGN_RANGE 0x38E3
+#else
+#define SIGN_RANGE 0x4000
+#endif
+
+/* src/game/interaction.c: check_read_sign */
+u32 check_read_sign(struct MarioState *m, struct Object *o) {
+    if ((m->input & READ_MASK) && mario_can_talk(m, 0) && object_facing_mario(m, o, SIGN_RANGE)) {
+        s16 facingDYaw = (s16)(o->oMoveAngleYaw + 0x8000) - m->faceAngle[1];
+        if (facingDYaw >= -SIGN_RANGE && facingDYaw <= SIGN_RANGE) {
+            f32 targetX = o->oPosX + 105.0f * sins(o->oMoveAngleYaw);
+            f32 targetZ = o->oPosZ + 105.0f * coss(o->oMoveAngleYaw);
+
+            m->marioObj->oMarioReadingSignDYaw = facingDYaw;
+            m->marioObj->oMarioReadingSignDPosX = targetX - m->pos[0];
+            m->marioObj->oMarioReadingSignDPosZ = targetZ - m->pos[2];
+
+            m->interactObj = o;
+            m->usedObj = o;
+            return set_mario_action(m, ACT_READING_SIGN, 0);
+        }
+    }
+
+    return FALSE;
+}
+
+/* src/game/interaction.c: check_npc_talk */
+u32 check_npc_talk(struct MarioState *m, struct Object *o) {
+    if ((m->input & READ_MASK) && mario_can_talk(m, 1)) {
+        s16 facingDYaw = mario_obj_angle_to_object(m, o) - m->faceAngle[1];
+        if (facingDYaw >= -0x4000 && facingDYaw <= 0x4000) {
+            o->oInteractStatus = INT_STATUS_INTERACTED;
+
+            m->interactObj = o;
+            m->usedObj = o;
+
+            push_mario_out_of_object(m, o, -10.0f);
+            return set_mario_action(m, ACT_WAITING_FOR_DIALOG, 0);
+        }
+    }
+
+    push_mario_out_of_object(m, o, -10.0f);
+    return FALSE;
+}
+
+/* src/game/interaction.c: interact_text */
+u32 interact_text(struct MarioState *m, UNUSED u32 interactType, struct Object *o) {
+    u32 interact = FALSE;
+
+    if (o->oInteractionSubtype & INT_SUBTYPE_SIGN) {
+        interact = check_read_sign(m, o);
+    } else if (o->oInteractionSubtype & INT_SUBTYPE_NPC) {
+        interact = check_npc_talk(m, o);
+    } else {
+        push_mario_out_of_object(m, o, 2.0f);
+    }
+
+    return interact;
+}
+
 /* src/game/interaction.c: mario_get_collided_object */
 struct Object *mario_get_collided_object(struct MarioState *m, u32 interactType) {
     s32 i;

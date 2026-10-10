@@ -503,6 +503,8 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
     let view = options.view.as_deref().unwrap_or("start");
     let graphics = graphics_options(options);
     let mut model_builds = None;
+    // The window's overlays for the captured frame (Mario mode).
+    let mut overlay = None;
     let camera = match &pads {
         Some(pads) => {
             let mut session = level.session();
@@ -541,10 +543,20 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
             println!("Mario: {}", describe(&session));
             objects.show(&mut renderer, &follow(&session)?, 1.0, graphics);
             println!(
-                "Objects: {} cached builds; HUD coins: {} (window overlay)",
+                "Objects: {} cached builds; HUD coins: {}",
                 objects.drawer.builds(),
                 session.world().hud.coins
             );
+            let world = session.world();
+            if world.dialog.id() != rustario64::simulation::mario::constants::DIALOG_NONE {
+                println!(
+                    "Dialog {} open (menu state {}, page at {})",
+                    world.dialog.id(),
+                    world.dialog.menu_state,
+                    world.dialog.page_start
+                );
+            }
+            overlay = Some((world.hud, world.dialog.clone(), world.dialogs));
             if let Some(stop) = session.stopped() {
                 println!("Play stopped: {stop}");
             }
@@ -553,7 +565,22 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
         None => preset(view, &level)?,
     };
     let (w, h) = options.size;
-    let pixels = renderer.capture(w, h, &camera)?;
+    let pixels = renderer.capture_with_overlay(w, h, &camera, |device, queue, view, format| {
+        if let Some((hud, dialog, table)) = &overlay {
+            let pixels_per_point = (h as f32 / 720.0).max(1.0);
+            rustario64_render::desktop::paint_offscreen(
+                device,
+                queue,
+                view,
+                format,
+                pixels_per_point,
+                |ctx| {
+                    present::show_coin_counter(ctx, hud);
+                    present::show_dialog_box(ctx, dialog, table);
+                },
+            );
+        }
+    })?;
     rustario64_render::write_png(Path::new(out), w, h, &pixels)?;
     let from = match (&options.view, mario) {
         (None, true) => "the original camera".to_owned(),
@@ -593,7 +620,7 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
         _ => {}
     }
     println!(
-        "Mario mode draws coins, sparkles, animated Bob-ombs and their effects, including held Bob-ombs. Unported placements and the skybox remain missing; the sky is a placeholder clear color."
+        "Mario mode draws coins, sparkles, animated Bob-ombs and their effects, including held Bob-ombs, Bob-omb Buddies and the dialog box. Unported placements and the skybox remain missing; the sky is a placeholder clear color."
     );
     Ok(())
 }
@@ -923,6 +950,8 @@ impl App {
             let ctx = root.ctx();
             if play.active {
                 present::show_coin_counter(ctx, &play.session.world().hud);
+                let world = play.session.world();
+                present::show_dialog_box(ctx, &world.dialog, world.dialogs);
             }
             if self.paused {
                 egui::Window::new(format!("Paused · v{VERSION}"))

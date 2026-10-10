@@ -43,6 +43,11 @@ pub const GROUP0_SEGMENT: u8 = 0x04;
 /// the 16x16 IA8 quarter-circle at decoded offset 0x120B8.
 pub const SEGMENT2_MIO0: Range<usize> = 0x108A40..0x114750;
 pub const SHADOW_CIRCLE_TEXTURE: usize = 0x120B8;
+/// seg2_dialog_table's decoded offset in that segment and its entry count
+/// (pinned text/us/dialogs.h defines 170 dialogs before the NULL);
+/// tools/check_dialog_reference.py locates and checks it.
+pub const DIALOG_TABLE: usize = 0x10A68;
+pub const DIALOG_COUNT: usize = 170;
 pub const GROUP0_GEO: Range<usize> = 0x1279B0..0x12A7E0;
 pub const GROUP0_GEO_SEGMENT: u8 = 0x17;
 /// MODEL_MARIO in the pinned include/model_ids.h.
@@ -87,7 +92,7 @@ pub const BEHAVIOR_SEGMENT: u8 = 0x13;
 
 /// The segmented addresses of the behavior scripts the port names, from the
 /// same layout (the checker verifies each entry).
-pub const BEHAVIOR_SCRIPTS: [(&str, u32); 20] = [
+pub const BEHAVIOR_SCRIPTS: [(&str, u32); 21] = [
     ("bhvCoinFormationSpawn", 0x130008D0),
     ("bhvCoinFormation", 0x130008EC),
     ("bhvYellowCoin", 0x1300091C),
@@ -99,6 +104,7 @@ pub const BEHAVIOR_SCRIPTS: [(&str, u32); 20] = [
     ("bhvMovingYellowCoin", 0x13003068),
     ("bhvBobomb", 0x13003174),
     ("bhvBobombFuseSmoke", 0x130031AC),
+    ("bhvBobombBuddy", 0x130031DC),
     ("bhvMessagePanel", 0x130032E0),
     ("bhvCarrySomething3", 0x13003464),
     ("bhvCarrySomething4", 0x1300346C),
@@ -112,7 +118,7 @@ pub const BEHAVIOR_SCRIPTS: [(&str, u32); 20] = [
 
 /// The CALL_NATIVE targets the port translates, by decomp name and address
 /// in this revision: the words that follow CALL_NATIVE in the layout above.
-pub const BEHAVIOR_NATIVES: [(&str, u32); 21] = [
+pub const BEHAVIOR_NATIVES: [(&str, u32); 23] = [
     ("bhv_mario_update", 0x8029CA58),
     ("bhv_dust_smoke_loop", 0x802A399C),
     ("bhv_yellow_coin_init", 0x802AB650),
@@ -130,6 +136,8 @@ pub const BEHAVIOR_NATIVES: [(&str, u32); 21] = [
     ("bhv_bobomb_init", 0x802E6A2C),
     ("bhv_bobomb_loop", 0x802E742C),
     ("bhv_bobomb_fuse_smoke_init", 0x802E75A0),
+    ("bhv_bobomb_buddy_init", 0x802E76AC),
+    ("bhv_bobomb_buddy_loop", 0x802E7C4C),
     ("bhv_explosion_init", 0x802EAA8C),
     ("bhv_explosion_loop", 0x802EAAD0),
     ("bhv_bobomb_bully_death_smoke_init", 0x802EABF0),

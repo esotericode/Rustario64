@@ -367,6 +367,19 @@ s8 is_point_within_radius_of_mario(f32 x, f32 y, f32 z, s32 dist) {
     return FALSE;
 }
 
+/* src/game/obj_behaviors.c: set_object_visibility */
+void set_object_visibility(struct Object *obj, s32 dist) {
+    f32 objX = obj->oPosX;
+    f32 objY = obj->oPosY;
+    f32 objZ = obj->oPosZ;
+
+    if (is_point_within_radius_of_mario(objX, objY, objZ, dist) == TRUE) {
+        obj->header.gfx.node.flags &= ~GRAPH_RENDER_INVISIBLE;
+    } else {
+        obj->header.gfx.node.flags |= GRAPH_RENDER_INVISIBLE;
+    }
+}
+
 /* src/game/obj_behaviors.c: obj_return_home_if_safe */
 s8 obj_return_home_if_safe(struct Object *obj, f32 homeX, f32 y, f32 homeZ, s32 dist) {
     f32 homeDistX = homeX - obj->oPosX;

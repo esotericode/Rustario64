@@ -118,11 +118,24 @@ unsafe extern "C" {
     fn oracle_tick_set_spawn_infos(infos: *const OracleSpawnInfo, count: i32);
     fn oracle_set_bobomb_animations(table: u32, anims: *const OracleAnimation, count: i32);
     fn oracle_render_set_mario_model(nodes: *const OracleGeoNode, count: i32, root: i32);
+    fn oracle_dialog_set_table(dialogs: *const OracleDialog, count: i32);
     fn oracle_tick_run(input: *const OracleTickInput);
     fn oracle_tick_snapshot(
         names: *mut *const *const std::ffi::c_char,
         words: *mut *const u32,
     ) -> i32;
+}
+
+/// One dialog entry for c/ingame_menu_unit.c (layout matches its
+/// `OracleDialog`).
+#[repr(C)]
+struct OracleDialog {
+    unused: u32,
+    lines_per_box: i32,
+    left_offset: i32,
+    width: i32,
+    text: *const u8,
+    text_length: i32,
 }
 
 /// A level entry for the tick oracle (layout matches `OracleTickSetup` in
@@ -632,6 +645,20 @@ impl Oracle {
                 o.mario_root,
             );
         };
+        let dialogs: Vec<OracleDialog> = o
+            .dialogs
+            .iter()
+            .map(|d| OracleDialog {
+                unused: d.unused,
+                lines_per_box: i32::from(d.lines_per_box),
+                left_offset: i32::from(d.left_offset),
+                width: i32::from(d.width),
+                text: d.text.as_ptr(),
+                text_length: d.text.len() as i32,
+            })
+            .collect();
+        // SAFETY: as above; the C side copies every string.
+        unsafe { oracle_dialog_set_table(dialogs.as_ptr(), dialogs.len() as i32) };
     }
 
     /// Enter a level as c/tick.c's oracle_tick_begin does. Requires the

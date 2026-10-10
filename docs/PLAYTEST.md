@@ -220,3 +220,16 @@ A native window closes cleanly after 120 draw frames/60 simulation ticks; all
 pass with physical device access. A private 1280×960 Mario/Bob-omb screenshot
 is visually inspected. The new boss grabbing helpers have component coverage;
 King Bob-omb's placement/encounter and human input-feel checks remain pending.
+
+## Bob-omb Buddy checks (session 30)
+
+Act 1 has two pink Bob-omb Buddies near the start (by the first fence and
+further along the path). Walk up to one, face it and press B or A (J or Space
+on the keyboard): it turns to Mario, the camera swings over his shoulder and
+the dialog box opens with the ROM's text. A or B turns each page; after the
+last page the box closes, the camera returns and play resumes. Other objects
+(coins, Bob-ombs) freeze while the box is open. Check that the text matches
+the original, that pages advance once per press, and that talking again works.
+The box uses development typography; the original font and rotating box are
+pending. Signs are not spawned yet.
+

@@ -149,6 +149,7 @@ fn scenario_in<'a>(
             models: &MODELS,
             animations: &ANIMATIONS,
             area,
+            dialogs: &rustario64::content::dialog::NO_DIALOGS,
         },
         entry: GameEntry {
             mario,

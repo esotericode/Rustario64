@@ -27,7 +27,8 @@ HEADERS = ["sm64.h", "dialog_ids.h", "surface_terrains.h", "sounds.h", "mario_an
            "object_constants.h", "object_fields.h", "game/camera.h", "game/interaction.h",
            "game/level_update.h", "game/mario.h", "game/save_file.h", "engine/graph_node.h",
            "model_ids.h", "course_table.h", "engine/surface_collision.h",
-           "game/object_list_processor.h", "game/mario_actions_cutscene.h"]
+           "game/object_list_processor.h", "game/mario_actions_cutscene.h", "game/ingame_menu.h",
+           "audio/external.h", "seq_ids.h"]
 
 # (name pattern, Rust type), first match wins. Names that match no group are
 # not mirrored.
@@ -62,7 +63,10 @@ GROUPS = [
     (r"DOOR_(DEFAULT|LEAVING_SPECIAL|ENTER_LOBBY)", "u8"),
     (r"CUTSCENE_(STOP|LOOP)", "i16"),
     (r"CUTSCENE_\w+", "u8"),
-    (r"DIALOG_NONE", "i16"),
+    (r"DIALOG_(NONE|\d{3})", "i16"),
+    (r"DIALOG_RESPONSE_\w+", "i32"),
+    (r"DIALOG_(STATUS|FLAG)_\w+", "i32"),
+    (r"SEQ_(PLAYER|EVENT|LEVEL|MENU|SOUND_PLAYER)\w*", "u8"),
     (r"AREA_\w+", "i32"),
     (r"CAM_EVENT_\w+", "i16"),
     (r"SHAKE_\w+", "i16"),
@@ -83,6 +87,7 @@ GROUPS = [
     (r"OBJECT_POOL_CAPACITY", "usize"),
     (r"RESPAWN_INFO_\w+", "i16"),
     (r"COIN_FORMATION_\w+", "i32"),
+    (r"BOBOMB_BUDDY_\w+", "i32"),
     (r"BOBOMB_(ACT|BP)_\w+", "i32"),
     (r"MOV_YCOIN_ACT_\w+", "i32"),
     (r"OBJ_ACT_\w+", "i32"),
@@ -136,7 +141,19 @@ def candidates():
         rust = next((t for pattern, t in GROUPS if re.fullmatch(pattern, name)), None)
         if rust:
             out.append((name, rust))
+    # The preprocessor lists macros in hash order, which changes when a header
+    # joins; keep the previous output's order and append new names.
+    previous = ROOT / "src/simulation/mario/constants.rs"
+    if previous.exists():
+        order = {n: i for i, n in enumerate(re.findall(r"^pub const (\w+):", previous.read_text(), re.M))}
+        out.sort(key=lambda item: order.get(rust_name_of(item[0]), len(order)))
     return prelude, out
+
+
+def rust_name_of(name):
+    if name[0] == "o":
+        return "O_" + re.sub(r"(?<!^)(?=[A-Z])", "_", name[1:]).upper()
+    return name
 
 
 def main():
@@ -174,9 +191,7 @@ def main():
     all_rows = []
     for name, rust_type in names:
         value = int(values[name])
-        rust_name = name.upper() if name[0] == "o" else name
-        if name[0] == "o":
-            rust_name = "O_" + re.sub(r"(?<!^)(?=[A-Z])", "_", name[1:]).upper()
+        rust_name = rust_name_of(name)
         if rust_type.startswith("u") and value < 0:
             bits = 64 if rust_type == "usize" else int(rust_type[1:])
             literal = f"0x{value & ((1 << bits) - 1):X}"

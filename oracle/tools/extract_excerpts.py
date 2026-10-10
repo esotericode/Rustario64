@@ -92,7 +92,7 @@ EXCERPTS = [
           "obj_orient_graph", "calc_obj_friction", "calc_new_obj_vel_and_pos_y",
           "calc_new_obj_vel_and_pos_y_underwater", "obj_update_pos_vel_xz",
           "obj_splash", "object_step", "object_step_without_floor_orient",
-          "is_point_within_radius_of_mario", "obj_return_home_if_safe",
+          "is_point_within_radius_of_mario", "set_object_visibility", "obj_return_home_if_safe",
           "obj_check_if_facing_toward_angle", "obj_spawn_yellow_coins",
           "obj_flicker_and_disappear", "obj_check_floor_death", "obj_lava_death"]]]),
     ("moving_coin.c", "src/game/behaviors/moving_coin.inc.c", [],
@@ -107,7 +107,10 @@ EXCERPTS = [
           "bobomb_check_interactions", "bobomb_act_patrol", "bobomb_act_chase_mario",
           "bobomb_act_launched", "generic_bobomb_free_loop", "stationary_bobomb_free_loop",
           "bobomb_free_loop", "bobomb_held_loop", "bobomb_dropped_loop", "bobomb_thrown_loop",
-          "curr_obj_random_blink", "bhv_bobomb_loop", "bhv_bobomb_fuse_smoke_init"]]]),
+          "curr_obj_random_blink", "bhv_bobomb_loop", "bhv_bobomb_fuse_smoke_init",
+          "bhv_bobomb_buddy_init", "bobomb_buddy_act_idle", "bobomb_buddy_cannon_dialog",
+          "bobomb_buddy_act_talk", "bobomb_buddy_act_turn_to_talk", "bobomb_buddy_actions",
+          "bhv_bobomb_buddy_loop"]]]),
     ("explosion.c", "src/game/behaviors/explosion.inc.c", [],
      [("function", "bhv_explosion_init"), ("function", "bhv_explosion_loop")]),
     ("corkbox.c", "src/game/behaviors/corkbox.inc.c", [],
@@ -149,7 +152,7 @@ EXCERPTS = [
      ['"sm64.h"', '"dialog_ids.h"', '"audio/external.h"', '"engine/behavior_script.h"',
       '"engine/graph_node.h"', '"engine/math_util.h"', '"engine/surface_collision.h"',
       '"game/area.h"', '"game/game_init.h"', '"game/hud.h"', '"game/ingame_menu.h"',
-      '"game/object_list_processor.h"', '"game/level_update.h"',
+      '"game/object_list_processor.h"', '"game/level_update.h"', '"game/object_helpers.h"',
       '"game/camera.h"', '"camera_boundary.h"'],
      [("line", "#define CBUTTON_MASK (U_CBUTTONS | D_CBUTTONS | L_CBUTTONS | R_CBUTTONS)"),
       ("line", "struct PlayerGeometry sMarioGeometry;"),
@@ -244,7 +247,20 @@ EXCERPTS = [
           "geo_camera_main", "update_camera", "shake_camera_fov",
           "set_fov_30", "approach_fov_20", "set_fov_45", "set_fov_29", "zoom_fov_30",
           "fov_default", "approach_fov_30", "approach_fov_60", "approach_fov_45",
-          "approach_fov_80", "set_fov_bbh", "geo_camera_fov", "set_fov_function"]]]),
+          "approach_fov_80", "set_fov_bbh", "geo_camera_fov", "set_fov_function"]],
+      # The dialog cutscene and the object requests that start it; the
+      # authored c/camera_unit.c play_cutscene dispatches only this table.
+      *[("line", line) for line in [
+          "s16 sCutsceneDialogID;", "struct CameraStoredInfo sCameraStoreCutscene;",
+          "u8 sCutsceneDialogResponse = DIALOG_RESPONSE_NONE;"]],
+      *[("function", name) for name in [
+          "start_object_cutscene", "cutscene_object_with_dialog", "reset_pan_distance",
+          "store_info_star", "retrieve_info_star", "cutscene_soften_music",
+          "cutscene_unsoften_music", "cutscene_dialog_start",
+          "cutscene_dialog_move_mario_shoulder", "cutscene_dialog_create_dialog_box",
+          "cutscene_dialog", "cutscene_dialog_set_flag", "cutscene_dialog_end"]],
+      ("range", "struct Cutscene sCutsceneDialog[] = {", "};"),
+      ("function", "cutscene_event")]),
     ("behavior_script.c", "src/engine/behavior_script.c",
      ['"sm64.h"', '"behavior_data.h"', '"engine/behavior_script.h"', '"engine/graph_node.h"',
       '"engine/surface_collision.h"', '"game/area.h"', '"game/behavior_actions.h"',
@@ -285,7 +301,7 @@ EXCERPTS = [
           "bhvGoldenCoinSparkles", "bhvMario", "bhvSpinAirborneWarp", "bhvSoundSpawner",
           "bhvMovingYellowCoin", "bhvBobomb", "bhvBobombFuseSmoke", "bhvCarrySomething3",
           "bhvCarrySomething4", "bhvCarrySomething5", "bhvExplosion",
-          "bhvBobombBullyDeathSmoke", "bhvRespawner"]]]),
+          "bhvBobombBullyDeathSmoke", "bhvRespawner", "bhvBobombBuddy"]]]),
     ("coin.c", "src/game/behaviors/coin.inc.c",
      ['"sm64.h"', '"behavior_data.h"', '"model_ids.h"', '"engine/behavior_script.h"',
       '"engine/math_util.h"', '"engine/surface_collision.h"', '"game/interaction.h"',
@@ -421,6 +437,12 @@ EXCERPTS = [
       ("function", "interact_damage"),
       ("function", "check_object_grab_mario"),
       ("function", "interact_grabbable"),
+      ("function", "mario_can_talk"),
+      ("range_at", "#define READ_MASK (INPUT_B_PRESSED)", 1, "#endif"),
+      ("range_at", "#define SIGN_RANGE 0x38E3", 1, "#endif"),
+      ("function", "check_read_sign"),
+      ("function", "check_npc_talk"),
+      ("function", "interact_text"),
       ("function", "mario_get_collided_object"),
       ("function", "mario_check_object_grab"),
       ("function", "check_kick_or_punch_wall"),
@@ -461,6 +483,7 @@ EXCERPTS = [
           "obj_attack_collided_from_other_object", "obj_update_pos_from_parent_transformation",
           "create_transformation_from_matrices", "obj_set_held_state",
           "obj_set_gfx_pos_from_pos", "obj_set_gfx_pos_at_obj_pos",
+          "set_time_stop_flags", "clear_time_stop_flags",
           "lateral_dist_between_objects", "cur_obj_can_mario_activate_textbox",
           "cur_obj_can_mario_activate_textbox_2"]]]),
     ("object_list_processor.c", "src/game/object_list_processor.c",
@@ -484,6 +507,40 @@ EXCERPTS = [
           "spawn_objects_from_info", "stub_obj_list_processor_1", "clear_objects",
           "update_terrain_objects", "update_non_terrain_objects", "unload_deactivated_objects",
           "update_objects"]]]),
+    # The dialog box's state; c/ingame_menu_unit.c supplies the drawing
+    # boundary (display-list macros that only advance the list pointer, and
+    # drawing helpers that draw nothing) and the ROM's dialog table.
+    ("ingame_menu.c", "src/game/ingame_menu.c",
+     ['"sm64.h"', '"dialog_ids.h"', '"seq_ids.h"', '"audio/external.h"', '"game/camera.h"',
+      '"game/game_init.h"', '"game/ingame_menu.h"', '"game/level_update.h"',
+      '"ingame_menu_boundary.h"'],
+     [*[("line", line) for line in [
+          "FORCE_BSS u16 gMenuTextColorTransTimer;", "FORCE_BSS s8 gLastDialogLineNum;",
+          "FORCE_BSS s32 gDialogVariable;"]],
+      ("range", "enum MenuState {", "};"),
+      ("range", "enum DialogBoxPageState {", "};"),
+      ("range", "enum DialogBoxType {", "};"),
+      ("line", "enum MultiStringIDs { STRING_THE, STRING_YOU };"),
+      ("line", "#define DIALOG_BOX_ANGLE_DEFAULT 90.0f"),
+      ("line", "#define DIALOG_BOX_SCALE_DEFAULT 19.0f"),
+      ("range_at", "u8 gDialogCharWidths[256] = { // TODO: Is there a way to auto generate this?", 1,
+       "#endif", 3),
+      ("range", "s8 gMenuState = MENU_STATE_DEFAULT;", "s32 gDialogResponse = DIALOG_RESPONSE_NONE;"),
+      *[("function", name) for name in [
+          "handle_menu_scrolling", "get_dialog_id", "create_dialog_box",
+          "create_dialog_box_with_var", "create_dialog_inverted_box",
+          "create_dialog_box_with_response"]],
+      ("range_at", "    #define X_VAL3 5.0f", 1, "#endif"),
+      ("range_at", "void handle_dialog_scroll_page_state(s8 lineNum, s8 totalLines, s8 *pageState, s8 *xMatrix)",
+       1, "}"),
+      ("range_at", "void handle_dialog_text_and_pages(s8 colorMode, struct DialogEntry *dialog)", 1, "}"),
+      ("range_at", "    #define X_VAL4_1 50", 1, "#endif"),
+      ("function", "render_dialog_triangle_choice"),
+      ("function", "handle_special_dialog_text"),
+      ("line", "s16 gMenuMode = MENU_MODE_NONE;"),
+      ("range_at", "    #define DIAG_VAL1 20", 1, "#endif", 2),
+      ("function", "render_dialog_entries"),
+      ("function", "render_menus_and_dialogs")]),
     ("level_update.c", "src/game/level_update.c",
      ['"sm64.h"', '"sounds.h"', '"course_table.h"', '"audio/external.h"', '"game/area.h"',
       '"game/game_init.h"', '"game/level_update.h"', '"game/mario.h"'],
@@ -506,10 +563,12 @@ def extract(lines, item, path):
         assert len(hits) == 1, (path, item)
         return lines[hits[0]] + "\n"
     if kind == "range_at":
+        # (kind, unique line, lines before it, end line[, which end line]).
         start = [i for i, line in enumerate(lines) if line == item[1]]
         assert len(start) == 1, (path, item)
         first = start[0] - item[2]
-        end = next(i for i in range(start[0], len(lines)) if lines[i] == item[3])
+        ends = [i for i in range(start[0], len(lines)) if lines[i] == item[3]]
+        end = ends[(item[4] if len(item) > 4 else 1) - 1]
         return "\n".join(lines[first:end + 1]) + "\n"
     if kind == "range":
         start = [i for i, line in enumerate(lines) if line == item[1]]

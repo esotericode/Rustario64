@@ -30,6 +30,7 @@ pub enum Behavior {
     SpinAirborneWarp,
     Bobomb,
     BobombFuseSmoke,
+    BobombBuddy,
     Explosion,
     Respawner,
     BobombBullyDeathSmoke,
@@ -46,7 +47,7 @@ pub enum Behavior {
 }
 
 impl Behavior {
-    pub const ALL: [Behavior; 20] = [
+    pub const ALL: [Behavior; 21] = [
         Behavior::Mario,
         Behavior::YellowCoin,
         Behavior::CoinFormation,
@@ -56,6 +57,7 @@ impl Behavior {
         Behavior::SpinAirborneWarp,
         Behavior::Bobomb,
         Behavior::BobombFuseSmoke,
+        Behavior::BobombBuddy,
         Behavior::Explosion,
         Behavior::Respawner,
         Behavior::BobombBullyDeathSmoke,
@@ -81,6 +83,7 @@ impl Behavior {
             Behavior::SpinAirborneWarp => "bhvSpinAirborneWarp",
             Behavior::Bobomb => "bhvBobomb",
             Behavior::BobombFuseSmoke => "bhvBobombFuseSmoke",
+            Behavior::BobombBuddy => "bhvBobombBuddy",
             Behavior::Explosion => "bhvExplosion",
             Behavior::Respawner => "bhvRespawner",
             Behavior::BobombBullyDeathSmoke => "bhvBobombBullyDeathSmoke",
@@ -120,6 +123,8 @@ pub enum Native {
     BhvBobombInit,
     BhvBobombLoop,
     BhvBobombFuseSmokeInit,
+    BhvBobombBuddyInit,
+    BhvBobombBuddyLoop,
     BhvDustSmokeLoop,
     BhvExplosionInit,
     BhvExplosionLoop,
@@ -131,7 +136,7 @@ pub enum Native {
 }
 
 impl Native {
-    pub const ALL: [Native; 21] = [
+    pub const ALL: [Native; 23] = [
         Native::TryPrintDebugMarioLevelInfo,
         Native::BhvMarioUpdate,
         Native::TryDoMarioDebugObjectSpawn,
@@ -145,6 +150,8 @@ impl Native {
         Native::BhvBobombInit,
         Native::BhvBobombLoop,
         Native::BhvBobombFuseSmokeInit,
+        Native::BhvBobombBuddyInit,
+        Native::BhvBobombBuddyLoop,
         Native::BhvDustSmokeLoop,
         Native::BhvExplosionInit,
         Native::BhvExplosionLoop,
@@ -171,6 +178,8 @@ impl Native {
             Native::BhvBobombInit => "bhv_bobomb_init",
             Native::BhvBobombLoop => "bhv_bobomb_loop",
             Native::BhvBobombFuseSmokeInit => "bhv_bobomb_fuse_smoke_init",
+            Native::BhvBobombBuddyInit => "bhv_bobomb_buddy_init",
+            Native::BhvBobombBuddyLoop => "bhv_bobomb_buddy_loop",
             Native::BhvDustSmokeLoop => "bhv_dust_smoke_loop",
             Native::BhvExplosionInit => "bhv_explosion_init",
             Native::BhvExplosionLoop => "bhv_explosion_loop",
@@ -769,6 +778,28 @@ pub fn authored_scripts() -> BehaviorScripts {
         .call_native(native(Native::BhvDustSmokeLoop))
         .add_int(O_ANIM_STATE, 1)
         .end_loop();
+    behaviors.push((Behavior::BobombBuddy, b.here()));
+    b.begin(OBJ_LIST_GENACTOR as u8)
+        .or_int(
+            O_FLAGS,
+            OBJ_FLAG_COMPUTE_ANGLE_TO_MARIO
+                | OBJ_FLAG_HOLDABLE
+                | OBJ_FLAG_COMPUTE_DIST_TO_MARIO
+                | OBJ_FLAG_SET_FACE_YAW_TO_MOVE_YAW
+                | OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE,
+        )
+        .load_animations(O_ANIMATIONS, super::animation::AUTHORED_BOBOMB_ANIMATIONS)
+        .set_interact_type(INTERACT_TEXT)
+        .drop_to_floor()
+        .set_hitbox(100, 60)
+        .animate(0)
+        .set_int(O_BOBOMB_BUDDY_ROLE, BOBOMB_BUDDY_ROLE_ADVICE as i16)
+        .set_home()
+        .call_native(native(Native::BhvBobombBuddyInit))
+        .begin_loop()
+        .set_int(O_INTANGIBLE_TIMER, 0)
+        .call_native(native(Native::BhvBobombBuddyLoop))
+        .end_loop();
     behaviors.push((Behavior::Explosion, b.here()));
     b.begin(OBJ_LIST_DESTRUCTIVE as u8)
         .or_int(
@@ -1350,6 +1381,8 @@ fn call_native(native: Native, m: &mut MarioState, w: &mut StepWorld<'_>, id: Ob
         Native::BhvBobombInit => bobomb::bhv_bobomb_init(m, w, id),
         Native::BhvBobombLoop => bobomb::bhv_bobomb_loop(m, w, id),
         Native::BhvBobombFuseSmokeInit => bobomb::bhv_bobomb_fuse_smoke_init(m, w, id),
+        Native::BhvBobombBuddyInit => bobomb::bhv_bobomb_buddy_init(m, w, id),
+        Native::BhvBobombBuddyLoop => bobomb::bhv_bobomb_buddy_loop(m, w, id),
         Native::BhvDustSmokeLoop => {
             helpers::bhv_dust_smoke_loop(object_mut(&mut w.objects, &mut m.obj, id))
         }

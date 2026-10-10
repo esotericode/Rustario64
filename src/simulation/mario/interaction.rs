@@ -2,8 +2,8 @@
 //! src/game/interaction.c (the items vendored as oracle excerpts).
 //!
 //! The handler dispatch runs in the original table order; interact_coin,
-//! interact_damage and interact_grabbable (with the attack, knockback and
-//! push-out helpers they use) are ported, and objects with other interaction
+//! interact_damage, interact_grabbable and interact_text (with the attack,
+//! knockback, push-out and talking helpers they use) are ported, and objects with other interaction
 //! types are not spawned (their behaviors are not ported), so the other
 //! handlers are unreachable and panic. Code that would dereference a held, ridden or used object panics,
 //! as the original would crash without one. Special floors, the death
@@ -595,6 +595,92 @@ fn interact_coin(m: &mut MarioState, w: &mut StepWorld<'_>, o: ObjectId) -> bool
     false
 }
 
+/// mario_can_talk: idle actions, or walking (`arg` set, or one of three
+/// walking animations).
+fn mario_can_talk(m: &MarioState, arg: bool) -> bool {
+    if m.action & ACT_FLAG_IDLE != 0 {
+        return true;
+    }
+    if m.action == ACT_WALKING {
+        if arg {
+            return true;
+        }
+        let anim_id = m.obj.gfx.anim.anim_id;
+        if anim_id == 0x0080 || anim_id == 0x007F || anim_id == 0x006C {
+            return true;
+        }
+    }
+    false
+}
+
+/// READ_MASK (US).
+const READ_MASK: u16 = INPUT_B_PRESSED | INPUT_A_PRESSED;
+/// SIGN_RANGE (US).
+const SIGN_RANGE: i16 = 0x4000;
+
+/// check_read_sign.
+fn check_read_sign(m: &mut MarioState, w: &mut StepWorld<'_>, o: ObjectId) -> bool {
+    if m.input & READ_MASK != 0
+        && mario_can_talk(m, false)
+        && object_facing_mario(m, w, o, SIGN_RANGE)
+    {
+        let object = w.objects.slot(o);
+        let yaw = object.raw.s32(O_MOVE_ANGLE_YAW);
+        let facing_d_yaw =
+            (i32::from(yaw.wrapping_add(0x8000) as i16) - i32::from(m.face_angle[1])) as i16;
+        if (-SIGN_RANGE..=SIGN_RANGE).contains(&facing_d_yaw) {
+            let target_x = object.raw.f32(O_POS_X) + 105.0 * w.trig.sins(yaw);
+            let target_z = object.raw.f32(O_POS_Z) + 105.0 * w.trig.coss(yaw);
+            m.obj
+                .raw
+                .set_s32(O_MARIO_READING_SIGN_D_YAW, i32::from(facing_d_yaw));
+            m.obj
+                .raw
+                .set_f32(O_MARIO_READING_SIGN_D_POS_X, target_x - m.pos[0]);
+            m.obj
+                .raw
+                .set_f32(O_MARIO_READING_SIGN_D_POS_Z, target_z - m.pos[2]);
+            m.interact_obj = Some(o);
+            m.used_obj = Some(o);
+            return core::set_mario_action(m, w, ACT_READING_SIGN, 0) != 0;
+        }
+    }
+    false
+}
+
+/// check_npc_talk.
+fn check_npc_talk(m: &mut MarioState, w: &mut StepWorld<'_>, o: ObjectId) -> bool {
+    if m.input & READ_MASK != 0 && mario_can_talk(m, true) {
+        let facing_d_yaw =
+            (i32::from(mario_obj_angle_to_object(m, w, o)) - i32::from(m.face_angle[1])) as i16;
+        if (-0x4000..=0x4000).contains(&facing_d_yaw) {
+            w.objects
+                .slot_mut(o)
+                .raw
+                .set_u32(O_INTERACT_STATUS, INT_STATUS_INTERACTED);
+            m.interact_obj = Some(o);
+            m.used_obj = Some(o);
+            push_mario_out_of_object(m, w, o, -10.0);
+            return core::set_mario_action(m, w, ACT_WAITING_FOR_DIALOG, 0) != 0;
+        }
+    }
+    push_mario_out_of_object(m, w, o, -10.0);
+    false
+}
+
+/// interact_text.
+fn interact_text(m: &mut MarioState, w: &mut StepWorld<'_>, o: ObjectId) -> bool {
+    let subtype = w.objects.slot(o).raw.u32(O_INTERACTION_SUBTYPE);
+    if subtype & INT_SUBTYPE_SIGN != 0 {
+        check_read_sign(m, w, o)
+    } else if subtype & INT_SUBTYPE_NPC != 0 {
+        check_npc_talk(m, w, o)
+    } else {
+        push_mario_out_of_object(m, w, o, 2.0);
+        false
+    }
+}
+
 /// mario_process_interactions.
 pub fn mario_process_interactions(m: &mut MarioState, w: &mut StepWorld<'_>) {
     w.interaction.delay_invinc_timer = 0;
@@ -613,6 +699,7 @@ pub fn mario_process_interactions(m: &mut MarioState, w: &mut StepWorld<'_>) {
                         INTERACT_COIN => interact_coin(m, w, object),
                         INTERACT_DAMAGE => interact_damage(m, w, object),
                         INTERACT_GRABBABLE => interact_grabbable(m, w, object),
+                        INTERACT_TEXT => interact_text(m, w, object),
                         _ => needs_objects(name),
                     };
                     if stop {

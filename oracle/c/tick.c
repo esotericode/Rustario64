@@ -63,7 +63,11 @@ void spawn_macro_objects(s16 areaIndex, s16 *macroObjList);
 void spawn_objects_from_info(s32 unused, struct SpawnInfo *spawnInfo);
 void clear_objects(void);
 void update_objects(s32 unused);
+#include "game/ingame_menu.h"
 void update_hud_values(void);
+void oracle_dialog_reset(void);
+void oracle_dialog_begin_frame(void);
+void oracle_dialog_snapshot(void (*put)(const char *name, u32 value));
 void oracle_set_rng_seed(u16 seed);
 u16 oracle_rng_seed(void);
 extern struct Object gObjectPool[];
@@ -306,6 +310,7 @@ void oracle_tick_begin(const OracleTickSetup *s) {
     memset(sFloorAlignMatrix, 0, sizeof(Mat4) * 2);
     gMarioAnimsBuf.currentAddr = NULL;
     oracle_reset_interaction_state();
+    oracle_dialog_reset();
     gWaterSurfacePseudoFloor.originOffset = 0.0f;
     gCheckingSurfaceCollisionsForCamera = FALSE;
     gFindFloorIncludeSurfaceIntangible = FALSE;
@@ -474,6 +479,14 @@ void oracle_tick_run(const OracleTickInput *in) {
     controller->buttonPressed = buttons & (buttons ^ controller->buttonDown);
     controller->buttonDown = buttons;
     adjust_analog_stick(controller);
+    /* read_controller_inputs copies player 1's inputs to player 3's port. */
+    gPlayer3Controller->rawStickX = gPlayer1Controller->rawStickX;
+    gPlayer3Controller->rawStickY = gPlayer1Controller->rawStickY;
+    gPlayer3Controller->stickX = gPlayer1Controller->stickX;
+    gPlayer3Controller->stickY = gPlayer1Controller->stickY;
+    gPlayer3Controller->stickMag = gPlayer1Controller->stickMag;
+    gPlayer3Controller->buttonPressed = gPlayer1Controller->buttonPressed;
+    gPlayer3Controller->buttonDown = gPlayer1Controller->buttonDown;
     if (!sCameraLinked) {
         /* The camera computed this yaw during the previous frame. */
         sTickCamera.yaw = (s16) in->cameraYaw;
@@ -495,6 +508,12 @@ void oracle_tick_run(const OracleTickInput *in) {
         tick_render_mario();
     }
     tick_render_objects();
+    /* render_game ends with render_menus_and_dialogs (after the HUD and the
+     * text labels, which only draw). */
+    if (sCameraLinked) {
+        oracle_dialog_begin_frame();
+        render_menus_and_dialogs();
+    }
     gGlobalTimer++;
 }
 
@@ -556,6 +575,10 @@ static s32 object_id(struct Object *o) {
         fail("an object reference outside the pool");
     }
     return (s32) (o - &gObjectPool[0]);
+}
+
+s32 oracle_object_slot(struct Object *o) {
+    return object_id(o);
 }
 
 /* A respawn record: the full-list index of the macro entry or spawn info,
@@ -796,6 +819,7 @@ static void snapshot_objects(void) {
     put_i("world.marioObject", object_id(gMarioObject));
     put_i("world.currentObject", object_id(gCurrentObject));
     put("world.timeStopState", gTimeStopState);
+    oracle_dialog_snapshot(put);
     put_i("world.rngSeed", oracle_rng_seed());
     for (i = 0; i < sMacroCount; i++) {
         snprintf(buf, sizeof(buf), "area.macro[%d].params", sMacroOriginal[i]);

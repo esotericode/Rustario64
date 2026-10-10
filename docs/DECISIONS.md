@@ -1077,3 +1077,26 @@ supplies its own forward/vertical speeds afterward. The new oracle fixture
 allocates ordinary objects as test carriers, injects initial state once, and
 calls unmodified native functions. It never executes a King Bob-omb script,
 skips dialogs or substitutes a completed mission.
+
+## NPC dialogs — 2026-10-10 (session 30)
+
+The dialog box's state is simulation: objects and the camera wait on its
+response and on when it closes, and its timing depends on the text's line
+breaks. `simulation::dialog::DialogBox` holds ingame_menu.c's dialog globals
+in `StepWorld`, and the game frame advances it once per frame after the render
+pass, where render_game calls render_menus_and_dialogs. The page breaks read
+the ROM's text (`content::dialog`, imported from segment 2's table at a
+validated offset). Drawing is presentation: `presentation::dialog` reads the
+box after a frame for the viewer's development overlay, which never writes
+back.
+
+Objects request cutscenes through camera.c globals (sObjectCutscene,
+gRecentCutscene, gCutsceneFocus, sCutsceneDialogID/Response) while the camera
+does not run. The game frame copies them into `StepWorld::cutscene` before the
+object update and back into the camera after it, which is exact because the
+camera code never runs between those points; objects only read
+gCamera->cutscene. The camera reaches the focus object's position and hitbox,
+the time-stop state and the dialog box through `Frame`. `play_cutscene` runs
+the ported cutscenes (the dialog cutscene); others remain an `Unsupported`
+stop. Sound and music requests are recorded events (kinds 15–20 on both
+sides), not audio.

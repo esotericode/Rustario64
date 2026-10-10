@@ -639,6 +639,22 @@ impl Renderer {
         height: u32,
         camera: &FlyCamera,
     ) -> Result<Vec<u8>, String> {
+        self.capture_with_overlay(width, height, camera, |_, _, _, _| {})
+    }
+
+    /// [`Self::capture`], with `overlay` painting over the resolved scene
+    /// (device, queue, target view and its format) before the readback.
+    pub fn capture_with_overlay(
+        &mut self,
+        width: u32,
+        height: u32,
+        camera: &FlyCamera,
+        overlay: impl FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, wgpu::TextureFormat),
+    ) -> Result<Vec<u8>, String> {
+        // egui writes gamma-space colors, so the overlay draws through a
+        // view without the sRGB encoding.
+        let overlay_format = self.color_format.remove_srgb_suffix();
+        let view_formats = [overlay_format];
         let make_target = |samples: u32, usage| {
             self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("capture"),
@@ -652,7 +668,7 @@ impl Renderer {
                 dimension: wgpu::TextureDimension::D2,
                 format: self.color_format,
                 usage,
-                view_formats: &[],
+                view_formats: if samples == 1 { &view_formats } else { &[] },
             })
         };
         let resolved = make_target(
@@ -674,6 +690,11 @@ impl Renderer {
             }
             None => self.render(&resolved_view, None, &depth, (width, height), camera),
         }
+        let overlay_view = resolved.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(overlay_format),
+            ..Default::default()
+        });
+        overlay(&self.device, &self.queue, &overlay_view, overlay_format);
         let padded = (width * 4).div_ceil(256) * 256;
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("capture readback"),

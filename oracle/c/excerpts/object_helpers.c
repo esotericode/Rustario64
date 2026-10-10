@@ -718,6 +718,16 @@ void obj_set_gfx_pos_at_obj_pos(struct Object *obj1, struct Object *obj2) {
     obj1->header.gfx.angle[2] = obj2->oMoveAngleRoll & 0xFFFF;
 }
 
+/* src/game/object_helpers.c: set_time_stop_flags */
+void set_time_stop_flags(s32 flags) {
+    gTimeStopState |= flags;
+}
+
+/* src/game/object_helpers.c: clear_time_stop_flags */
+void clear_time_stop_flags(s32 flags) {
+    gTimeStopState = gTimeStopState & (flags ^ 0xFFFFFFFF);
+}
+
 /* src/game/object_helpers.c: lateral_dist_between_objects */
 f32 lateral_dist_between_objects(struct Object *obj1, struct Object *obj2) {
     f32 dx = obj1->oPosX - obj2->oPosX;

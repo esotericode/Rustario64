@@ -1,5 +1,5 @@
 //! BOB's act-1 objects from the owner's ROM: which placements the port
-//! spawns (every coin and Bob-omb placement) and which it records as
+//! spawns (every coin, Bob-omb and Bob-omb Buddy placement) and which it records as
 //! unported, a played session that collects a yellow coin, Bob-ombs that
 //! chase Mario and explode, and one Mario picks up, carries (drawn in his
 //! hand) and throws. The per-frame object words are
@@ -94,15 +94,36 @@ fn bob_act_1_spawns_its_coins_and_bobombs_and_records_the_rest() {
         .iter()
         .filter(|i| scripts.check(i.behavior_script).is_ok())
         .collect();
-    assert_eq!(
-        ported_infos.len(),
-        1,
-        "only the spin airborne warp is ported"
+    // The spin airborne warp and act 1's two Bob-omb Buddies (pinned
+    // levels/bob/script.c: BPARAM2(DIALOG_002) and BPARAM2(DIALOG_001)).
+    let ported: Vec<_> = ported_infos
+        .iter()
+        .map(|i| {
+            (
+                scripts.behavior_at(i.behavior_script),
+                i.behavior_arg >> 16 & 0xFF,
+            )
+        })
+        .collect();
+    assert_eq!(ported.len(), 3, "{ported:?}");
+    assert!(
+        ported
+            .iter()
+            .any(|(b, _)| *b == Some(Behavior::SpinAirborneWarp))
     );
-    assert_eq!(
-        scripts.behavior_at(ported_infos[0].behavior_script),
-        Some(Behavior::SpinAirborneWarp)
+    for dialog in [c::DIALOG_001, c::DIALOG_002] {
+        assert!(ported.contains(&(Some(Behavior::BobombBuddy), dialog as u32)));
+    }
+    assert!(
+        content
+            .models
+            .traversal(c::MODEL_BOBOMB_BUDDY as u16)
+            .is_some(),
+        "the Buddy's geo layout decodes"
     );
+    // The Buddies' dialogs come from the ROM's table.
+    assert_eq!(content.dialogs.entries.len(), 170);
+    assert_eq!(content.dialogs.get(c::DIALOG_001).unwrap().lines_per_box, 4);
 
     // Entering the level spawns exactly those and records every other
     // placement with its reason.
@@ -111,7 +132,7 @@ fn bob_act_1_spawns_its_coins_and_bobombs_and_records_the_rest() {
     let skipped = &w.area.skipped;
     assert_eq!(
         skipped.len(),
-        macros.len() - ported_macros + content.area.spawn_infos.len() - 1
+        macros.len() - ported_macros + content.area.spawn_infos.len() - 3
     );
     let behavior_of = |id| scripts.behavior_at(w.objects.slot(id).behavior);
     let level = w.objects.list(ObjectList::Level);
@@ -138,8 +159,9 @@ fn bob_act_1_spawns_its_coins_and_bobombs_and_records_the_rest() {
         12
     );
     println!(
-        "BOB act 1: {} macro objects and {} spawn infos; {} coin and Bob-omb placements \
-         and the spin airborne warp spawn, {} placements recorded as unported",
+        "BOB act 1: {} macro objects and {} spawn infos; {} coin and Bob-omb placements, \
+         the two Bob-omb Buddies and the spin airborne warp spawn, {} placements recorded as \
+         unported",
         macros.len(),
         content.area.spawn_infos.len(),
         ported_macros,

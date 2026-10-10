@@ -171,6 +171,41 @@ impl Ui {
     }
 }
 
+/// egui painted over an offscreen target (screenshots), without a window:
+/// `ui` runs twice, as two frames, so new areas finish their sizing pass,
+/// and both frames paint (the first draws nothing visible).
+pub fn paint_offscreen(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    target: &wgpu::TextureView,
+    format: wgpu::TextureFormat,
+    pixels_per_point: f32,
+    mut ui: impl FnMut(&egui::Context),
+) {
+    let context = egui::Context::default();
+    context.set_visuals(egui::Visuals::dark());
+    let size = egui::vec2(
+        target.texture().width() as f32,
+        target.texture().height() as f32,
+    ) / pixels_per_point;
+    let mut renderer =
+        egui_wgpu::Renderer::new(device, format, egui_wgpu::RendererOptions::default());
+    for frame in 0..2 {
+        let mut input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            time: Some(f64::from(frame) / 30.0),
+            ..Default::default()
+        };
+        input
+            .viewports
+            .entry(egui::ViewportId::ROOT)
+            .or_default()
+            .native_pixels_per_point = Some(pixels_per_point);
+        let output = context.run_ui(input, |root| ui(root.ctx()));
+        paint_ui(&mut renderer, &context, device, queue, target, output);
+    }
+}
+
 fn paint_ui(
     renderer: &mut egui_wgpu::Renderer,
     context: &egui::Context,

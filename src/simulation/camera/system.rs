@@ -13,6 +13,7 @@
 //! All of this runs once per 30 Hz tick; presentation reads `graph`.
 #![allow(clippy::too_many_arguments)]
 use super::{
+    cutscene::{CutsceneVariable, FocusView},
     lakitu::{Rig, get_dist_angle},
     obstruction::{is_range_behind_surface, rotate_camera_around_walls},
     radial::RadialMovement,
@@ -21,7 +22,9 @@ use super::{
 use crate::simulation::{
     collision::SurfaceIndex,
     controller::{A_BUTTON, B_BUTTON, Controller, R_TRIG},
+    dialog::DialogBox,
     mario::{Event, PlayerCameraState, f32_to_s16},
+    object::ObjectId,
     rng::Rng,
 };
 
@@ -212,6 +215,13 @@ pub struct Frame<'a, 'w> {
     pub rng: &'a mut Rng,
     /// Sounds, in call order.
     pub events: &'a mut Vec<Event>,
+    /// gTimeStopState, which the dialog cutscene sets and clears.
+    pub time_stop_state: &'a mut u32,
+    /// The dialog box the dialog cutscene opens and reads.
+    pub dialog: &'a mut DialogBox,
+    /// gCutsceneFocus's position and hitbox, read when the camera starts
+    /// a cutscene about it (None while it is NULL).
+    pub focus: Option<FocusView>,
 }
 
 /// One area's camera and every camera.c global it uses.
@@ -268,6 +278,15 @@ pub struct CameraSystem {
     pub castle_entrance_offset: [f32; 3],
     pub fixed_mode_base_position: [f32; 3],
     pub store_c_up: StoredInfo,
+    /// sCameraStoreCutscene.
+    pub store_cutscene: StoredInfo,
+    /// sCutsceneVars.
+    pub cutscene_vars: [CutsceneVariable; 10],
+    /// gCutsceneFocus.
+    pub cutscene_focus: Option<ObjectId>,
+    /// sCutsceneDialogID and sCutsceneDialogResponse.
+    pub cutscene_dialog_id: i16,
+    pub cutscene_dialog_response: u8,
     /// sCurCreditsSplinePos/Focus indices (init_camera resets them).
     pub credits_spline_pos_index: [i8; 32],
     pub credits_spline_focus_index: [i8; 32],
@@ -345,6 +364,11 @@ impl CameraSystem {
             castle_entrance_offset: [0.0; 3],
             fixed_mode_base_position: [646.0, 143.0, -1513.0],
             store_c_up: StoredInfo::default(),
+            store_cutscene: StoredInfo::default(),
+            cutscene_vars: [CutsceneVariable::default(); 10],
+            cutscene_focus: None,
+            cutscene_dialog_id: 0,
+            cutscene_dialog_response: c::DIALOG_RESPONSE_NONE as u8,
             credits_spline_pos_index: [0; 32],
             credits_spline_focus_index: [0; 32],
             hud_status: 0,
@@ -389,6 +413,7 @@ impl CameraSystem {
         self.cutscene_shot = 0;
         self.cutscene_obj_spawn = 0;
         self.obj_cutscene_done = 0;
+        self.cutscene_focus = None;
         self.unused_8032cfc8 = 0;
         self.unused_8032cfcc = 0;
         self.c_buttons_pressed = 0;
@@ -585,8 +610,11 @@ impl CameraSystem {
         );
         if self.rig.camera.cutscene != 0 {
             self.rig.yaw_speed = 0;
-            // play_cutscene: no cutscene is ported.
-            self.unsupported(Unsupported::Cutscene(self.rig.camera.cutscene));
+            if Self::cutscene_is_ported(self.rig.camera.cutscene) {
+                self.play_cutscene(f);
+            } else {
+                self.unsupported(Unsupported::Cutscene(self.rig.camera.cutscene));
+            }
             self.frames_since_cutscene_ended = 0;
         } else if self.recent_cutscene != 0 && self.frames_since_cutscene_ended < 8 {
             self.frames_since_cutscene_ended += 1;
@@ -634,7 +662,7 @@ impl CameraSystem {
         }
         let cutscene = self.get_cutscene_from_mario_status(f.mario_cam);
         self.start_cutscene(cutscene);
-        if self.rig.camera.cutscene != 0 {
+        if self.rig.camera.cutscene != 0 && !Self::cutscene_is_ported(self.rig.camera.cutscene) {
             self.unsupported(Unsupported::Cutscene(self.rig.camera.cutscene));
         }
         f.flags.checking_for_camera = false;
@@ -1577,8 +1605,7 @@ impl CameraSystem {
             if close_to_mario & 1 != 0 && avoid_status != 0 {
                 yaw_vel = 0;
             }
-            // get_dialog_id() == DIALOG_NONE: no dialog system runs.
-            if yaw_vel != 0 {
+            if yaw_vel != 0 && f.dialog.id() == c::DIALOG_NONE {
                 camera_approach_s16_symmetric_bool(&mut yaw, yaw_goal, yaw_vel);
             }
         }
@@ -2160,11 +2187,12 @@ impl CameraSystem {
         cutscene
     }
 
-    /// start_cutscene. The cutscene variables it clears are not modelled
-    /// (no cutscene runs); starting one is reported as unsupported.
+    /// start_cutscene. Starting a cutscene that is not ported is reported
+    /// as unsupported by the caller.
     fn start_cutscene(&mut self, cutscene: u8) {
         if self.rig.camera.cutscene != cutscene {
             self.rig.camera.cutscene = cutscene;
+            self.clear_cutscene_vars();
         }
     }
 

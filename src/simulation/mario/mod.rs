@@ -235,6 +235,33 @@ pub enum Event {
         yaw: i16,
     },
     Unsupported(Unsupported),
+    /// play_dialog_sound(dialogID), whose argument is a u8: the speaker's
+    /// voice for a dialog.
+    DialogSound(u8),
+    /// seq_player_lower_volume(player, duration, percentage).
+    SeqLowerVolume {
+        player: u8,
+        duration: u16,
+        percentage: u8,
+    },
+    /// seq_player_unlower_volume(player, duration).
+    SeqUnlowerVolume {
+        player: u8,
+        duration: u16,
+    },
+    /// play_music(player, seqArgs, fadeTimer).
+    PlayMusic {
+        player: u8,
+        seq_args: u16,
+        fade: u16,
+    },
+    /// seq_player_fade_out(player, duration).
+    SeqFadeOut {
+        player: u8,
+        duration: u16,
+    },
+    /// play_race_fanfare.
+    RaceFanfare,
 }
 
 impl Event {
@@ -260,6 +287,30 @@ impl Event {
                 Unsupported::InfiniteStairs => (13, 3, 0),
                 Unsupported::HundredCoinStar => (13, 4, 0),
             },
+            Event::DialogSound(id) => (15, i32::from(id), 0),
+            Event::SeqLowerVolume {
+                player,
+                duration,
+                percentage,
+            } => (
+                16,
+                i32::from(player),
+                (i32::from(duration) << 8) | i32::from(percentage),
+            ),
+            Event::SeqUnlowerVolume { player, duration } => {
+                (17, i32::from(player), i32::from(duration))
+            }
+            Event::PlayMusic {
+                player,
+                seq_args,
+                fade,
+            } => (
+                18,
+                i32::from(player),
+                (i32::from(seq_args) << 16) | i32::from(fade),
+            ),
+            Event::SeqFadeOut { player, duration } => (19, i32::from(player), i32::from(duration)),
+            Event::RaceFanfare => (20, 0, 0),
         }
     }
 }
@@ -332,6 +383,13 @@ pub struct StepWorld<'a> {
     pub time_stop_state: u32,
     /// gCurrCourseNum.
     pub course_num: i16,
+    /// The dialog box (ingame_menu.c's globals).
+    pub dialog: crate::simulation::dialog::DialogBox,
+    /// seg2_dialog_table.
+    pub dialogs: &'a crate::content::dialog::DialogTable,
+    /// The camera.c globals objects use to request cutscenes (the game
+    /// frame copies them from the camera and back around the object update).
+    pub cutscene: crate::simulation::camera::cutscene::ObjectCutsceneState,
 }
 
 impl<'a> StepWorld<'a> {
@@ -376,6 +434,9 @@ impl<'a> StepWorld<'a> {
             mario_graph: render::MarioGraphState::default(),
             time_stop_state: 0,
             course_num: 0,
+            dialog: Default::default(),
+            dialogs: &crate::content::dialog::NO_DIALOGS,
+            cutscene: Default::default(),
         }
     }
 

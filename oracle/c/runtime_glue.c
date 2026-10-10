@@ -85,9 +85,11 @@ struct MarioState gMarioStates[1];
 struct MarioState *gMarioState = &gMarioStates[0];
 struct MarioBodyState gBodyStates[2];
 struct Controller gControllers[3];
-/* game_init.c points the player controllers at the first two. */
+/* game_init.c points the player controllers at the first three; port 3 is
+ * never connected, and read_controller_inputs copies player 1 into it. */
 struct Controller *gPlayer1Controller = &gControllers[0];
 struct Controller *gPlayer2Controller = &gControllers[1];
+struct Controller *gPlayer3Controller = &gControllers[2];
 /* No demo plays: the harness's level entry is a development entry. */
 struct DemoInput *gCurrDemoInput;
 struct SpawnInfo gPlayerSpawnInfos[1];
@@ -273,10 +275,66 @@ void set_environmental_camera_shake(s16 shake) {
     }
 }
 
-/* Dialog boundary: no dialog system runs, so no dialog is ever open. */
-s16 get_dialog_id(void) {
-    return DIALOG_NONE;
+/* Audio requests from the dialog box and the dialog cutscene. */
+void play_dialog_sound(u8 dialogID) {
+    oracle_event(ORACLE_EVENT_DIALOG_SOUND, dialogID, 0);
 }
+
+void seq_player_lower_volume(u8 player, u16 fadeDuration, u8 percentage) {
+    oracle_event(ORACLE_EVENT_SEQ_LOWER_VOLUME, player, (fadeDuration << 8) | percentage);
+}
+
+void seq_player_unlower_volume(u8 player, u16 fadeDuration) {
+    oracle_event(ORACLE_EVENT_SEQ_UNLOWER_VOLUME, player, fadeDuration);
+}
+
+void play_music(u8 player, u16 seqArgs, u16 fadeTimer) {
+    oracle_event(ORACLE_EVENT_PLAY_MUSIC, player, (s32) (((u32) seqArgs << 16) | fadeTimer));
+}
+
+void seq_player_fade_out(u8 player, u16 fadeDuration) {
+    oracle_event(ORACLE_EVENT_SEQ_FADE_OUT, player, fadeDuration);
+}
+
+void play_race_fanfare(void) {
+    oracle_event(ORACLE_EVENT_RACE_FANFARE, 0, 0);
+}
+
+/* Level runtime boundary: closing a dialog box resets the transition with
+ * length 0 and no function, which leaves nothing pending on the paths the
+ * harness runs. */
+void level_set_transition(s16 length, void (*updateFunction)(s16 *)) {
+    if (length != 0 || updateFunction != NULL) {
+        unreachable_without_objects("level_set_transition with a transition");
+    }
+}
+
+/* Paths the ported objects never reach. */
+s32 trigger_cutscene_dialog(s32 trigger) {
+    (void) trigger;
+    unreachable_without_objects("trigger_cutscene_dialog (the read-message cutscene)");
+    return 0;
+}
+
+void save_file_set_cannon_unlocked(void) {
+    unreachable_without_objects("save_file_set_cannon_unlocked (cannon Bob-omb Buddy)");
+}
+
+struct Object *cur_obj_nearest_object_with_behavior(const BehaviorScript *behavior) {
+    (void) behavior;
+    unreachable_without_objects("cur_obj_nearest_object_with_behavior (cannons)");
+    return NULL;
+}
+
+s16 cutscene_object(u8 cutscene, struct Object *o) {
+    (void) cutscene;
+    (void) o;
+    unreachable_without_objects("cutscene_object (the prepare-cannon cutscene)");
+    return 0;
+}
+
+/* bhvCannonClosed (behavior_data.c), only compared by the cannon Buddy. */
+const BehaviorScript bhvCannonClosed[1];
 
 /* HUD boundary: the camera's HUD icon state, kept for the snapshot. */
 s16 gOracleHudCameraStatus;
@@ -394,7 +452,6 @@ UNREACHABLE_HANDLER(interact_koopa_shell)
 UNREACHABLE_HANDLER(interact_pole)
 UNREACHABLE_HANDLER(interact_hoot)
 UNREACHABLE_HANDLER(interact_cap)
-UNREACHABLE_HANDLER(interact_text)
 
 /* ---- Object-system boundaries ---- */
 /* gCurrAreaIndex (area.c): the loaded area, which the tick harness sets. */

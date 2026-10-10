@@ -895,3 +895,41 @@ are detected. Authored and owner-ROM optimized tests pass. King Bob-omb's
 behavior, rendered held-Mario callback, dialog/cutscene/time-stop transitions,
 star/completion, Bowser release and ridden-object dismount are outside coverage.
 These comparisons are against native C, not original N64 execution.
+
+## NPC dialogs: Bob-omb Buddies, the dialog cutscene and the dialog box (sessions 29–30, 2026-10-10)
+
+Complete frames against the native decomp with the camera linked
+(`oracle/tests/dialogs.rs`). Every word of Mario, every object, the camera
+(now including the ten cutscene variables, the stored cutscene camera,
+sCutsceneDialogID/Response and gCutsceneFocus) and every dialog-box global
+(menu state, angle, scale, scroll offset, box type, ID, page starts, line
+number, choice, hold-key state, response, last line, variable, text-color
+timer, menu mode) must match after every frame, with recorded sound and music
+events in call order.
+
+| Run | Frames | Coverage |
+| --- | ---: | --- |
+| Authored field, three Buddies (two animated with the authored Bob-omb model), a Bob-omb and a coin frozen by time stop, an authored five-entry dialog table; six starts in radial and close camera modes; B/A talks, page presses every 3–20 frames, A held, random play | 7,958 | 30 finished conversations; dialogs 2, 3, 4; 3,921 dialog-cutscene frames, 3,171 box frames, 60 page scrolls, 30 boxes closed, 3,891 time-stop frames, 4,641 frames of Mario reading |
+| BOB act 1 with the owner's ROM: both Buddies (DIALOG_001 and DIALOG_002 from the ROM's table), Mario starting on four sides of each | 10,678 | 41 finished conversations; 6,101 cutscene frames, 5,054 box frames, 148 page scrolls, 41 boxes closed, 6,058 time-stop frames |
+
+Seeded mutations of the Rust port, each rejected by the authored test at the
+named word: the scroll ending a frame early (`dialog.lastLineNum`), a page
+holding one line fewer (`dialog.lastLineNum`), the response set a frame late
+(`dialog.response`), the box opening a frame late
+(`camera.cutsceneVars[8].angle[0]`), a 0x5000 instead of 0x6000 camera swing
+(`camera.c.pos`), the dialog end keeping TIME_STOP_DIALOG
+(`world.timeStopState`), the Buddy's turn rate (`gfx.angle`), a 0x3000 NPC
+facing range (`body.action`), the Buddy keeping ACTIVE_FLAG_INITIATED_TIME_STOP
+(`activeFlags`) and a missing music event (`events.count`). A per-line scroll
+limit of 15 instead of 16 survives because it is equivalent for simulated
+state: the scroll ends on the same frame for every lines-per-box value, and
+the lower bound it changes only selects which lines are drawn.
+
+The dialog table is validated separately against the decomp's own text
+pipeline (docs/ROM_VALIDATION.md). Dialog drawing (fonts, the rotating box,
+text colors) is presentation and is not compared; the oracle discards it at a
+documented boundary. Not covered: signs and wall messages (the read-message
+cutscene and ACT_READING_SIGN), yes/no answers (no ported object asks one;
+`handle_menu_scrolling` is compiled but unreached), the race and cap-switch
+dialogs, the cannon Buddy, King Bob-omb's `cur_obj_update_dialog_with_cutscene`,
+other cutscenes, and original N64 execution.

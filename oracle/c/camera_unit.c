@@ -19,6 +19,8 @@
 #include "runtime.h"
 
 int oracle_surface_index(struct Surface *surface);
+/* The tick harness's object reference (its pool slot, -1 for NULL). */
+s32 oracle_object_slot(struct Object *o);
 static struct Camera sComponentCamera;
 static u32 bits(f32 value) { u32 word; memcpy(&word, &value, sizeof(word)); return word; }
 #include "lakitu_state.inc.c"
@@ -41,7 +43,6 @@ UNMODELLED_MODE(mode_parallel_tracking_camera)
 UNMODELLED_MODE(mode_slide_camera)
 UNMODELLED_MODE(mode_fixed_camera)
 UNMODELLED_MODE(mode_spiral_stairs_camera)
-UNMODELLED_MODE(play_cutscene)
 #define UNMODELLED_TRANSITION(name) \
     s32 name(struct Camera *c, Vec3f focus, Vec3f pos) { \
         (void) c; (void) focus; (void) pos; camera_unmodelled(#name); return 0; }
@@ -62,6 +63,57 @@ s32 determine_dance_cutscene(struct Camera *c) {
 void set_fixed_cam_axis_sa_lobby(s16 preset) {
     (void) preset;
     camera_unmodelled("set_fixed_cam_axis_sa_lobby");
+}
+
+/* Authored partial play_cutscene: the original function's body with only
+ * the cutscenes the port runs in its dispatch (sCutsceneDialog, verbatim in
+ * the excerpt); any other cutscene is not modelled. The shot timing and the
+ * end-of-cutscene bookkeeping after the switch are the original's. */
+void play_cutscene(struct Camera *c) {
+    UNUSED s16 unusedYawFocToMario;
+    s16 cutsceneDuration;
+    u8 oldCutscene;
+
+    unusedYawFocToMario = sAreaYaw;
+    oldCutscene = c->cutscene;
+    sStatusFlags &= ~CAM_FLAG_SMOOTH_MOVEMENT;
+    gCameraMovementFlags &= ~CAM_MOVING_INTO_MODE;
+
+#define CUTSCENE(id, cutscene)                                                                            \
+    case id:                                                                                              \
+        cutsceneDuration = cutscene[sCutsceneShot].duration;                                              \
+        cutscene[sCutsceneShot].shot(c);                                                                  \
+        break;
+
+    switch (c->cutscene) {
+        CUTSCENE(CUTSCENE_DIALOG, sCutsceneDialog)
+        default:
+            camera_unmodelled("this cutscene");
+            return;
+    }
+
+#undef CUTSCENE
+
+    if ((cutsceneDuration != 0) && !(gCutsceneTimer & CUTSCENE_STOP)) {
+        if (gCutsceneTimer < 0x3FFF) {
+            gCutsceneTimer++;
+        }
+        if (gCutsceneTimer == cutsceneDuration) {
+            sCutsceneShot++;
+            gCutsceneTimer = 0;
+        }
+    } else {
+        sMarioCamState->cameraEvent = 0;
+        sCutsceneShot = 0;
+        gCutsceneTimer = 0;
+    }
+
+    sAreaYawChange = 0;
+
+    // The cutscene just ended
+    if ((c->cutscene == 0) && (oldCutscene != 0)) {
+        gRecentCutscene = oldCutscene;
+    }
 }
 
 /* Authored: the original sModeTransitions order (camera.c), with verbatim
@@ -455,6 +507,9 @@ static void camera_boot_globals(void) {
     memset(sCutsceneVars, 0, sizeof(sCutsceneVars));
     memset(sCastleEntranceOffset, 0, sizeof(Vec3f));
     memset(&sCameraStoreCUp, 0, sizeof(sCameraStoreCUp));
+    memset(&sCameraStoreCutscene, 0, sizeof(sCameraStoreCutscene));
+    sCutsceneDialogID = 0;
+    sCutsceneDialogResponse = DIALOG_RESPONSE_NONE;
     gCutsceneFocus = NULL;
     unused8032CFC8 = 0;
     unused8032CFCC = 0;
@@ -700,6 +755,26 @@ void oracle_camera_snapshot(OraclePut put) {
     put_vec("camera.player2FocusOffset", sPlayer2FocusOffset);
     put_vec("camera.castleEntranceOffset", sCastleEntranceOffset);
     put_vec("camera.fixedModeBasePosition", sFixedModeBasePosition);
+    put_vec("camera.storeCutscene.pos", sCameraStoreCutscene.pos);
+    put_vec("camera.storeCutscene.focus", sCameraStoreCutscene.focus);
+    put_fl("camera.storeCutscene.panDist", sCameraStoreCutscene.panDist);
+    put_fl("camera.storeCutscene.cannonYOffset", sCameraStoreCutscene.cannonYOffset);
+    for (i = 0; i < 10; i++) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "camera.cutsceneVars[%d].unused1", i);
+        put_s(buf, sCutsceneVars[i].unused1);
+        snprintf(buf, sizeof(buf), "camera.cutsceneVars[%d].point", i);
+        put_vec(buf, sCutsceneVars[i].point);
+        snprintf(buf, sizeof(buf), "camera.cutsceneVars[%d].unusedPoint", i);
+        put_vec(buf, sCutsceneVars[i].unusedPoint);
+        snprintf(buf, sizeof(buf), "camera.cutsceneVars[%d].angle", i);
+        put_vecs(buf, sCutsceneVars[i].angle);
+        snprintf(buf, sizeof(buf), "camera.cutsceneVars[%d].unused2", i);
+        put_s(buf, sCutsceneVars[i].unused2);
+    }
+    put_s("camera.cutsceneDialogId", sCutsceneDialogID);
+    put_s("camera.cutsceneDialogResponse", sCutsceneDialogResponse);
+    put_s("camera.cutsceneFocus", oracle_object_slot(gCutsceneFocus));
     put_vec("camera.storeCUp.pos", sCameraStoreCUp.pos);
     put_vec("camera.storeCUp.focus", sCameraStoreCUp.focus);
     put_fl("camera.storeCUp.panDist", sCameraStoreCUp.panDist);

@@ -3,8 +3,12 @@
 //! bobomb_spawn_coin, bobomb_act_explode, bobomb_check_interactions, the
 //! patrol, chase and launched actions, the generic and stationary free
 //! loops, the held, dropped and thrown loops, curr_obj_random_blink,
-//! bhv_bobomb_loop and bhv_bobomb_fuse_smoke_init. The Bob-omb Buddy's
-//! functions in the same file are not ported.
+//! bhv_bobomb_loop and bhv_bobomb_fuse_smoke_init; and the Bob-omb Buddy:
+//! bhv_bobomb_buddy_init, its idle, turn-to-talk and talk actions,
+//! bobomb_buddy_actions and bhv_bobomb_buddy_loop. The advice role talks
+//! through the camera's dialog cutscene; the cannon role
+//! (bobomb_buddy_cannon_dialog) needs the cannon objects and the
+//! prepare-cannon cutscene, which are not ported, and panics.
 //!
 //! Bob-ombs walk with obj_behaviors.c's object_step (`motion`), whose
 //! terrain matrix and splash requests apply through
@@ -15,8 +19,8 @@ use super::{
     explosion::create_respawner,
     held::cur_obj_get_dropped,
     helpers::{
-        ObjectHitbox, cur_obj_enable_rendering, cur_obj_scale, cur_obj_set_pos_relative,
-        obj_set_hitbox, obj_turn_toward_object,
+        ObjectHitbox, approach_s16_symmetric, cur_obj_enable_rendering, cur_obj_scale,
+        cur_obj_set_pos_relative, obj_set_hitbox, obj_turn_toward_object,
     },
     motion::OBJ_COL_FLAG_GROUNDED,
     obj_behaviors::{
@@ -29,7 +33,9 @@ use super::{
     sound::{cur_obj_play_sound_1, cur_obj_play_sound_2},
     spawn::{set_object_respawn_info_bits, spawn_object},
 };
-use crate::simulation::mario::{MarioState, StepWorld, constants::*, f32_to_s16, f32_to_s32};
+use crate::simulation::mario::{
+    MarioState, StepWorld, constants::*, cutscene::set_mario_npc_dialog, f32_to_s16, f32_to_s32,
+};
 
 /// sBobombHitbox.
 pub const BOBOMB_HITBOX: ObjectHitbox = ObjectHitbox {
@@ -366,4 +372,114 @@ pub fn bhv_bobomb_fuse_smoke_init(m: &mut MarioState, w: &mut StepWorld<'_>, id:
         raw.set_f32(field, raw.f32(field) + random.wrapping_add(offset) as f32);
     }
     cur_obj_scale(object_mut(&mut w.objects, &mut m.obj, id), 1.2);
+}
+
+/// bhv_bobomb_buddy_init.
+pub fn bhv_bobomb_buddy_init(m: &mut MarioState, w: &mut StepWorld<'_>, id: ObjectId) {
+    let raw = &mut object_mut(&mut w.objects, &mut m.obj, id).raw;
+    raw.set_f32(O_GRAVITY, 2.5);
+    raw.set_f32(O_FRICTION, 0.8);
+    raw.set_f32(O_BUOYANCY, 1.3);
+    raw.set_u32(O_INTERACTION_SUBTYPE, INT_SUBTYPE_NPC);
+}
+
+/// bobomb_buddy_act_idle: stand in place, face Mario when he is near, and
+/// turn to talk once he has interacted.
+fn bobomb_buddy_act_idle(m: &mut MarioState, w: &mut StepWorld<'_>, id: ObjectId) {
+    let o = object_mut(&mut w.objects, &mut m.obj, id);
+    let anim_frame = o.gfx.anim.anim_frame;
+    for (copy, pos) in [
+        (O_BOBOMB_BUDDY_POS_X_COPY, O_POS_X),
+        (O_BOBOMB_BUDDY_POS_Y_COPY, O_POS_Y),
+        (O_BOBOMB_BUDDY_POS_Z_COPY, O_POS_Z),
+    ] {
+        o.raw.set_u32(copy, o.raw.u32(pos));
+    }
+    cur_object_step(m, w, id);
+    if anim_frame == 5 || anim_frame == 16 {
+        cur_obj_play_sound_2(m, w, id, SOUND_OBJ_BOBOMB_WALK);
+    }
+    let o = object_mut(&mut w.objects, &mut m.obj, id);
+    if o.raw.f32(O_DISTANCE_TO_MARIO) < 1000.0 {
+        let yaw = approach_s16_symmetric(
+            o.raw.s32(O_MOVE_ANGLE_YAW) as i16,
+            o.raw.s32(O_ANGLE_TO_MARIO) as i16,
+            0x140,
+        );
+        o.raw.set_s32(O_MOVE_ANGLE_YAW, i32::from(yaw));
+    }
+    if o.raw.u32(O_INTERACT_STATUS) == INT_STATUS_INTERACTED {
+        o.raw.set_s32(O_ACTION, BOBOMB_BUDDY_ACT_TURN_TO_TALK);
+    }
+}
+
+/// bobomb_buddy_act_talk: once Mario is ready to speak, the advice role
+/// plays its dialog through the camera and returns to idle after it.
+fn bobomb_buddy_act_talk(m: &mut MarioState, w: &mut StepWorld<'_>, id: ObjectId) {
+    if set_mario_npc_dialog(m, w, MARIO_DIALOG_LOOK_FRONT) != MARIO_DIALOG_STATUS_SPEAK {
+        return;
+    }
+    let o = object_mut(&mut w.objects, &mut m.obj, id);
+    o.active_flags |= ACTIVE_FLAG_INITIATED_TIME_STOP;
+    match o.raw.s32(O_BOBOMB_BUDDY_ROLE) {
+        BOBOMB_BUDDY_ROLE_ADVICE => {
+            let dialog = o.raw.s32(O_BHV_PARAMS2ND_BYTE) as i16;
+            if i32::from(
+                w.cutscene
+                    .cutscene_object_with_dialog(CUTSCENE_DIALOG, id, dialog),
+            ) != BOBOMB_BUDDY_BP_STYPE_GENERIC
+            {
+                set_mario_npc_dialog(m, w, MARIO_DIALOG_STOP);
+                let o = object_mut(&mut w.objects, &mut m.obj, id);
+                o.active_flags &= !ACTIVE_FLAG_INITIATED_TIME_STOP;
+                o.raw
+                    .set_s32(O_BOBOMB_BUDDY_HAS_TALKED_TO_MARIO, BOBOMB_BUDDY_HAS_TALKED);
+                o.raw.set_u32(O_INTERACT_STATUS, 0);
+                o.raw.set_s32(O_ACTION, BOBOMB_BUDDY_ACT_IDLE);
+            }
+        }
+        BOBOMB_BUDDY_ROLE_CANNON => panic!(
+            "bobomb_buddy_cannon_dialog needs the cannon objects and the prepare-cannon cutscene, which are not ported"
+        ),
+        _ => {}
+    }
+}
+
+/// bobomb_buddy_act_turn_to_talk.
+fn bobomb_buddy_act_turn_to_talk(m: &mut MarioState, w: &mut StepWorld<'_>, id: ObjectId) {
+    let anim_frame = object(&w.objects, &m.obj, id).gfx.anim.anim_frame;
+    if anim_frame == 5 || anim_frame == 16 {
+        cur_obj_play_sound_2(m, w, id, SOUND_OBJ_BOBOMB_WALK);
+    }
+    let o = object_mut(&mut w.objects, &mut m.obj, id);
+    let target = o.raw.s32(O_ANGLE_TO_MARIO) as i16;
+    let yaw = approach_s16_symmetric(o.raw.s32(O_MOVE_ANGLE_YAW) as i16, target, 0x1000);
+    o.raw.set_s32(O_MOVE_ANGLE_YAW, i32::from(yaw));
+    if o.raw.s32(O_MOVE_ANGLE_YAW) as i16 == o.raw.s32(O_ANGLE_TO_MARIO) as i16 {
+        o.raw.set_s32(O_ACTION, BOBOMB_BUDDY_ACT_TALK);
+    }
+    cur_obj_play_sound_2(m, w, id, SOUND_ACTION_READ_SIGN);
+}
+
+/// bhv_bobomb_buddy_loop: bobomb_buddy_actions, set_object_visibility
+/// (3000), the blink, and the interaction status cleared for the next frame.
+pub fn bhv_bobomb_buddy_loop(m: &mut MarioState, w: &mut StepWorld<'_>, id: ObjectId) {
+    match object(&w.objects, &m.obj, id).raw.s32(O_ACTION) {
+        BOBOMB_BUDDY_ACT_IDLE => bobomb_buddy_act_idle(m, w, id),
+        BOBOMB_BUDDY_ACT_TURN_TO_TALK => bobomb_buddy_act_turn_to_talk(m, w, id),
+        BOBOMB_BUDDY_ACT_TALK => bobomb_buddy_act_talk(m, w, id),
+        _ => {}
+    }
+    let mario = mario_gfx_pos(m);
+    let o = object_mut(&mut w.objects, &mut m.obj, id);
+    let pos = o.pos();
+    if is_point_within_radius_of_mario(mario, pos[0], pos[1], pos[2], 3000) {
+        o.gfx.node_flags &= !GRAPH_RENDER_INVISIBLE;
+    } else {
+        o.gfx.node_flags |= GRAPH_RENDER_INVISIBLE;
+    }
+    curr_obj_random_blink(m, w, id, O_BOBOMB_BUDDY_BLINK_TIMER);
+    object_mut(&mut w.objects, &mut m.obj, id)
+        .raw
+        .set_u32(O_INTERACT_STATUS, 0);
 }

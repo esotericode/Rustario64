@@ -19,7 +19,7 @@ use super::{
     version,
 };
 use crate::{
-    content::{Act, ImportedArea, SegmentLoad, animation::ObjectAnimations},
+    content::{Act, ImportedArea, SegmentLoad, animation::ObjectAnimations, dialog::DialogTable},
     simulation::{
         mario::{
             render::{MarioCallback, MarioModel},
@@ -499,6 +499,8 @@ pub struct LevelObjectContent {
     /// The level's model registrations (gLoadedGraphNodes entries it adds).
     pub level_models: Vec<(u16, ModelRegistration)>,
     pub area: AreaObjects,
+    /// seg2_dialog_table, which the level's talking objects open.
+    pub dialogs: DialogTable,
 }
 
 impl LevelObjectContent {
@@ -509,12 +511,16 @@ impl LevelObjectContent {
             models: &self.models,
             animations: &self.animations,
             area: self.area.clone(),
+            dialogs: &self.dialogs,
         }
     }
 
     /// The same scripts and models with no placements: Mario alone.
     pub fn mario_only(&self) -> LevelObjects<'_> {
-        LevelObjects::mario_only(&self.content.scripts, &self.models, &self.animations)
+        LevelObjects {
+            dialogs: &self.dialogs,
+            ..LevelObjects::mario_only(&self.content.scripts, &self.models, &self.animations)
+        }
     }
 }
 
@@ -558,5 +564,6 @@ pub fn bob(
         level_segments,
         level_models: registrations,
         area,
+        dialogs: super::dialog::import(rom)?,
     })
 }

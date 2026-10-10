@@ -73,6 +73,18 @@ What works now:
   twelve Bob-ombs with your ROM). The viewer draws them with their skinned,
   animated ROM model, fuse smoke and explosions, and in Mario's hands while
   he carries one.
+- **BOB's Bob-omb Buddies talk**: Mario walks up to one of act 1's two pink
+  Bob-ombs and presses B or A; it turns to him, the original dialog camera
+  cutscene swings over his shoulder, time stops for other objects, and the
+  dialog box opens with the ROM's text (`content::dialog`, imported from
+  segment 2's table and checked against the decomp's own text pipeline). A or
+  B turns its pages with the original timing; after the last page the camera
+  returns and play resumes. The Buddy behavior, Mario's text interaction and
+  NPC dialog actions, the dialog cutscene and the dialog box's state
+  (`simulation::dialog`, ported from ingame_menu.c) **match the decomp word for
+  word per frame** (7,958 authored frames in CI, 10,678 on BOB with your ROM).
+  The viewer draws the Buddies with their ROM model and the box with
+  development typography.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
   **full-tick** and input-stage trace pairs.
 - The original enemy `object_step` physics (wall reflection, slopes/friction,
@@ -90,10 +102,12 @@ What works now:
   do not enable King Bob-omb's placement.
 
 This is level exploration with Mario's movement and camera, not mission
-support: of the objects only the coins and Bob-ombs are simulated. King
-Bob-omb, other enemies, trees, signs, red coins, the cannon lid and every other
-placement are recorded as unported and not spawned. There are no camera cutscenes, original pause behavior, cutscene or water
-actions, warps, deaths, or missions. Play stops where the port stops
+support: of the objects only the coins, Bob-ombs and Bob-omb Buddies are
+simulated. King Bob-omb, other enemies, trees, signs, red coins, the cannon
+lid and every other placement are recorded as unported and not spawned. The
+dialog cutscene is the only camera cutscene; there is no original pause
+behavior, no cutscene action other than NPC dialog, no water actions, warps,
+deaths, or missions. Play stops where the port stops
 (unsupported paths, falling off the course); R re-enters.
 The comparisons are against the natively compiled decomp, not N64 execution.
 The imported level is independently validated against the pinned
@@ -112,11 +126,11 @@ without a GPU or window.
 
 ## Build and test
 
-The current project version is **0.0.2**; the change counter started at 0.0.1.
+The current project version is **0.0.4**; the change counter started at 0.0.1.
 It appears in the running window
 title, ROM launcher, pause/settings and `--version` output of all three binaries.
 Every committed project change, including documentation, must advance it with
-`python3 tools/project_version.py bump`; the next version is 0.0.3. The tool
+`python3 tools/project_version.py bump`; the next version is 0.0.5. The tool
 updates Cargo.toml, Cargo.lock and the plan's current-version header together.
 Patch/minor roll over at 100:
 0.0.99 → 0.1.0 and 0.99.99 → 1.0.0. Run
@@ -217,6 +231,7 @@ RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-ora
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release --test objects -- --ignored --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test objects -- --include-ignored --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test bobombs -- --include-ignored --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test dialogs -- --include-ignored --nocapture
 ```
 
 With a clean pinned decomp checkout, two checkers re-derive the object
@@ -225,7 +240,10 @@ content the importer relies on: `python3 -I tools/check_behavior_reference.py
 `behavior_data.c` over the ROM's segment 0x13 and checks every word, the
 macro preset table and the version adapter's script and native addresses;
 `tools/check_object_model_reference.py` (same arguments) checks the coin and
-sparkle geo layouts and the object geo callback address. The Bob-omb's
+sparkle geo layouts and the object geo callback address;
+`tools/check_dialog_reference.py` (same arguments) builds the decomp's own text
+converter in a temporary directory and checks the ROM's dialog table and every
+string against the pinned US text. The Bob-omb's
 animation table and geo layout are decoded from the ROM; the ROM tests above
 assert their shape and compare their use against the decomp, but no independent
 reference checker covers them yet.
@@ -263,8 +281,10 @@ fuse smoke, explosions and death smoke are drawn from theirs, the Bob-omb posed
 from its ROM animation each tick and interpolated between ticks. Coin positions
 interpolate between completed ticks; the original texture-frame switches stay
 at 30 Hz. The window shows the original HUD coin value in a development text
-overlay. Object shadows and original HUD glyphs remain pending. Offscreen
-`--mario-ticks` images include objects; the text overlay is window-only.
+overlay, and Bob-omb Buddies with their ROM model and the dialog box (development
+typography) while one talks. Object shadows, original HUD glyphs and the
+original dialog font remain pending. Offscreen `--mario-ticks` and `--inputs`
+images include objects and the window's overlays (coin counter, dialog box).
 `--start X,Y,Z[,YAW]` (Mario mode, window or screenshot) spawns Mario elsewhere
 in area 1 through the normal level entry, a development aid for reaching an
 object quickly; it is not an original warp.

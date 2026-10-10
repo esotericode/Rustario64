@@ -1,4 +1,5 @@
 //! Read-only snapshots. Graphics configuration cannot enter the tick scheduler.
+pub mod dialog;
 pub mod mario;
 pub mod objects;
 pub mod shadow;

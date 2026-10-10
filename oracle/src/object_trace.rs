@@ -18,7 +18,7 @@ use rustario64::simulation::{
 };
 
 /// The verbatim scripts c/behavior_data_unit.c compiles, in its order.
-pub const VERBATIM_SCRIPTS: [Behavior; 17] = [
+pub const VERBATIM_SCRIPTS: [Behavior; 18] = [
     Behavior::CoinFormationSpawn,
     Behavior::CoinFormation,
     Behavior::YellowCoin,
@@ -36,6 +36,7 @@ pub const VERBATIM_SCRIPTS: [Behavior; 17] = [
     Behavior::Explosion,
     Behavior::BobombBullyDeathSmoke,
     Behavior::Respawner,
+    Behavior::BobombBuddy,
 ];
 
 /// One animation of a host table (c/object_anims_unit.c's OracleAnimation).
@@ -85,6 +86,8 @@ pub struct NativeObjects {
     /// and its root's index.
     pub mario_model: Vec<OracleGeoNode>,
     pub mario_root: i32,
+    /// seg2_dialog_table as the Rust importer decoded it.
+    pub dialogs: Vec<rustario64::content::dialog::DialogEntry>,
 }
 
 /// MODEL_MARIO's nodes in registration order with their parents, as
@@ -246,6 +249,7 @@ impl NativeObjects {
             preset_models: vec![0; 366],
             preset_params: vec![0; 366],
             mario_root: -1,
+            dialogs: objects.dialogs.entries.clone(),
             ..Default::default()
         };
         if let Some(model) = objects.models.mario_model() {
@@ -468,6 +472,25 @@ pub fn capture_objects(o: &mut Words, m: &MarioState, w: &StepWorld<'_>) {
     o.i("world.marioObject", object_id(mario));
     o.i("world.currentObject", object_id(w.objects.current));
     o.put("world.timeStopState", w.time_stop_state);
+    let d = &w.dialog;
+    o.i("dialog.menuState", i32::from(d.menu_state));
+    o.f("dialog.angle", d.angle);
+    o.f("dialog.scale", d.scale);
+    o.i("dialog.scrollOffsetY", i32::from(d.scroll_offset_y));
+    o.i("dialog.boxType", i32::from(d.box_type));
+    o.i("dialog.id", i32::from(d.id));
+    o.i("dialog.nextPageStart", i32::from(d.next_page_start));
+    o.i("dialog.pageStart", i32::from(d.page_start));
+    o.i("dialog.menuLineNum", i32::from(d.menu_line_num));
+    o.i("dialog.withChoice", i32::from(d.with_choice));
+    o.i("dialog.holdKeyIndex", i32::from(d.hold_key_index));
+    o.i("dialog.holdKeyTimer", i32::from(d.hold_key_timer));
+    o.i("dialog.response", d.response);
+    o.i("dialog.lastLineNum", i32::from(d.last_line_num));
+    o.i("dialog.variable", d.variable);
+    o.i("dialog.textColorTimer", i32::from(d.text_color_timer));
+    // gMenuMode: no pause or course-complete screen runs.
+    o.i("dialog.menuMode", -1);
     o.i("world.rngSeed", i32::from(w.rng.seed));
     for (index, entry) in w.area.macros.iter().enumerate() {
         if w.behaviors.check(entry.behavior).is_ok() {

@@ -160,6 +160,7 @@ fn scenario<'a>(
             models: &MODELS,
             animations: &ANIMATIONS,
             area: placements(),
+            dialogs: &rustario64::content::dialog::NO_DIALOGS,
         },
         entry: GameEntry {
             mario,

@@ -49,6 +49,7 @@ be retired or kept only as a fast regression check.
 | `c/object_step_unit.c`, `c/object_step_boundary.h` | Authored transport for the verbatim enemy object_step component; captures floor matrix allocation and ordered water particle/sound requests, with original collision/math. No actor or particle script integration | MIT |
 | `c/standard_motion_unit.c`, `c/standard_motion_boundary.h` | Authored transport for the verbatim object_helpers.c standard movement family and moving throw/drop release. Native collision/math execute; the boundary maps oFloor pointers to index + 1 and host halfword layout to N64 high/low halves | MIT |
 | `c/grab_unit.c`, `c/grab_boundary.h` | Authored fixture transport for shared enemy grabs, animated anchors, heavy Mario actions and release/escape. Initializes objects once and calls original functions; no behavior/dialog/mission substitution | MIT |
+| `c/ingame_menu_unit.c`, `c/ingame_menu_boundary.h` | Authored drawing boundary for the verbatim ingame_menu.c dialog excerpt: display-list macros that only advance their packet pointer, drawing helpers that draw nothing, the ROM's (or an authored) dialog table, and reset/snapshot of the dialog globals | MIT |
 | `c/rng_unit.c` | Authored wrapper that compiles the `behavior_script.c` excerpt (gRandomSeed16, `random_u16`, `random_float`) and reads/sets the seed | MIT |
 
 The sources compile with the original struct layouts from the vendored
@@ -207,7 +208,7 @@ same names from `simulation::game`).
 ## Vendored files (unmodified)
 
 Every path below is relative to `c/decomp/` and equals the same path upstream.
-All 73 were re-compared byte for byte with the pinned checkout on 2026-10-10.
+All 74 were re-compared byte for byte with the pinned checkout on 2026-10-10.
 
 | Path | SHA-1 |
 | --- | --- |
@@ -223,6 +224,7 @@ All 73 were re-compared byte for byte with the pinned checkout on 2026-10-10.
 | `include/object_constants.h` | `9d939f2cc292276a2bbce9741375056e9a3b6a78` |
 | `include/object_fields.h` | `774a797a6bd48baaa82d212448c7288674d2c12e` |
 | `include/platform_info.h` | `7ca56535b3e1b47d6b3b26735593e129c9f91170` |
+| `include/seq_ids.h` | `3bbc4c2e46037cec898bc84cad60184d0287a9d4` |
 | `include/sm64.h` | `a466574f93a5fe4f21a54c18de3237e52c28e34c` |
 | `include/sounds.h` | `66eac59b63b16d97049f5cc1a083c27c2f267c6f` |
 | `include/special_presets.h` | `3b89bcccd3de40d53c875ceb4bc25b43c53fadfc` |
@@ -803,7 +805,9 @@ gRandomSeed16 (`c/rng_unit.c`), so the handheld shake and the shock shake
 compare exactly. Modes, transitions and cutscenes that BOB never reaches are
 authored aborting stubs (`mode_behind_mario_camera`, water surface, cannon,
 8-direction, outward radial, parallel tracking, slide, fixed, spiral stairs,
-`play_cutscene`, `determine_dance_cutscene`, `set_fixed_cam_axis_sa_lobby`),
+`determine_dance_cutscene`, `set_fixed_cam_axis_sa_lobby`); `play_cutscene` is
+an authored copy that runs only the dialog cutscene (see the NPC dialog
+section),
 and `sModeTransitions` is an authored table pointing at the compiled and
 stub functions. Cutscene, spline and trigger tables are not copied into the
 repository: `sCameraTriggers` is all NULL and the frame adapter checks the
@@ -826,8 +830,10 @@ functions, and the update path for areas without triggers: `update_camera`,
 `init_camera`, `reset_camera`, `create_camera`, `select_mario_cam_mode`,
 `camera_course_processing`, the radial, Lakitu, Mario, boss-fight and C-Up
 modes, `set_camera_mode`, cutscene detection, the HUD status, the graph node
-update and the FOV callbacks. It does not hold the cutscenes, splines, other
-levels' trigger tables or the modes BOB cannot reach.
+update and the FOV callbacks; since session 30 also the dialog cutscene and the
+object cutscene requests (hashes in the NPC dialog section). It does not hold
+the other cutscenes, splines, other levels' trigger tables or the modes BOB
+cannot reach.
 
 | Item | SHA-1 |
 | --- | --- |
@@ -1163,3 +1169,146 @@ All functions are verbatim from the same pinned revision.
 | `src/game/object_helpers.c: cur_obj_set_pos_relative_to_parent` | `2c8e979ca89c2b764530d8ba0b0c44d85055e16b` |
 | `src/game/object_helpers.c: cur_obj_get_thrown_or_placed` | `a0ddc525e36d3ebcfa175d9afdf2038aa391d524` |
 | `src/game/object_helpers.c: obj_set_gfx_pos_at_obj_pos` | `d0d4da5a66c68746b48437fc7e4036418ce03654` |
+
+### NPC dialogs: Bob-omb Buddies, the dialog cutscene and the dialog box (sessions 29–30)
+
+```sh
+cargo test --locked --release -p rustario64-oracle --test dialogs
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test dialogs -- --include-ignored --nocapture
+```
+
+Complete frames with the camera linked, as in `--test bobombs`: the verbatim
+Bob-omb Buddy (`excerpts/bobomb.c`, its script in `excerpts/behavior_data.c`),
+Mario's text interaction (`interact_text`, `check_npc_talk`, `check_read_sign`,
+`mario_can_talk`) and NPC dialog actions (`excerpts/mario_dialog.c` through
+`c/dialog_unit.c`), time stop (`set_time_stop_flags`/`clear_time_stop_flags`),
+the camera's object cutscene requests and dialog cutscene, and the dialog box.
+The snapshot adds every dialog global (`dialog.*`, from
+`oracle_dialog_snapshot`), the cutscene variables, the stored cutscene camera,
+`sCutsceneDialogID`, `sCutsceneDialogResponse` and gCutsceneFocus's slot
+(`camera.*`). The authored test talks to three Buddies on a flat field with an
+authored dialog table (7,958 frames, 30 conversations, 60 page scrolls,
+3,891 time-stop frames); the ignored test talks to BOB's two act-1 Buddies
+from four sides with the ROM's text, model and animations (10,678 frames,
+41 conversations, 148 page scrolls). Every word matches.
+
+**Dialog box (`c/ingame_menu_unit.c`, `c/ingame_menu_boundary.h`).** The
+verbatim `excerpts/ingame_menu.c` holds the dialog globals and
+`render_menus_and_dialogs`, `render_dialog_entries`,
+`handle_dialog_text_and_pages`, `handle_dialog_scroll_page_state`,
+`handle_menu_scrolling`, `handle_special_dialog_text`, the `create_dialog_box`
+family and `get_dialog_id`. They advance the box's state while building its
+display list. The boundary header defines the four display-list macros the
+excerpt uses to advance their packet pointer only; the unit defines the drawing
+helpers (`render_dialog_box_type`, `render_generic_char`,
+`change_and_flash_dialog_text_color_lines`, the multi-text and star-count
+printers, the next-page triangle and the matrix builders) as stand-ins that
+draw nothing, and aborts in the Peach letter and the pause and course-complete
+screens. None of the stand-ins writes a value the state functions read.
+`seg2_dialog_table` is filled from the Rust importer's decode of the ROM (or
+the authored table). `gDisplayListHead` points at a scratch list that each
+frame starts over, as `select_gfx_pool` does. The tick harness copies player
+1's controller into player 3's port (`read_controller_inputs`) and calls
+`render_menus_and_dialogs` after the render pass while the camera is linked.
+
+**Camera.** `excerpts/camera.c` adds `start_object_cutscene`,
+`cutscene_object_with_dialog`, `store_info_star`/`retrieve_info_star`,
+`reset_pan_distance`, the music softening calls, `cutscene_event`, the six
+dialog shot functions and `sCutsceneDialog`. `c/camera_unit.c`'s
+`play_cutscene` is authored: the original body with only
+`CUTSCENE(CUTSCENE_DIALOG, sCutsceneDialog)` in its switch (any other cutscene
+aborts) and the original shot timing and end bookkeeping after it. It replaces
+the former aborting stub.
+
+**Boundaries.** `runtime_glue.c` records `play_dialog_sound`,
+`seq_player_lower_volume`, `seq_player_unlower_volume`, `play_music`,
+`seq_player_fade_out` and `play_race_fanfare` as events 15–20, accepts only
+the no-transition `level_set_transition(0, NULL)` that closing a box makes, and
+aborts in `trigger_cutscene_dialog` (signs) and in the cannon Buddy's
+`save_file_set_cannon_unlocked`, `cur_obj_nearest_object_with_behavior` and
+`cutscene_object`. `get_dialog_id` and `interact_text` are no longer stubs.
+
+Seeded mutations of the Rust port are rejected: the scroll ending a frame
+early, a page holding one line fewer, the response a frame late, the box
+opening a frame late, the camera's 0x6000 swing, the dialog end keeping
+TIME_STOP_DIALOG, the Buddy's turn rate, the NPC facing range, the Buddy
+keeping its time-stop flag and the missing music event. A per-line scroll
+limit of 15 instead of 16 survives: it ends on the same frame for every
+lines-per-box value, and the lower bound it changes only draws.
+
+### Sessions 29–30 dialog excerpt hashes
+
+All items are verbatim from the pinned revision (`extract_excerpts.py`).
+
+| Source / item | SHA-1 |
+| --- | --- |
+| `src/game/mario_actions_cutscene.c: mario_ready_to_speak` | `704041d169f632f1e55f805e3a8f0fce37e76c9f` |
+| `src/game/mario_actions_cutscene.c: set_mario_npc_dialog` | `4b600620af062b3a1492b14d5096901358738e87` |
+| `src/game/mario_actions_cutscene.c: act_reading_npc_dialog` | `0bf6c5475b019146fe08ead83abcf06fcdf4c5f9` |
+| `src/game/mario_actions_cutscene.c: act_waiting_for_dialog` | `60b4a11e07dfb537bc655dc2c182b1996cb55a23` |
+| `src/game/mario_actions_cutscene.c: check_for_instant_quicksand` | `2db29f3f5083be5f12f292a5ed87b82cf37cd0b6` |
+| `src/game/obj_behaviors.c: set_object_visibility` | `b177d01581ed6d94e26f3115dd83aeb7978eb571` |
+| `src/game/behaviors/bobomb.inc.c: bhv_bobomb_buddy_init` | `788b11fe27ff867fd9fa13fed6f976701f539b1a` |
+| `src/game/behaviors/bobomb.inc.c: bobomb_buddy_act_idle` | `90919f7f810138563d36bdfd6f71597a37c2378c` |
+| `src/game/behaviors/bobomb.inc.c: bobomb_buddy_cannon_dialog` | `90cfe3fa64454fd6dbee84ef0d70367c4e47df70` |
+| `src/game/behaviors/bobomb.inc.c: bobomb_buddy_act_talk` | `57fca6c4e082aad5788938d7c852bbcef2a0ae9d` |
+| `src/game/behaviors/bobomb.inc.c: bobomb_buddy_act_turn_to_talk` | `ca1e2c9f8ec313f395393b73567295f25fb14c27` |
+| `src/game/behaviors/bobomb.inc.c: bobomb_buddy_actions` | `b7277ee82e6e8e1fd380d0c67428c1840355d3cc` |
+| `src/game/behaviors/bobomb.inc.c: bhv_bobomb_buddy_loop` | `04d87479d0bf2dbac107823b6ded136c776679d6` |
+| `src/game/camera.c: s16 sCutsceneDialogID` | `41c21b5ea545301aaf038a9dee591708ae628d04` |
+| `src/game/camera.c: struct CameraStoredInfo sCameraStoreCutscene` | `01870d593cb7e7a96e95412728e564295e4a78e5` |
+| `src/game/camera.c: u8 sCutsceneDialogResponse = DIALOG_RESPONSE_NONE` | `3d471699adafeabf5d00f3ce1e2996ef553ca905` |
+| `src/game/camera.c: start_object_cutscene` | `d206299d206b0cdedef56ded1c87632ae145dcaf` |
+| `src/game/camera.c: cutscene_object_with_dialog` | `43347b19bd77cd4c6cce6ac05792223ed2e0a87d` |
+| `src/game/camera.c: reset_pan_distance` | `3404710e7d8cadc9c60da9c6baa8290d8d154ee3` |
+| `src/game/camera.c: store_info_star` | `837ede1120306e679c8ef0fe32cdebd8ecb02060` |
+| `src/game/camera.c: retrieve_info_star` | `dd7c99950a6ba9ce76ddb69f61083d9175218269` |
+| `src/game/camera.c: cutscene_soften_music` | `30d1c0e0e1441fd321cf6f3cda7613af72c990e9` |
+| `src/game/camera.c: cutscene_unsoften_music` | `9a850fe49d52dcaefa4368102f52ec12982d2357` |
+| `src/game/camera.c: cutscene_dialog_start` | `b24b63ecae2d438e54424a1b03788a138339baed` |
+| `src/game/camera.c: cutscene_dialog_move_mario_shoulder` | `aa71b8b3069adf3242d62e2e6f8f55ce01d82256` |
+| `src/game/camera.c: cutscene_dialog_create_dialog_box` | `2f909598fc92746bae99fe0785ee5c377d975416` |
+| `src/game/camera.c: cutscene_dialog` | `7b6599ba6163a67851c4eef62b4934468d40c1d4` |
+| `src/game/camera.c: cutscene_dialog_set_flag` | `62615b842b6e6a8a533214852304eceb7346a10e` |
+| `src/game/camera.c: cutscene_dialog_end` | `d6959dcc3fc67ab6a165694b19ff27afa7fcb658` |
+| `src/game/camera.c: struct Cutscene sCutsceneDialog[]` | `60fa95853e7156630763d81c5f71d4fd462c01e1` |
+| `src/game/camera.c: cutscene_event` | `f7f1ff0667013f6b0a04564ec9681f4d3c17226f` |
+| `data/behavior_data.c: const BehaviorScript bhvBobombBuddy[]` | `32f3915b03dae3240ef886a04b5cb51037ba0bd0` |
+| `src/game/interaction.c: mario_can_talk` | `f6247487d578a5618813c827355ffe745722691a` |
+| `src/game/interaction.c: #define READ_MASK (INPUT_B_PRESSED)` | `c3f9038d109c951cb65b06141d8b2cf6a2c950e3` |
+| `src/game/interaction.c: #define SIGN_RANGE 0x38E3` | `9a484308238d5c2822e377dc7c5df5a965700994` |
+| `src/game/interaction.c: check_read_sign` | `3ccf5c1f78b041659a7aeddc028bce542419fb06` |
+| `src/game/interaction.c: check_npc_talk` | `a727ddfa89e0da9a56376d08043bbdb70cb73fc1` |
+| `src/game/interaction.c: interact_text` | `7f17479168349fc0a124343534cd464cc97148a0` |
+| `src/game/object_helpers.c: set_time_stop_flags` | `4d1705bc69d60d17ae6079d4f810b33097f86db1` |
+| `src/game/object_helpers.c: clear_time_stop_flags` | `470f417eaecf728da6dfbbb3530584f87b003136` |
+| `src/game/object_helpers.c: lateral_dist_between_objects` | `8e5bb3d0edebbd232eb736551cfa2f68e573c102` |
+| `src/game/object_helpers.c: cur_obj_can_mario_activate_textbox` | `e6bd10c6893c92428c2ac0292fd39315edd1b76b` |
+| `src/game/object_helpers.c: cur_obj_can_mario_activate_textbox_2` | `3f209e48fae17026fa25cbda977d6a4a7a8b255c` |
+| `src/game/ingame_menu.c: FORCE_BSS u16 gMenuTextColorTransTimer` | `89fa837a37569b5df2fb9bbc9e86b9559462ff3b` |
+| `src/game/ingame_menu.c: FORCE_BSS s8 gLastDialogLineNum` | `45f89ef1833083e486d90a24ff4a0cf672a38c52` |
+| `src/game/ingame_menu.c: FORCE_BSS s32 gDialogVariable` | `0b6d36c4c55799962963e8a07d0ba312cdb3a5b2` |
+| `src/game/ingame_menu.c: enum MenuState` | `95a2422000bf8f4f68e5222bfb6dd4f18a3dd275` |
+| `src/game/ingame_menu.c: enum DialogBoxPageState` | `99fd773750bbb798d4d2941138ef645cfe7f4dbe` |
+| `src/game/ingame_menu.c: enum DialogBoxType` | `549ec38aa98279bdbbaa6721d0eb6d7839f076b3` |
+| `src/game/ingame_menu.c: enum MultiStringIDs { STRING_THE, STRING_YOU }` | `680ad3186335ec94cea5bf23a6b4e76fe573377d` |
+| `src/game/ingame_menu.c: #define DIALOG_BOX_ANGLE_DEFAULT 90.0f` | `f6052c432fd8da147aa33f87ad651eebc0e51bad` |
+| `src/game/ingame_menu.c: #define DIALOG_BOX_SCALE_DEFAULT 19.0f` | `91585059b7de9bbeef4b36811394cebaa90dae21` |
+| `src/game/ingame_menu.c: u8 gDialogCharWidths[256] = { // TODO: Is there a way to auto generate this?` | `fa58d5a1d8895eee2850821e5c2544ad9bd9ff7e` |
+| `src/game/ingame_menu.c: s8 gMenuState = MENU_STATE_DEFAULT` | `b0c21943b7dd38e747f4a9783cd5f299cba41424` |
+| `src/game/ingame_menu.c: handle_menu_scrolling` | `8153c0402ce174696df2321b7aaba4a58cb00028` |
+| `src/game/ingame_menu.c: get_dialog_id` | `9336d823c5628960c1655c3d4b3a8a6160011643` |
+| `src/game/ingame_menu.c: create_dialog_box` | `ed82bb4257d12563a637a6b334712484cb89f71a` |
+| `src/game/ingame_menu.c: create_dialog_box_with_var` | `c4bd3680792a532608166069e697f9603f6663f3` |
+| `src/game/ingame_menu.c: create_dialog_inverted_box` | `8d69b03e5326bcc20f90eb6423fd281c88cc7390` |
+| `src/game/ingame_menu.c: create_dialog_box_with_response` | `edd51b6e609b38060e28a39fced23ffefc250890` |
+| `src/game/ingame_menu.c: #define X_VAL3 5.0f` | `c73ebcff07a3170a3ff5eb629e060151315e4c2b` |
+| `src/game/ingame_menu.c: void handle_dialog_scroll_page_state(s8 lineNum, s8 totalLines, s8 *pageState, s8 *xMatrix)` | `2f6c44e8c7f084728f2f465dde0629b20aec59a9` |
+| `src/game/ingame_menu.c: void handle_dialog_text_and_pages(s8 colorMode, struct DialogEntry *dialog)` | `8e56e91361a3e71b658675ee8923fe158bdeb58f` |
+| `src/game/ingame_menu.c: #define X_VAL4_1 50` | `642268e02afcdcbc2ff8e4b2c69a5f3697537786` |
+| `src/game/ingame_menu.c: render_dialog_triangle_choice` | `254abca0bc345b135bc8de3d9fa33ef1dcd1ade4` |
+| `src/game/ingame_menu.c: handle_special_dialog_text` | `90c65fe060342c046262d0b0c3347207b0a968d5` |
+| `src/game/ingame_menu.c: s16 gMenuMode = MENU_MODE_NONE` | `46fd2e911260d15febb98012b3db558eaec61780` |
+| `src/game/ingame_menu.c: #define DIAG_VAL1 20` | `b6d4f094b7470038eeb2d377dcbd7db4d0eb614e` |
+| `src/game/ingame_menu.c: render_dialog_entries` | `c7e4b8c4b68995e6c092075a5f88b3c898b85489` |
+| `src/game/ingame_menu.c: render_menus_and_dialogs` | `3dd0d3db1d173636914a76c79ba553eb0c9eb1f8` |

@@ -20,6 +20,12 @@ enum OracleEventKind {
     ORACLE_EVENT_WIND_PARTICLES = 12,   /* a = type, b = angle */
     ORACLE_EVENT_UNSUPPORTED = 13,      /* a = reason, b = detail */
     ORACLE_EVENT_ENV_CAMERA_SHAKE = 14, /* a = shake */
+    ORACLE_EVENT_DIALOG_SOUND = 15,     /* a = dialog ID */
+    ORACLE_EVENT_SEQ_LOWER_VOLUME = 16, /* a = player, b = duration << 8 | percentage */
+    ORACLE_EVENT_SEQ_UNLOWER_VOLUME = 17, /* a = player, b = duration */
+    ORACLE_EVENT_PLAY_MUSIC = 18,       /* a = player, b = seqArgs << 16 | fade */
+    ORACLE_EVENT_SEQ_FADE_OUT = 19,     /* a = player, b = duration */
+    ORACLE_EVENT_RACE_FANFARE = 20,
 };
 
 /* ORACLE_EVENT_UNSUPPORTED reasons. */

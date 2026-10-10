@@ -361,3 +361,33 @@ All 196 release workspace/all-target tests pass with the private ROM tests
 enabled. Five authored grab tests pass in debug (owner test ignored normally).
 Formatting, warnings-denied Clippy, pinned excerpt regeneration/check and the
 runtime release build pass.
+
+## Dialog table and Bob-omb Buddies — 2026-10-10 (session 30)
+
+`tools/check_dialog_reference.py --rom ROM --reference CLEAN_PINNED_CHECKOUT`
+builds the pinned decomp's own `tools/textconv` in a temporary directory, runs
+the original US text pipeline (the C preprocessor over `charmap.txt` and over
+`text/define_text.inc.c` with `text/us/`, then textconv) and reads every
+dialog's parameters and encoded string. It decodes the ROM's segment-2 MIO0
+block independently and locates the unique table of segment-2 pointers whose
+170 entries (unused word, lines per box, left offset, width) and strings equal
+the reference, followed by NULL: decoded offset 0x10A68, strings SHA-1
+`40a40f474fe19424c7ec9d53bf7fdf735ae3dad1`. It checks the version adapter's
+`DIALOG_TABLE` and `DIALOG_COUNT`. Only offsets and digests are printed.
+
+`tools/check_behavior_reference.py` locates `bhvBobombBuddy` at 0x130031DC and
+its natives `bhv_bobomb_buddy_init` (0x802E76AC) and `bhv_bobomb_buddy_loop`
+(0x802E7C4C); all 44 adapter entries match. BOB act 1's two Bob-omb Buddies
+(DIALOG_002 and DIALOG_001) now spawn with the ROM's Buddy model; the import
+test checks them, the model and the table. Talking to both from four sides
+matches the native decomp for 10,678 frames (docs/FIDELITY.md).
+
+Offscreen screenshots now include the window's egui overlays. Private
+1280×960 images of Mario talking to the DIALOG_001 Buddy (the opened box,
+mid-scroll and page two, with the over-the-shoulder dialog camera) were
+rendered on Intel Graphics (MTL)/Vulkan and inspected; a 120-frame native
+window run beside the Buddy closes cleanly. Images stay private.
+
+All 204 release workspace/all-target tests pass with the private ROM tests
+enabled (199 before this session plus five new), as do the renderer's 27
+debug-profile tests with the GPU required.

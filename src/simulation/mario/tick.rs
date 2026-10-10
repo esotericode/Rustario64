@@ -113,6 +113,8 @@ pub struct LevelObjects<'a> {
     pub models: &'a ObjectModels,
     pub animations: &'a ObjectAnimations,
     pub area: AreaObjects,
+    /// seg2_dialog_table (empty for worlds without imported text).
+    pub dialogs: &'a crate::content::dialog::DialogTable,
 }
 
 impl<'a> LevelObjects<'a> {
@@ -127,6 +129,7 @@ impl<'a> LevelObjects<'a> {
             models,
             animations,
             area: AreaObjects::default(),
+            dialogs: &crate::content::dialog::NO_DIALOGS,
         }
     }
 }
@@ -175,6 +178,7 @@ pub fn enter_level_with<'a>(
     w.behaviors = objects.scripts;
     w.models = objects.models;
     w.object_anims = objects.animations;
+    w.dialogs = objects.dialogs;
     w.area = objects.area.clone();
     // load_mario_area renders the spawn's area.
     w.area_index = entry.spawn.area_index;

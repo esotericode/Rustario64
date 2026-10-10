@@ -21,6 +21,13 @@
 #include "game/object_list_processor.h"
 #include "game/spawn_object.h"
 #include "game/spawn_sound.h"
+/* The Bob-omb Buddy's dialog and cannon calls. */
+#include "course_table.h"
+#include "dialog_ids.h"
+#include "game/ingame_menu.h"
+#include "game/level_update.h"
+#include "game/mario_actions_cutscene.h"
+#include "game/save_file.h"
 
 void *oracle_frame_alloc_display_list(u32 size);
 #define alloc_display_list oracle_frame_alloc_display_list

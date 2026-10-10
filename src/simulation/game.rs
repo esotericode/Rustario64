@@ -17,12 +17,18 @@ use crate::{
     import::version::AREA_CAMERA_CALLBACKS,
     simulation::{
         TickInput,
-        camera::system::{self, CameraSystem, Frame, GeoCamera, Level, MarioView, Unsupported},
+        camera::{
+            cutscene::FocusView,
+            system::{self, CameraSystem, Frame, GeoCamera, Level, MarioView, Unsupported},
+        },
         collision::CollisionWorld,
         hud::update_hud_values,
         mario::{
             Event, MarioState, PlayerCameraState, StepWorld,
-            constants::{ACTIVE_FLAG_MOVE_THROUGH_GRATE, MARIO_VANISH_CAP, SHAKE_SHOCK},
+            constants::{
+                ACTIVE_FLAG_MOVE_THROUGH_GRATE, MARIO_VANISH_CAP, O_POS_X, O_POS_Y, O_POS_Z,
+                SHAKE_SHOCK,
+            },
             render::{RenderView, render_mario},
             tick::{LevelEntry, LevelObjects, RenderedFrame, enter_level_with, update_objects},
         },
@@ -163,6 +169,7 @@ impl<'a> Game<'a> {
         w.area_update_counter = w.area_update_counter.wrapping_add(1);
         let reported = m.camera_status;
         update_objects(m, w);
+        camera.take_object_cutscene_state(&w.cutscene);
         camera.rig.movement = w.camera_movement_flags as u16;
         // The objects' camera requests (Mario's and the environmental shakes
         // of explosions), in call order, each followed by what it produced.
@@ -189,6 +196,7 @@ impl<'a> Game<'a> {
                 ..m.camera_status
             };
             let mario = view(m, w);
+            let focus = focus_view(camera, m, w);
             let mut frame = Frame {
                 world: w.collision,
                 trig: w.trig,
@@ -198,6 +206,9 @@ impl<'a> Game<'a> {
                 mario,
                 rng: &mut w.rng,
                 events: &mut w.events,
+                time_stop_state: &mut w.time_stop_state,
+                dialog: &mut w.dialog,
+                focus,
             };
             match event {
                 Event::CameraMode { mode, frames } => {
@@ -221,6 +232,7 @@ impl<'a> Game<'a> {
         update_hud_values(m, w);
         // update_camera.
         let mario = view(m, w);
+        let focus = focus_view(camera, m, w);
         let result = camera.update(&mut Frame {
             world: w.collision,
             trig: w.trig,
@@ -230,6 +242,9 @@ impl<'a> Game<'a> {
             mario,
             rng: &mut w.rng,
             events: &mut w.events,
+            time_stop_state: &mut w.time_stop_state,
+            dialog: &mut w.dialog,
+            focus,
         });
         share(camera, w);
         // render_game: the camera nodes enclose the object nodes, Mario's first.
@@ -242,6 +257,9 @@ impl<'a> Game<'a> {
         let rendered = render_mario(m, w, &view);
         self.rendered_mario = rendered;
         self.rendered_matrices = render_objects(w, &camera.graph);
+        // render_menus_and_dialogs, after the HUD and text labels, which
+        // only draw. gPlayer3Controller is a copy of player 1's.
+        w.dialog.render(w.dialogs, &w.controller, &mut w.events);
         // display_and_vsync.
         w.global_timer = w.global_timer.wrapping_add(1);
         (
@@ -271,6 +289,18 @@ fn view(m: &MarioState, w: &StepWorld<'_>) -> MarioView {
     }
 }
 
+/// gCutsceneFocus's position and hitbox height (the pool slot keeps its
+/// last values after an object unloads, as the original's memory does).
+fn focus_view(camera: &CameraSystem, m: &MarioState, w: &StepWorld<'_>) -> Option<FocusView> {
+    camera.cutscene_focus.map(|id| {
+        let o = object(&w.objects, &m.obj, id);
+        FocusView {
+            pos: [o.raw.f32(O_POS_X), o.raw.f32(O_POS_Y), o.raw.f32(O_POS_Z)],
+            hitbox_height: o.hitbox_height,
+        }
+    })
+}
+
 /// The camera globals Mario's code shares with the camera.
 fn share(camera: &CameraSystem, w: &mut StepWorld<'_>) {
     let c = &camera.rig.camera;
@@ -281,6 +311,7 @@ fn share(camera: &CameraSystem, w: &mut StepWorld<'_>) {
     w.camera.last_mode = camera.rig.last_mode;
     w.camera.level_area = camera.radial.area;
     w.camera_movement_flags = camera.rig.movement as i16;
+    w.cutscene = camera.object_cutscene_state();
 }
 
 /// The unsupported camera path, for messages.

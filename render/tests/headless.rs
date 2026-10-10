@@ -412,3 +412,67 @@ fn model_transform_translates_and_turns_a_model() {
     let pixels = renderer.capture(64, 64, &camera()).unwrap();
     assert_eq!(centre(&pixels, 64), [0, 255, 0, 255]);
 }
+
+/// The window's dialog box painted over an offscreen capture: opaque on the
+/// first capture (no egui fade-in), darkening the scene behind it with the
+/// original's alpha, with white text on the open page. Authored text.
+#[test]
+fn dialog_overlay_draws_on_the_first_offscreen_capture() {
+    use rustario64::{
+        content::dialog::{DialogEntry, DialogTable},
+        simulation::dialog::{DialogBox, MENU_STATE_DIALOG_OPEN},
+    };
+    let Some(mut r) = renderer(RenderOptions::default()) else {
+        return;
+    };
+    let (w, h) = (640, 480);
+    let table = DialogTable {
+        entries: vec![DialogEntry {
+            unused: 1,
+            lines_per_box: 4,
+            left_offset: 95,
+            width: 200,
+            // "HELLO HELLO\nHELLO" in the US font codes.
+            text: vec![
+                0x11, 0x0E, 0x15, 0x15, 0x18, 0x9E, 0x11, 0x0E, 0x15, 0x15, 0x18, 0xFE, 0x11, 0x0E,
+                0x15, 0x15, 0x18, 0xFF,
+            ],
+        }],
+    };
+    let mut dialog = DialogBox::default();
+    dialog.create(0);
+    dialog.angle = 0.0;
+    dialog.menu_state = MENU_STATE_DIALOG_OPEN;
+    dialog.next_page_start = -1;
+    let plain = r.capture(w, h, &camera()).unwrap();
+    let boxed = r
+        .capture_with_overlay(w, h, &camera(), |device, queue, view, format| {
+            rustario64_render::desktop::paint_offscreen(device, queue, view, format, 1.0, |ctx| {
+                rustario64_render::play::show_dialog_box(ctx, &dialog, &table);
+            });
+        })
+        .unwrap();
+    let pixel = |p: &[u8], x: u32, y: u32| {
+        let i = ((y * w + x) * 4) as usize;
+        [p[i], p[i + 1], p[i + 2]]
+    };
+    // A corner of the box, away from the text: the scene times 105/255.
+    let (x, y) = (w / 2 + 150, (h as f32 * 0.08) as u32 + 4);
+    let (before, after) = (pixel(&plain, x, y), pixel(&boxed, x, y));
+    for c in 0..3 {
+        let expected = f32::from(before[c]) * (105.0 / 255.0);
+        assert!(
+            (f32::from(after[c]) - expected).abs() <= 3.0,
+            "box corner {after:?} is not the scene {before:?} at alpha 150"
+        );
+    }
+    // The page's text: some bright pixels inside the box's text area.
+    let top = (h as f32 * 0.08) as u32;
+    let bright = (top..top + 80)
+        .flat_map(|y| (w / 2 - 180..w / 2 + 60).map(move |x| (x, y)))
+        .filter(|&(x, y)| pixel(&boxed, x, y).iter().all(|&v| v > 200))
+        .count();
+    assert!(bright > 40, "no text drawn ({bright} bright pixels)");
+    // Nothing outside the box changes.
+    assert_eq!(pixel(&plain, 5, h - 5), pixel(&boxed, 5, h - 5));
+}
