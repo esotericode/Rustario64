@@ -61,6 +61,10 @@ What works now:
   animated sparkles and a coin counter.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
   **full-tick** and input-stage trace pairs.
+- The original enemy `object_step` physics, ready for actor integration:
+  wall reflection, slopes/friction, bouncing, water motion and terrain alignment.
+  63,174 authored and 123,200 local BOB component calls match native C bit for bit.
+  This does not yet spawn Bob-ombs or run their behaviors.
 
 This is level exploration with Mario's movement and camera, not mission
 support: of the objects only the coins are simulated. Enemies, trees, signs,
@@ -88,7 +92,7 @@ without a GPU or window.
 Rust 1.99.0 (current stable as of 2026-10-08) with rustfmt and Clippy is selected
 by `rust-toolchain.toml`. Linux x86_64 is the locally checked platform. CI also builds/tests the Rust
 runtime on Windows x86_64. Both targets passed build/test/package CI at
-`8abf4e8`; consult each new run before treating that revision as verified. Dependencies use
+`e0365fd`; consult each new run before treating that revision as verified. Dependencies use
 compatible SemVer requirements; committed Cargo.lock and `--locked` make builds
 reproducible. Upgrade the toolchain and lockfile together and rerun the component
 oracles; compiler age is not a requirement for original gameplay behavior.

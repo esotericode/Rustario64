@@ -679,3 +679,36 @@ recovery and reuse of the imported level, without a window. egui form generation
 is tested at 800×720 and 640×480. These tests are not physical controller, native
 file-dialog, desktop double-click or N64 hardware validation. Those human checks
 remain in docs/PLAYTEST.md. No movement, camera or object rules are changed.
+
+## Enemy movement component (session 20, 2026-10-10)
+
+`oracle/tests/object_motion.rs` compares the Rust `object_step` component with
+verbatim `obj_behaviors.c` motion functions and native `math_util.c`/
+`surface_collision.c`. Every call compares all 80 raw object words, untouched
+object fields, collision-query flags, sObjFloor identity, movement flags, each
+of the 16 floor-matrix float words and ordered splash requests. No float tolerance
+is used. Matrix allocation and wave/bubble/sound calls are captured boundaries;
+particle behavior, pool allocation and full actor/frame updates are not compared.
+
+| Suite | Data and coverage | Exact calls |
+| --- | --- | --- |
+| Targeted CI boundaries | Authored dry/wet floors, steep panels, walls/grates; terminal speeds, bounce cutoff, tiny velocities, water skipping, floor-height truncation, friction threshold, negative no-floor yaws, billboarding, allocation failure and orientation suppression | 1,574 |
+| Generated/chained CI | 40,000 states with sentinel raw fields, varied flags/hitboxes/parameters plus 120 trajectories of 180 ticks at patrol/chase speed or free thrown motion; computed tables, authored terrain/water boxes | 61,600 |
+| Local owner-ROM | 80,000 states plus 120 trajectories of 360 ticks; BOB's actual collision and ROM trig tables | 123,200 |
+
+All pass in optimized Linux x86_64 native comparisons. Generated authored calls
+exercise all four movement flags (mask 0xF), 762 matrix-producing calls and
+17,359 no-floor calls. BOB calls exercise mask 0xB (no underwater terrain in
+these sampled cases), 1,924 matrices and 20,408 no-floor calls. Targeted tests
+assert that matrix, water-wave, bubble and water-entry-sound paths are reached.
+Original wall pushes plus final movement, and floor matrix timing, are retained.
+Changing the bounce cutoff or querying the floor at the initial position makes
+the differential suite fail; both mutations were reverted before validation.
+
+This supplies the ordinary Bob-omb movement prerequisite. No new actor runs in
+the viewer; enemy animations, grab/kick/throw interactions, explosion/loot/
+respawn, water particle scripts and motion-output integration remain pending.
+King Bob-omb needs a different movement family and dialog/cutscene mechanics.
+Dynamic surfaces, invalid/out-of-range conversions and original N64 execution
+remain outside this evidence. Existing Mario/camera/coin frame comparisons
+continue to protect the playable exploration baseline.

@@ -142,6 +142,42 @@ pub fn mtxf_identity() -> Mat4 {
     mtx
 }
 
+/// mtxf_align_terrain_normal (math_util.c): the original enemy floor matrix.
+/// Keep the reciprocal square root and cross-product order, including the
+/// original division by zero for degenerate directions.
+pub fn mtxf_align_terrain_normal(
+    trig: &TrigTables,
+    mut up: [f32; 3],
+    pos: [f32; 3],
+    yaw: i16,
+) -> Mat4 {
+    fn normalize(v: &mut [f32; 3]) {
+        let inverse = 1.0 / (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        for component in v {
+            *component *= inverse;
+        }
+    }
+    fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+        [
+            a[1] * b[2] - b[1] * a[2],
+            a[2] * b[0] - b[2] * a[0],
+            a[0] * b[1] - b[0] * a[1],
+        ]
+    }
+    let lateral = [trig.sins(i32::from(yaw)), 0.0, trig.coss(i32::from(yaw))];
+    normalize(&mut up);
+    let mut left = cross(up, lateral);
+    normalize(&mut left);
+    let mut forward = cross(left, up);
+    normalize(&mut forward);
+    [
+        [left[0], left[1], left[2], 0.0],
+        [up[0], up[1], up[2], 0.0],
+        [forward[0], forward[1], forward[2], 0.0],
+        [pos[0], pos[1], pos[2], 1.0],
+    ]
+}
+
 /// mtxf_lookat: the camera transform for a camera at `from` looking at `to`
 /// with a bank of `roll`. The inverse lengths are computed in double
 /// precision and narrowed, as the original's `-1.0 / sqrtf(...)`.

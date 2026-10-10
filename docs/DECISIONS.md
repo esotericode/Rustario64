@@ -9,7 +9,7 @@ never depends on it. No ECS, universal VM, or plugin system.
 | --- | --- |
 | import | Bounded reads, identity/version metadata, MIO0, segments, static scripts, geo layouts, Fast3D, collision, textures |
 | content | Typed course/level/area/act IDs, placements/warps, static/dynamic collision, behavior registry, transitions, engine-owned visual models |
-| simulation | Exact 30 Hz scheduler/input edges, original collision and math, Mario's core update, non-object actions and per-frame tick; objects, camera and cutscene/submerged actions still missing |
+| simulation | Exact 30 Hz scheduler/input edges, original collision and math, Mario's non-object actions, reference camera, object system with coins and per-frame tick; enemy movement component; other actors and cutscene/submerged actions remain missing |
 | presentation | Immutable snapshots, wrapped-angle interpolation, discontinuities, graphics-only settings |
 | trace | Initial-state/world/input metadata, exact float-bit comparison, first divergence |
 | diagnostics | Independently authored fixtures and a synthetic counter replay |
@@ -833,3 +833,28 @@ every newly selected file still passes `Rom::open` identity validation before
 reuse. This prevents repeat imports from accumulating the viewer's lifetime
 allocations. Failed selection keeps the cache and a usable launcher. ROM bytes,
 assets, paths and logs are never part of a desktop bundle.
+
+## Enemy movement boundary — 2026-10-10 (session 20)
+
+Bob-ombs use `obj_behaviors.c`'s `object_step`; King Bob-omb uses the separate
+`object_helpers.c` standard movement family. Port the former as a verified
+component before enabling Bob-omb placements. Preserve its wall push followed
+by recomputed X/Z movement, first-wall reflection, floor query at the proposed
+position, no-floor double yaw addition, slope acceleration, bounce and water
+rules. Do not substitute Mario's movement or a general physics library.
+
+The explicit world supplies collision/trig/query flags and the timer. The
+result supplies sObjFloor, a newly generated floor matrix and ordered water
+wave/bubble/sound requests. Matrix allocation failure is an explicit presentation
+input; it does not change motion. The matrix is calculated before the final X/Z
+move, as in the original. The actor caller must install the returned matrix and
+execute requests through the pool; no water particle lifetimes, object animation
+or interaction are invented to allow a partially ported Bob-omb to spawn.
+
+The native component compiles eleven verbatim CC0 functions. Its authored
+boundary captures allocation and spawn/sound arguments, with original collision
+and math running. It compares all raw words, floor/flags, matrix words and
+ordered requests; it does not claim complete actor or frame equivalence.
+No new runtime dependency or ROM content is required. Finite s32 conversions
+and static terrain are covered; dynamic object surfaces and N64 conversion
+exceptions need separate validation.

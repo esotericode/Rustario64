@@ -30,7 +30,7 @@ jobs:
       - name: Desktop packaging allowlist
         run: python3 tools/test_package_desktop.py
       - name: Optimized camera, shadow and object comparisons
-        run: cargo test --locked --release -p rustario64-oracle --test camera --test lakitu --test radial --test camera_tick --test shadow --test objects
+        run: cargo test --locked --release -p rustario64-oracle --test camera --test lakitu --test radial --test camera_tick --test shadow --test objects --test object_motion
   desktop:
     name: Desktop runtime (${{ matrix.target }})
     strategy:

@@ -2,7 +2,8 @@
 //! the object pool and its lists (spawn_object.c, object_list_processor.c),
 //! the behavior-script interpreter (behavior_script.c), object collision
 //! detection (object_collision.c), the object helpers the ported behaviors
-//! use (object_helpers.c), and those behaviors (`coin`). Behavior scripts are
+//! use (object_helpers.c), those behaviors (`coin`) and enemy motion (`motion`).
+//! Behavior scripts are
 //! the ROM's own (segment 0x13), interpreted from their bytes; their native
 //! functions resolve through the version adapter to Rust translations.
 //!
@@ -13,6 +14,7 @@
 pub mod coin;
 pub mod collision;
 pub mod helpers;
+pub mod motion;
 pub mod processor;
 pub mod render;
 pub mod script;

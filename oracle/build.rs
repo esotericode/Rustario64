@@ -13,6 +13,7 @@ fn main() {
         "c/interaction_unit.c",
         "c/behavior_data_unit.c",
         "c/object_render_unit.c",
+        "c/object_step_unit.c",
         "c/excerpts/coin.c",
         "c/excerpts/geo_layout.c",
         "c/excerpts/game_init.c",
@@ -79,6 +80,7 @@ fn main() {
         "c/runtime.h",
         "c/constants.inc.c",
         "c/lakitu_state.inc.c",
+        "c/object_step_boundary.h",
     ] {
         println!("cargo:rerun-if-changed={dir}");
     }

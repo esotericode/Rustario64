@@ -17,11 +17,16 @@ unsupported paths; R re-enters.
 
 Windows and Linux ZIP builds are attached to successful runs of the
 [Rust foundation workflow](https://github.com/esotericode/Rustario64/actions/workflows/rust.yml).
-Choose the latest successful run for the branch under test (this controller and
-desktop-launching increment is on `codex/controller-desktop-launch`), then
+Choose the latest successful run for the branch under test (the latest enemy
+physics foundation is on `codex/object-step-physics`, stacked on the controller
+and desktop launcher), then
 download `rustario64-windows-x86_64` or `rustario64-linux-x86_64` under Artifacts.
 GitHub's artifact ZIP contains the runtime ZIP; extract both layers. The build
 identifier is in the runtime folder's BUILD_INFO.txt.
+
+The enemy physics increment has component comparisons but does not enable
+additional actors in play. The launcher, controller and coin exploration flow
+remains the current manual test target.
 
 Extract the whole ZIP. Keep your own ROM outside this folder. Only the original
 8 MiB US v1.0 ROM is supported, identified after byte-order normalization by

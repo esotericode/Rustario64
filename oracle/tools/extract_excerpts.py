@@ -22,6 +22,23 @@ OUT = Path(__file__).resolve().parent.parent / "c" / "excerpts"
 # (excerpt file, upstream path, authored includes, items). An item is
 # ("function", name), ("line", exact text), or ("range", first line, last line).
 EXCERPTS = [
+    ("object_step.c", "src/game/obj_behaviors.c",
+     ['"object_step_boundary.h"'],
+     [("line", "#define o gCurrentObject"),
+      *[("line", line) for line in [
+          "#define OBJ_COL_FLAG_GROUNDED   (1 << 0)",
+          "#define OBJ_COL_FLAG_HIT_WALL   (1 << 1)",
+          "#define OBJ_COL_FLAG_UNDERWATER (1 << 2)",
+          "#define OBJ_COL_FLAG_NO_Y_VEL   (1 << 3)",
+          "#define OBJ_COL_FLAGS_LANDED    (OBJ_COL_FLAG_GROUNDED | OBJ_COL_FLAG_NO_Y_VEL)",
+          "static struct Surface *sObjFloor;",
+          "static s8 sOrientObjWithFloor = TRUE;",
+      ]],
+      *[("function", name) for name in [
+          "turn_obj_away_from_surface", "obj_find_wall", "turn_obj_away_from_steep_floor",
+          "obj_orient_graph", "calc_obj_friction", "calc_new_obj_vel_and_pos_y",
+          "calc_new_obj_vel_and_pos_y_underwater", "obj_update_pos_vel_xz",
+          "obj_splash", "object_step", "object_step_without_floor_orient"]]]),
     ("shadow_geo.c", "src/game/rendering_graph_node.c",
      ['"shadow_geo_boundary.h"'], [("function", "geo_process_shadow")]),
     ("shadow.c", "src/game/shadow.c",

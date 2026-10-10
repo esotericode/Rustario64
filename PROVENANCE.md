@@ -1,6 +1,6 @@
 # Provenance ledger
 
-Checked 2026-10-08; updated 2026-10-10 (session 18: coin/sparkle presentation). Only the exact revisions below supplied format knowledge or
+Checked 2026-10-08; updated 2026-10-10 (session 20: original enemy movement). Only the exact revisions below supplied format knowledge or
 adaptations in this increment. Full notices are retained in LICENSES/.
 No ROM, ROM-derived assets, original terrain/animation files, or full C runtime
 is tracked or published. Owner-ROM validation exports are local and ignored.
@@ -214,3 +214,22 @@ bundled SDL_GameControllerDB Zlib notice is also retained byte for byte as
 Both notices are included in target-filtered desktop dependency notices.
 Other new registry dependencies retain their packaged notices. Linux dynamically
 uses the system libudev; no system library is copied into runtime bundles.
+
+### Enemy movement foundation — session 20
+
+`src/simulation/object/motion.rs` translates the pinned CC0
+`src/game/obj_behaviors.c`: `turn_obj_away_from_surface`, `obj_find_wall`,
+`turn_obj_away_from_steep_floor`, `obj_orient_graph`, `calc_obj_friction`,
+`calc_new_obj_vel_and_pos_y`, its underwater variant, `obj_update_pos_vel_xz`,
+`obj_splash`, `object_step` and `object_step_without_floor_orient`.
+`src/simulation/math.rs` adds `mtxf_align_terrain_normal` from the same pinned
+`src/engine/math_util.c`. Existing `LICENSES/sm64-CC0.txt` applies.
+
+`oracle/c/excerpts/object_step.c` contains those eleven functions and their
+file-local constants verbatim, generated and checked by `extract_excerpts.py`;
+per-item hashes are in oracle/README.md. `object_step_unit.c`, its boundary header,
+Rust transport and authored test geometry/inputs are MIT. The boundary captures
+matrix allocation and water spawn/sound requests without porting those behaviors.
+Original C math/collision run under the oracle lock. No source from a different
+revision, SDK header, dependency, ROM data, expanded placement or asset is added.
+The 123,200-call BOB comparison reads the owner's ROM only locally.
