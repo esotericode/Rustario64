@@ -273,11 +273,23 @@ cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
   view /path/to/sm64.z64
 ```
 
-Graphics-only flags: `--msaa 4`, `--no-fog`, `--no-cull`, `--size WxH`,
+Graphics-only flags: `--msaa 1|4`, `--high-detail-mario`,
+`--no-high-detail-mario`, `--no-fog`, `--no-cull`, `--size WxH`,
 `--no-interpolation`, `--fullscreen`, `--no-vsync`; inspection overlays: `--collision` (floors blue, walls
 red, ceilings yellow) and `--placements` (Mario start, script objects, macro
 objects, specials). In the window, C, P, and F toggle collision, placements, and
 fog. The viewer launches straight into BOB area 1 as a development entry point.
+The launcher and pause/settings offer saved antialiasing (Off or 4× MSAA) and
+Always draw high-detail Mario. Both are off by default. Direct `view` and
+`screenshot` commands also use these two saved choices; the corresponding CLI
+flags override them. Use `--msaa 1 --no-high-detail-mario` for the original
+quality choices in repeatable captures. MSAA switches after the current frame
+is presented; unsupported target formats fall back to Off with a pause-menu
+notice. Mario detail switches on the next simulation tick after resuming.
+The high-detail setting only changes the displayed mesh: original visibility,
+LOD callbacks, held-object hand positions and actor updates still run in the
+authoritative frame. Reproduce reports with the same quality settings, since
+the original hand anchor can differ slightly from the enhanced drawing.
 The free camera is a presentation-only inspection camera, not the original game
 camera. The sky is a placeholder color until the skybox is imported; trees,
 other enemies, and other unported objects are not drawn yet (their painted ground

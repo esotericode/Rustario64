@@ -89,6 +89,44 @@ fn options() -> RenderOptions {
 }
 
 #[test]
+fn msaa_switches_rebuild_uploaded_pipelines_and_resize_targets() {
+    let _gpu = GPU_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(mut renderer) = renderer(options()) else {
+        return;
+    };
+    let model = VisualModel {
+        textures: vec![],
+        batches: vec![DrawBatch {
+            material: material(SHADE),
+            source: 0,
+            vertices: triangle([255, 0, 0, 255], false),
+        }],
+    };
+    let index = renderer.add_model(&model);
+    let baseline = renderer.capture(64, 64, &camera()).unwrap();
+    assert_eq!(centre(&baseline, 64), [255, 0, 0, 255]);
+    for (samples, width, height) in [(4, 80, 64), (1, 96, 80), (4, 64, 64), (1, 64, 64)] {
+        assert_eq!(renderer.set_sample_count(samples), samples);
+        assert!(renderer.is_visible(index));
+        let pixels = renderer.capture(width, height, &camera()).unwrap();
+        let i = ((height / 2 * width + width / 2) * 4) as usize;
+        assert_eq!(&pixels[i..i + 4], &[255, 0, 0, 255]);
+        if samples == 4 {
+            assert!(
+                pixels
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .any(|p| { p[0] > 0 && p[0] < 255 && p[2] > 0 && p[2] < 255 }),
+                "MSAA produced no partially covered edge pixels"
+            );
+        } else if width == 64 {
+            assert_eq!(pixels, baseline);
+        }
+    }
+}
+
+#[test]
 fn original_shadow_blends_on_coplanar_floor_and_hides_when_absent() {
     let _gpu = GPU_TESTS.lock().unwrap_or_else(|e| e.into_inner());
     use rustario64::{

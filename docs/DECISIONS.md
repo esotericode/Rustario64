@@ -1152,3 +1152,37 @@ Headless GPU tests serialize adapter lifetimes with a test-only mutex. A concurr
 run of eight GPU tests ended in SIGSEGV on Intel Vulkan locally; the same debug
 checks pass serially. The underlying driver cause has not been isolated. This keeps the default test command bounded
 without changing runtime rendering or skipping GPU assertions.
+
+## Optional presentation quality — 2026-10-10 (session 33)
+
+Off/4× MSAA and high-detail Mario are saved desktop choices, off by default.
+Direct viewer and screenshot commands inherit these two choices unless their
+CLI flags override them. Existing settings omit the new fields and retain the
+original defaults; invalid sample counts are rejected.
+
+Changing MSAA rebuilds every cached material pipeline, preserving uploaded
+meshes and model IDs. Window depth/MSAA targets are recreated after presenting
+the acquired surface texture. The launcher always draws into a single-sample
+surface; returning from a 4× game restores one sample, and Play reapplies the
+saved mode before level upload. Color multisampling/resolve and depth support
+use the formats' WebGPU guarantees for the device's enabled features; no
+adapter-specific format feature is requested. An unsupported request falls
+back to Off and is reported in pause/settings. This follows the pinned wgpu
+30.0.1 APIs (`TextureFormat::guaranteed_format_features`,
+`TextureFormatFeatureFlags`, `MultisampleState`).
+
+High-detail Mario sets distance zero only in the presentation drawer. The
+original simulation traversal still selects its own LOD, runs visibility-gated
+callbacks and writes Mario's held-object hand position. A quality toggle takes
+effect at the next tick so rebuilding a pose cannot advance the presentation
+punch scaler twice. Geometry transitions retain the drawer's existing pose
+interpolation. The detailed drawing can differ from the original hand anchor;
+we preserve gameplay rather than move a carried object's simulated position.
+
+Complete-frame presentation-independence checks live in the oracle suite,
+and displayed-LOD selection and GPU checks live in the renderer suite.
+Do not add an oracle dependency to renderer tests: the original native math
+exports `atan2f` with game-specific semantics, which conflicts with the host
+math used by the viewing camera. An initial test-only dependency exposed this
+collision and was removed. Runtime and renderer tests remain free of native
+oracle linkage.

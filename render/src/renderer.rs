@@ -157,13 +157,40 @@ fn address_mode(mode: WrapMode) -> wgpu::AddressMode {
     }
 }
 
+fn supported_samples(
+    requested: u32,
+    color: wgpu::TextureFormatFeatureFlags,
+    depth: wgpu::TextureFormatFeatureFlags,
+) -> u32 {
+    if requested == 4
+        && color.sample_count_supported(4)
+        && color.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE)
+        && depth.sample_count_supported(4)
+    {
+        4
+    } else {
+        1
+    }
+}
+
 impl Renderer {
     pub fn new(
         device: wgpu::Device,
         queue: wgpu::Queue,
         color_format: wgpu::TextureFormat,
-        options: RenderOptions,
+        mut options: RenderOptions,
     ) -> Self {
+        // Use the formats' guarantees for the features actually enabled on
+        // this device; adapter-specific format features were not requested.
+        options.sample_count = supported_samples(
+            options.sample_count,
+            color_format
+                .guaranteed_format_features(device.features())
+                .flags,
+            DEPTH_FORMAT
+                .guaranteed_format_features(device.features())
+                .flags,
+        );
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("fast3d batches"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
@@ -250,10 +277,39 @@ impl Renderer {
         self.options
     }
 
-    /// Per-frame options (fog, clear color) apply on the next frame. Culling and
-    /// MSAA are baked into pipelines and targets, so they apply on the next upload.
+    /// Per-frame options (fog, clear color) apply on the next frame. Culling
+    /// applies on the next upload. Change MSAA with `set_sample_count` instead.
     pub fn options_mut(&mut self) -> &mut RenderOptions {
         &mut self.options
+    }
+
+    pub fn supported_sample_count(&self, requested: u32) -> u32 {
+        supported_samples(
+            requested,
+            self.color_format
+                .guaranteed_format_features(self.device.features())
+                .flags,
+            DEPTH_FORMAT
+                .guaranteed_format_features(self.device.features())
+                .flags,
+        )
+    }
+
+    /// Rebuild cached pipelines without reimporting or replacing uploaded models.
+    /// The caller must recreate depth/MSAA targets after a change, after
+    /// presenting any acquired surface texture.
+    /// Returns the supported sample count (1 when the requested mode is absent).
+    pub fn set_sample_count(&mut self, requested: u32) -> u32 {
+        let samples = self.supported_sample_count(requested);
+        if self.options.sample_count != samples {
+            self.options.sample_count = samples;
+            let keys: Vec<_> = self.pipelines.keys().copied().collect();
+            self.pipelines.clear();
+            for key in keys {
+                self.pipeline(key);
+            }
+        }
+        samples
     }
 
     /// Replace every uploaded model with this one.
@@ -757,5 +813,23 @@ impl Renderer {
             }
         }
         Ok(pixels)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn multisampling_requires_color_resolve_and_matching_depth_support() {
+        use wgpu::TextureFormatFeatureFlags as F;
+        let color = F::MULTISAMPLE_X4 | F::MULTISAMPLE_RESOLVE;
+        let depth = F::MULTISAMPLE_X4;
+        assert_eq!(supported_samples(4, color, depth), 4);
+        assert_eq!(supported_samples(4, F::empty(), depth), 1);
+        assert_eq!(supported_samples(4, color, F::empty()), 1);
+        assert_eq!(supported_samples(4, depth, depth), 1);
+        assert_eq!(supported_samples(1, color, depth), 1);
+        assert_eq!(supported_samples(8, color, depth), 1);
     }
 }

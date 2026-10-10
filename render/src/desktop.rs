@@ -9,6 +9,9 @@ use winit::window::Window;
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     pub interpolation: bool,
+    /// Presentation only; the original simulated LOD traversal still runs.
+    pub high_detail_mario: bool,
+    pub msaa: u32,
     pub fog: bool,
     pub vsync: bool,
     pub fullscreen: bool,
@@ -21,6 +24,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             interpolation: true,
+            high_detail_mario: false,
+            msaa: 1,
             fog: true,
             vsync: true,
             fullscreen: false,
@@ -62,6 +67,9 @@ impl Settings {
         if settings.size.iter().any(|&s| !(320..=8192).contains(&s)) {
             return Err("Window dimensions must be between 320 and 8192".into());
         }
+        if !matches!(settings.msaa, 1 | 4) {
+            return Err("Antialiasing must be off (1 sample) or 4 samples".into());
+        }
         Ok(settings)
     }
 
@@ -77,6 +85,13 @@ impl Settings {
 
     pub fn controls(&mut self, ui: &mut egui::Ui) {
         ui.checkbox(&mut self.interpolation, "Smooth Mario and camera motion");
+        ui.checkbox(&mut self.high_detail_mario, "Always draw high-detail Mario");
+        egui::ComboBox::from_label("Antialiasing")
+            .selected_text(if self.msaa == 4 { "4× MSAA" } else { "Off" })
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut self.msaa, 1, "Off");
+                ui.selectable_value(&mut self.msaa, 4, "4× MSAA");
+            });
         ui.checkbox(&mut self.fog, "Original distance fog");
         ui.checkbox(&mut self.vsync, "VSync");
         ui.checkbox(&mut self.fullscreen, "Borderless fullscreen");
@@ -366,9 +381,16 @@ mod tests {
         assert_eq!(Settings::decode(b"{}").unwrap(), Settings::default());
         assert!(Settings::decode(br#"{"size":[0,960]}"#).is_err());
         assert!(Settings::decode(br#"{"physics_rate":60}"#).is_err());
+        assert!(Settings::decode(br#"{"msaa":8}"#).is_err());
+        // Existing settings retain original presentation until opted in.
+        let old = Settings::decode(br#"{"interpolation":true,"fog":true}"#).unwrap();
+        assert_eq!(old.msaa, 1);
+        assert!(!old.high_detail_mario);
         assert!(Settings::decode(b"not json").is_err());
         let settings = Settings {
             interpolation: false,
+            high_detail_mario: true,
+            msaa: 4,
             rom_path: Some("local.z64".into()),
             ..Settings::default()
         };

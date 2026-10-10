@@ -72,12 +72,15 @@ const HELP: &str = "Rustario64 development viewer (Bob-omb Battlefield, area 1)\
   --start X,Y,Z[,YAW] enters the level with Mario at another point (development entry; yaw in degrees).\n\
   --record writes each run's tick inputs to a new directory for exact replay against the decomp:\n\
   cargo run -p rustario64-oracle --example tick_trace -- ROM NEW_DIR --inputs RUN.inputs.json\n\
-  Presentation: --size WIDTHxHEIGHT, --fullscreen, --no-vsync; Esc pauses, resumes or opens Quit.\n";
+  Presentation: --size WIDTHxHEIGHT, --fullscreen, --no-vsync, --msaa 1|4,\n\
+  --high-detail-mario / --no-high-detail-mario; Esc opens pause/settings.\n\
+  MSAA and Mario detail use saved choices unless overridden above.\n";
 
 struct Options {
     view: Option<String>,
     size: (u32, u32),
     msaa: u32,
+    high_detail_mario: bool,
     cull: bool,
     fog: bool,
     collision: bool,
@@ -96,10 +99,14 @@ struct Options {
 }
 
 fn parse(args: &[String]) -> AppResult<Options> {
+    // The two quality choices persist for direct play (including launch
+    // shortcuts). Explicit CLI flags override them for reproducible captures.
+    let saved = Settings::load().unwrap_or_default();
     let mut options = Options {
         view: None,
         size: (1280, 960),
-        msaa: 1,
+        msaa: saved.msaa,
+        high_detail_mario: saved.high_detail_mario,
         cull: true,
         fog: true,
         collision: false,
@@ -129,6 +136,8 @@ fn parse(args: &[String]) -> AppResult<Options> {
             "--placements" => &mut options.placements,
             "--mario" => &mut options.mario,
             "--no-vsync" => &mut options.vsync,
+            "--high-detail-mario" => &mut options.high_detail_mario,
+            "--no-high-detail-mario" => &mut options.high_detail_mario,
             "--fullscreen" => &mut options.fullscreen,
             _ => {
                 match args[i].as_str() {
@@ -216,10 +225,16 @@ struct MarioModel {
     shadow_view: present::ShadowModelView,
     trig: &'static TrigTables,
     anims: &'static MarioAnimations,
+    high_detail: bool,
 }
 
 impl MarioModel {
-    fn new(level: &Level, session: &Session<'_>, camera: &FlyCamera) -> Option<Self> {
+    fn new(
+        level: &Level,
+        session: &Session<'_>,
+        camera: &FlyCamera,
+        high_detail: bool,
+    ) -> Option<Self> {
         let mut model = Self {
             drawer: MarioDrawer::new(level.mario_model?, level.trig, level.anims),
             view: present::MarioModelView::default(),
@@ -227,15 +242,21 @@ impl MarioModel {
             shadow_view: present::ShadowModelView::default(),
             trig: level.trig,
             anims: level.anims,
+            high_detail,
         };
         model.tick(session, camera);
         Some(model)
     }
 
-    /// Pose the latest tick; the level of detail uses the current camera.
+    /// Pose the latest tick. Distance zero selects Mario's most detailed
+    /// drawing branch; this never changes the simulation's render traversal.
     fn tick(&mut self, session: &Session<'_>, camera: &FlyCamera) {
         let pose = session.mario_pose();
-        let lod = present::lod_distance(camera, pose.position);
+        let lod = if self.high_detail {
+            0
+        } else {
+            present::lod_distance(camera, pose.position)
+        };
         if let Err(error) = self.drawer.update(&pose, Some(lod)) {
             eprintln!("warning: Mario's model could not be built: {error}");
         }
@@ -518,7 +539,12 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
                     None => Ok(camera),
                 }
             };
-            let mut model = MarioModel::new(&level, &session, &follow(&session)?);
+            let mut model = MarioModel::new(
+                &level,
+                &session,
+                &follow(&session)?,
+                options.high_detail_mario,
+            );
             let mut objects = ObjectDrawing::new(&level, &session);
             for pad in pads {
                 if !session.step(pad) {
@@ -795,6 +821,7 @@ fn create_gpu(
 
 impl App {
     fn prepare_gpu(&mut self, gpu: &mut Gpu) {
+        apply_renderer_settings(gpu, &self.settings);
         upload(
             &mut gpu.renderer,
             &self.level,
@@ -969,6 +996,13 @@ impl App {
                                     ui.label(format!("Play stopped: {stop}"));
                                 }
                                 self.settings.controls(ui);
+                                if self.settings.msaa
+                                    != gpu.renderer.supported_sample_count(self.settings.msaa)
+                                {
+                                    ui.label(
+                                        "4× MSAA is unavailable for this GPU target; using Off.",
+                                    );
+                                }
                                 ui.separator();
                                 ui.label("WASD move · Space jump · J attack · K crouch");
                                 ui.label("Arrows: C buttons · E: R camera · R: restart");
@@ -993,13 +1027,18 @@ impl App {
         );
         if self.settings != before {
             play.graphics.interpolation = self.settings.interpolation;
-            gpu.renderer.options_mut().fog = self.settings.fog;
+            if let Some(mario) = self.mario.as_mut() {
+                // Geometry switches on the next tick, preserving pose interpolation
+                // and avoiding a second advance of presentation punch animation.
+                mario.high_detail = self.settings.high_detail_mario;
+            }
             self.settings_error = self.settings.save().err();
         }
         gpu.window.pre_present_notify();
         gpu.renderer.queue().present(frame);
         // Reconfigure only after presenting the acquired surface texture.
         if self.settings != before {
+            apply_renderer_settings(gpu, &self.settings);
             apply_window_settings(gpu, &self.settings);
         }
         self.frames += 1;
@@ -1135,6 +1174,14 @@ impl App {
             }
             _ => {}
         }
+    }
+}
+
+fn apply_renderer_settings(gpu: &mut Gpu, settings: &Settings) {
+    gpu.renderer.options_mut().fog = settings.fog;
+    let old_samples = gpu.renderer.options().sample_count;
+    if gpu.renderer.set_sample_count(settings.msaa) != old_samples {
+        resize_targets(gpu);
     }
 }
 
@@ -1282,7 +1329,7 @@ fn make_app(level: Level, options: &Options) -> AppResult<App> {
         recorder,
         reported_stop: false,
     };
-    let mario = MarioModel::new(&level, &play.session, &camera);
+    let mario = MarioModel::new(&level, &play.session, &camera, options.high_detail_mario);
     let objects = ObjectDrawing::new(&level, &play.session);
     let remembered = Settings::load().ok().and_then(|s| s.rom_path);
     let app = App {
@@ -1305,6 +1352,8 @@ fn make_app(level: Level, options: &Options) -> AppResult<App> {
         focused: true,
         settings: Settings {
             interpolation: options.interpolation,
+            high_detail_mario: options.high_detail_mario,
+            msaa: options.msaa,
             fog: options.fog,
             vsync: options.vsync,
             fullscreen: options.fullscreen,
@@ -1389,6 +1438,10 @@ impl Desktop {
         self.controllers.clear();
         self.parked_level = Some(game.level);
         if let Some(mut gpu) = game.gpu.take() {
+            // The launcher draws directly into the single-sample surface.
+            // Its next Play reapplies the saved quality choices before upload.
+            gpu.renderer.set_sample_count(1);
+            resize_targets(&mut gpu);
             gpu.renderer.load_model(&VisualModel::default());
             gpu.window.set_fullscreen(None);
             gpu.window.set_title(&format!("{APP_TITLE} — Select ROM"));
@@ -1449,6 +1502,8 @@ impl Desktop {
                 let mut options = parse(&[])?;
                 options.mario = true;
                 options.interpolation = self.settings.interpolation;
+                options.high_detail_mario = self.settings.high_detail_mario;
+                options.msaa = self.settings.msaa;
                 options.fog = self.settings.fog;
                 options.vsync = self.settings.vsync;
                 options.fullscreen = self.settings.fullscreen;
@@ -1760,6 +1815,80 @@ mod tests {
         let mut cached = None;
         assert!(load_selected(Path::new("missing-authored-fixture.z64"), &mut cached).is_err());
         assert!(cached.is_none());
+    }
+
+    #[test]
+    fn explicit_quality_flags_override_saved_choices_and_reject_invalid_msaa() {
+        let args = |s: &[&str]| s.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let enhanced = parse(&args(&["--msaa", "4", "--high-detail-mario"])).unwrap();
+        assert_eq!(enhanced.msaa, 4);
+        assert!(enhanced.high_detail_mario);
+        let original = parse(&args(&["--msaa", "1", "--no-high-detail-mario"])).unwrap();
+        assert_eq!(original.msaa, 1);
+        assert!(!original.high_detail_mario);
+        assert!(parse(&args(&["--msaa", "8"])).is_err());
+    }
+
+    #[test]
+    #[ignore = "requires RUSTARIO64_ROM; displayed LOD selection and switching"]
+    fn local_quality_choices_select_detailed_meshes_and_switch_back() {
+        let path = PathBuf::from(std::env::var_os("RUSTARIO64_ROM").expect("set RUSTARIO64_ROM"));
+        let level = load_selected(&path, &mut None).unwrap();
+        let mut session = level.session();
+        let mut camera = present::reference_view(
+            session.camera_view(1.0, GraphicsOptions::default()),
+            level.visual.camera,
+        );
+        let mut original = MarioModel::new(&level, &session, &camera, false).unwrap();
+        let mut enhanced = MarioModel::new(&level, &session, &camera, true).unwrap();
+        let mut higher_detail_frames = 0;
+        for tick in 0..240 {
+            assert!(session.step(&Pad {
+                up: tick < 180,
+                a: tick == 140,
+                b: tick == 200,
+                ..Pad::default()
+            }));
+            let pose = session.mario_pose();
+            // Force actual LOD transitions in presentation, independent of the
+            // authoritative camera used by movement and hand-position callbacks.
+            let distance = [100.0, 1000.0, 2000.0][(tick / 32) % 3];
+            camera = FlyCamera::looking_at(
+                [
+                    pose.position[0],
+                    pose.position[1],
+                    pose.position[2] + distance,
+                ],
+                pose.position,
+            );
+            // Also switch back to original detail, as the pause setting does.
+            enhanced.high_detail = tick % 96 < 64;
+            original.tick(&session, &camera);
+            enhanced.tick(&session, &camera);
+            let count = |m: &MarioModel| {
+                m.drawer
+                    .frame(1.0, false)
+                    .unwrap()
+                    .vertices
+                    .iter()
+                    .map(Vec::len)
+                    .sum::<usize>()
+            };
+            if enhanced.high_detail {
+                assert!(count(&enhanced) >= count(&original));
+                higher_detail_frames += usize::from(count(&enhanced) > count(&original));
+            } else {
+                assert_eq!(count(&enhanced), count(&original));
+            }
+            // Read interpolated frames repeatedly without advancing gameplay.
+            for alpha in [0.0, 0.25, 0.5, 1.0] {
+                assert!(enhanced.drawer.frame(alpha, true).is_some());
+            }
+        }
+        assert!(
+            higher_detail_frames > 0,
+            "fixture never exercised a lower-detail mesh"
+        );
     }
 
     #[test]

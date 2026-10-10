@@ -52,10 +52,20 @@ The viewer and desktop launcher must stay in the same extracted folder.
 Choose Browse, enter a local path, or drag the ROM into the launcher, then select
 Play. Unsupported or unreadable ROMs show an error and allow another selection.
 Remembering the path is opt-in and happens after successful validation/import.
-The launcher offers interpolation, fog, VSync, fullscreen, window-size choices
+The launcher offers interpolation, antialiasing, high-detail Mario, fog, VSync, fullscreen, window-size choices
 and controller selection. It scrolls to fit smaller windows. Pause/settings has
 Choose another ROM, which returns to selection in the same window. Every selected
 file is validated even when the supported ROM's imported data is reused.
+For cleaner edges, select **4× MSAA** under Antialiasing. Enable **Always draw
+high-detail Mario** to keep his detailed mesh at a distance. Both options are
+off by default and saved when playing or changing pause/settings. Direct viewer
+launches use those saved quality choices too; `--msaa 1|4` and
+`--high-detail-mario` / `--no-high-detail-mario` override them. Mario detail
+updates on the next tick after resuming. Unsupported MSAA target formats use
+Off and show a notice in pause/settings. These options leave the original
+simulation, including its LOD-dependent hand-position calculation, unchanged.
+Check carried objects for visual hand alignment when comparing the two detail
+choices; a displayed higher-detail hand may differ from the original anchor.
 Settings are stored separately from content in `%APPDATA%/rustario64/settings.json`
 or `$XDG_CONFIG_HOME/rustario64/settings.json` (default `~/.config` on Linux).
 Invalid settings fall back to defaults with an error. Linux Browse needs a desktop
@@ -87,6 +97,9 @@ Earlier builds could abort when the launcher changed from 800×720 to the game
 window size. The UI now clips against the acquired GPU target. During manual
 playtesting, repeat Play → pause → Choose another ROM → Play, resize the window,
 and toggle fullscreen; check for crashes and correct layout on scaled displays.
+Also switch MSAA Off → 4× → Off, resize in each mode, and repeat Choose another
+ROM → Play with 4× selected. Toggle Mario detail and resume; check his animation,
+blink, cap and carried-object alignment, and confirm the choices survive restart.
 
 ## Controls and options
 

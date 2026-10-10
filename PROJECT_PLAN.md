@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-10
 
-Current project version: **0.0.6** (shared change counter, introduced in session 27).
+Current project version: **0.0.7** (shared change counter, introduced in session 27).
 
 Status: M0 complete. M1 imported level works: BOB's original terrain and textures import from the ROM and render through an optional wgpu viewer with collision/placement overlays. M2 in progress: Mario's complete tick (inputs, non-object actions, his object update and animation frame advance, with the ROM's animations) matches the natively compiled decomp per tick, and BOB's original camera (radial, R/close, C-Up, boss-fight modes, shakes, FOV and graph camera) runs with it in the original frame order, matching the decomp word for word per frame. The viewer's Mario mode drives that frame from keyboard or mapped gamepads and draws from the reference camera; recorded runs replay exactly against the decomp with its own camera. Mario's model and display lists import from the ROM and are posed from each tick as the original render pass does. D1 local ROM launcher and D2 development pause/settings are implemented, with a dedicated desktop entry point and ROM reselection; basic analog gamepad input is implemented; blink, LOD and animation/action switches preserve Mario's pose interpolation. Mario's original BOB shadow is implemented and interpolated independently. The original object system (pool, lists, the ROM's behavior scripts through a ported interpreter, object collision) runs in the frame with BOB's coins (yellow coins, every formation type, sparkles, collection), matching the decomp word for word per frame including every object; coins and sparkles are drawn from the ROM in viewer play with interpolated positions and a development overlay reading the original HUD coin count. BOB's twelve Bob-ombs now run from the ROM's scripts and animations (patrol, fuse, chase, explosion with its camera shake, coin loot, respawn, lava/death-plane deaths, Mario's damage knockback and kicks), matching the decomp word for word per frame, and are drawn with their skinned ROM models, fuse smoke, explosions and death smoke. Mario picks Bob-ombs up, carries, throws and drops them: his holding actions run with the hand position (HOLP) that his render pass now writes through his ROM model with the original matrix stack, compared word for word, and the held Bob-omb is drawn in his hands. BOB's two act-1 Bob-omb Buddies talk to Mario through the original NPC dialog actions, the camera's dialog cutscene, time stop and the dialog box with the ROM's text, matching the decomp word for word per frame, and the viewer draws them and the box. King Bob-omb now spawns in act 1 with complete-frame native comparisons (session 32); his defeat stops at the unsupported star spawn. Every other object behavior, other cutscenes, other areas' camera modes and triggers, other cutscene actions, water actions, warps and missions remain missing.
 Sessions 24–25 add King Bob-omb's standard movement and shared grab/release prerequisites, including heavy-object actions checked with the ROM's Mario animations; sessions 29–30 add Mario's NPC dialog actions, the dialog cutscene and the dialog box, which King Bob-omb's dialogs also need; session 31 translates King Bob-omb's behavior and everything it calls, but session 32 supplies those comparisons, corrects and implements his animated anchor callback, and enables his placement. Local Linux Intel GPU startup/drawing and recorded-run replay pass.
@@ -134,7 +134,8 @@ Start with a faithful profile. Keep presentation settings independent of gamepla
 | Render rate and interpolation | Reference-rate display or smooth higher-rate display, without changing simulation ticks. | Early |
 | Resolution and render scale | Adjustable window and internal resolution, fullscreen, frame cap, and VSync. | Early |
 | Aspect ratio | Original 4:3 baseline; optional widescreen with corrected projection and HUD placement. | Early |
-| Antialiasing and texture filtering | Optional cleaner edges and filtering; retain a profile that respects the original appearance. | After the level renders |
+| Antialiasing and texture filtering | Saved Off/4× MSAA in launcher and pause/settings (session 33); mipmaps and anisotropic filtering pending. Original quality remains the default. | MSAA done; filtering next |
+| Model detail | Optional high-detail Mario drawing (session 33); original simulated LOD traversal and hand anchors retained. Other models and expanded drawing visibility pending. | First option done |
 | Shadows | Original-style character shadow baseline; optional dynamic shadow maps and quality settings. | After movement is validated |
 | Lighting | Optional enhanced lighting and later ambient occlusion; keep original-style materials available. | Later |
 | Input mapping | Basic gamepad input is implemented. Gamepad and keyboard remapping, optional stick calibration, inversion and custom dead zones remain pending. | Basic support done; customization later |
@@ -1396,6 +1397,44 @@ Every handoff should report the working result, commands actually run, missing f
   add a controller-driven three-hit mission acceptance run. Native decomp
   agreement is not original N64 execution evidence. Human controller feel,
   Windows playtesting and presentation review remain.
+
+### Session 33 — Safe presentation quality choices (2026-10-10)
+
+- **Version/start:** **0.0.7**, continued `53465c9` (0.0.6); fetched GitHub
+  before development and confirmed no newer branch commits.
+- **Result:** launcher and pause/settings now save antialiasing (Off or
+  4× MSAA) and Always draw high-detail Mario. Existing settings migrate with
+  both options off. Direct view/screenshot entry points use these saved
+  choices; explicit CLI flags override them for repeatable captures.
+- **MSAA lifecycle:** sample-count changes rebuild cached pipelines for all
+  uploaded models and recreate depth/color targets after presenting the
+  acquired surface texture. Returning to selection resets the launcher to
+  one sample; Play reapplies the saved mode before uploading the level.
+  Unsupported target formats fall back to one sample with a pause notice.
+- **Fidelity boundary:** only the presentation Mario drawer uses distance
+  zero to choose the detailed mesh. Original simulated LOD/visibility
+  traversal, callbacks, hand position, physics, camera and object behavior
+  remain unchanged. Detail changes apply on the next tick after resuming;
+  switching settings does not advance a second punch animation pose. The
+  enhanced hand mesh may differ slightly from the original held-object anchor;
+  this option does not reposition authoritative carried objects.
+- **Checks at publication:** all **32** owner-ROM/default-debug renderer tests
+  pass on Intel Graphics (MTL)/Vulkan, including actual partially covered MSAA
+  edge pixels, Off→4×→Off pipeline changes with resized targets and unchanged
+  model IDs, old-settings migration and displayed LOD transitions. The new
+  oracle presentation test preserves every captured gameplay word over
+  **240** owner-ROM frames while selecting different LOD meshes. Formatting,
+  warnings-denied workspace Clippy, version-counter and package-allowlist
+  checks pass. A private enhanced 1280×720 screenshot is inspected. The native
+  launcher saves both choices; explicit and saved-choice game launches each
+  close cleanly after 120 frames (60 and 62 fixed ticks). The complete
+  owner-ROM release workspace suite runs separately; final regression and
+  hosted Windows/Linux CI results are recorded in the development PR before
+  treating this desktop checkpoint as verified. ROMs and captures stay local.
+- **Next:** mipmaps/anisotropic filtering and widescreen HUD polish are small
+  presentation follow-ups. Expanded drawing visibility requires a separate
+  audit of original callback effects. The gameplay milestone remains star
+  spawning, its cutscene and collection after King Bob-omb's defeat.
 
 ### Bob-omb Battlefield acceptance tracker
 
