@@ -1123,6 +1123,28 @@ Every handoff should report the working result, commands actually run, missing f
   completion. The Intel GPU is accessible on this laptop; use actual device
   access for hardware checks. ROM, packages and test artifacts stay private.
 
+### Session 26 — Desktop UI resize crash fix (2026-10-10)
+
+- **Problem/result:** Selecting Play could draw a 1280×960 UI scissor into the
+  launcher's still-configured 800×720 surface. Window size and GPU resize events
+  can arrive at different times. UI projection and clipping now use the actual
+  acquired render target dimensions, shared by launcher, gameplay and pause.
+  The original validation panic caused a second swapchain-cleanup panic and
+  SIGABRT; this fixes its triggering size mismatch.
+- **Validation:** All 26 renderer/all-target tests pass with the private owner
+  check enabled and physical Intel GPU access. A new ROM-free GPU regression
+  executes real UI draws for larger/smaller pending sizes and 1×/1.25×/2× scales.
+  Restoring the old 1280×960 descriptor reproduces the reported validation error
+  and fails the test; the restored fix passes on Intel Graphics (MTL).
+  Formatting, warnings-denied renderer Clippy and the release runtime build pass.
+  The native X11 launcher opens on Intel/Vulkan; its private screenshot is
+  inspected. Native Wayland fullscreen startup from 800×720 closes cleanly
+  after 60 draw frames. Automated input did not exercise the Play/return buttons;
+  manual transition checks remain in the playtest checklist.
+- **Delivery/next:** Rebuild the local Linux ZIP from this source checkpoint.
+  ROMs, screenshots, test logs and local automation remain private. Gameplay
+  scope is unchanged; continue King Bob-omb's documented prerequisites.
+
 ### Bob-omb Battlefield acceptance tracker
 
 | Capability / act | Actual state |

@@ -23,9 +23,9 @@ unsupported paths; R re-enters.
 
 Windows and Linux ZIP builds are attached to successful runs of the
 [Rust foundation workflow](https://github.com/esotericode/Rustario64/actions/workflows/rust.yml).
-Choose the latest successful run for the branch under test (Bob-ombs and
-holding are on `claude/jolly-noether-2tta72`, stacked on the controller and
-desktop launcher changes), then
+Choose the latest successful run for the branch under test (the current
+development checkpoint is on `codex/local-development`, including Bob-ombs,
+holding and the desktop UI resize fix), then
 download `rustario64-windows-x86_64` or `rustario64-linux-x86_64` under Artifacts.
 GitHub's artifact ZIP contains the runtime ZIP; extract both layers. The build
 identifier is in the runtime folder's BUILD_INFO.txt.
@@ -75,6 +75,12 @@ Linux needs libudev, a compatible system Vulkan or GL driver and X11/Wayland lib
 (for example libxkbcommon-x11-0 for X11). Windows needs a compatible GPU driver.
 The current CI uses Ubuntu 24.04 and Windows Server 2025 x86_64; older desktop
 OS versions and physical GPU/controller combinations need human testing.
+
+The session-26 build fixes the UI scissor crash during pending window resizes.
+Earlier builds could abort when the launcher changed from 800×720 to the game
+window size. The UI now clips against the acquired GPU target. During manual
+playtesting, repeat Play → pause → Choose another ROM → Play, resize the window,
+and toggle fullscreen; check for crashes and correct layout on scaled displays.
 
 ## Controls and options
 
