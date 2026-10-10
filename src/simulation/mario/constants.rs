@@ -2948,9 +2948,16 @@ pub const OBJ_LIST_SURFACE: i32 = 9;
 pub const OBJ_LIST_POLELIKE: i32 = 10;
 pub const OBJ_LIST_SPAWNER: i32 = 11;
 pub const OBJ_LIST_UNIMPORTANT: i32 = 12;
+pub const MARIO_DIALOG_LOOK_DOWN: u32 = 0x3;
+pub const MARIO_DIALOG_LOOK_UP: u32 = 0x2;
+pub const MARIO_DIALOG_LOOK_FRONT: u32 = 0x1;
+pub const MARIO_DIALOG_STOP: u32 = 0x0;
+pub const MARIO_DIALOG_STATUS_START: u32 = 0x1;
+pub const MARIO_DIALOG_STATUS_NONE: u32 = 0x0;
+pub const MARIO_DIALOG_STATUS_SPEAK: u32 = 0x2;
 
 /// Every generated constant by original name, for the oracle consistency test.
-pub static ALL: [(&str, i64); 2944] = [
+pub static ALL: [(&str, i64); 2951] = [
     ("oBowserKeyScale", O_BOWSER_KEY_SCALE as i64),
     ("SOUND_BANK_MOVING", SOUND_BANK_MOVING as i64),
     ("ACTIVE_PARTICLE_H_STAR", ACTIVE_PARTICLE_H_STAR as i64),
@@ -8769,4 +8776,17 @@ pub static ALL: [(&str, i64); 2944] = [
     ("OBJ_LIST_POLELIKE", OBJ_LIST_POLELIKE as i64),
     ("OBJ_LIST_SPAWNER", OBJ_LIST_SPAWNER as i64),
     ("OBJ_LIST_UNIMPORTANT", OBJ_LIST_UNIMPORTANT as i64),
+    ("MARIO_DIALOG_LOOK_DOWN", MARIO_DIALOG_LOOK_DOWN as i64),
+    ("MARIO_DIALOG_LOOK_UP", MARIO_DIALOG_LOOK_UP as i64),
+    ("MARIO_DIALOG_LOOK_FRONT", MARIO_DIALOG_LOOK_FRONT as i64),
+    ("MARIO_DIALOG_STOP", MARIO_DIALOG_STOP as i64),
+    (
+        "MARIO_DIALOG_STATUS_START",
+        MARIO_DIALOG_STATUS_START as i64,
+    ),
+    ("MARIO_DIALOG_STATUS_NONE", MARIO_DIALOG_STATUS_NONE as i64),
+    (
+        "MARIO_DIALOG_STATUS_SPEAK",
+        MARIO_DIALOG_STATUS_SPEAK as i64,
+    ),
 ];

@@ -8,6 +8,7 @@
 #include "game/interaction.h"
 #include "game/mario.h"
 #include "game/mario_actions_automatic.h"
+#include "game/mario_actions_cutscene.h"
 #include "game/mario_actions_moving.h"
 #include "game/mario_actions_object.h"
 #include "game/mario_actions_stationary.h"
@@ -104,6 +105,21 @@ s32 oracle_grab_call(const OracleGrabCall *c) {
             m->intendedYaw = (s16) c->status;
             break;
         case 12: result = set_mario_animation(m, c->argument); break;
+        case 13: result = mario_execute_cutscene_action(m); break;
+        case 14:
+            gCurrentObject = sActor;
+            result = set_mario_npc_dialog(c->argument);
+            break;
+        case 15:
+            /* The object list processor's per-frame distance, then the query. */
+            gCurrentObject = sActor;
+            sActor->oDistanceToMario = dist_between_objects(sActor, gMarioObject);
+            result = cur_obj_can_mario_activate_textbox_2(c->a, c->b);
+            break;
+        case 16: result = mario_ready_to_speak(); break;
+        case 17:
+            m->flags = (u32) c->argument;
+            break;
         default: abort();
     }
     gCurrentObject = gMarioObject;

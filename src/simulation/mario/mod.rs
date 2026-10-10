@@ -21,6 +21,7 @@ pub mod animation;
 pub mod automatic;
 pub mod constants;
 pub mod core;
+pub mod cutscene;
 pub mod inputs;
 pub mod interaction;
 pub mod moving;

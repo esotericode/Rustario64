@@ -300,10 +300,7 @@ void spawn_wind_particles(s16 pitch, s16 yaw) {
     oracle_event(ORACLE_EVENT_WIND_PARTICLES, pitch, yaw);
 }
 
-s32 mario_execute_cutscene_action(struct MarioState *m) {
-    oracle_event(ORACLE_EVENT_UNSUPPORTED, ORACLE_UNSUPPORTED_CUTSCENE_GROUP, (s32) m->action);
-    return FALSE;
-}
+/* mario_execute_cutscene_action: dialog_unit.c (ported actions; the rest are recorded). */
 
 s32 mario_execute_submerged_action(struct MarioState *m) {
     oracle_event(ORACLE_EVENT_UNSUPPORTED, ORACLE_UNSUPPORTED_SUBMERGED_GROUP, (s32) m->action);

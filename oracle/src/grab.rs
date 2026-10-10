@@ -55,6 +55,19 @@ pub enum GrabCall {
         magnitude: f32,
         yaw: i16,
     },
+    /// mario_execute_cutscene_action (dialog_unit.c's partial dispatcher).
+    CutsceneAction,
+    /// set_mario_npc_dialog(arg) called by the actor.
+    NpcDialog(u32),
+    /// The actor's oDistanceToMario refresh, then
+    /// cur_obj_can_mario_activate_textbox_2(radius, height).
+    ActivateTextbox {
+        radius: f32,
+        height: f32,
+    },
+    ReadyToSpeak,
+    /// Injected Mario flags (fixture control, e.g. MARIO_CAP_IN_HAND).
+    MarioFlags(u32),
 }
 
 #[repr(C)]
@@ -129,6 +142,21 @@ impl Oracle {
                 c.argument = i32::from(input);
                 c.a = magnitude;
                 c.status = yaw as u32;
+            }
+            GrabCall::CutsceneAction => c.operation = 13,
+            GrabCall::NpcDialog(arg) => {
+                c.operation = 14;
+                c.argument = arg as i32;
+            }
+            GrabCall::ActivateTextbox { radius, height } => {
+                c.operation = 15;
+                c.a = radius;
+                c.b = height;
+            }
+            GrabCall::ReadyToSpeak => c.operation = 16,
+            GrabCall::MarioFlags(flags) => {
+                c.operation = 17;
+                c.argument = flags as i32;
             }
         }
         // Live fixed record under the process-wide Oracle lock.

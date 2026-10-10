@@ -1,4 +1,6 @@
-//! Shared boss-grab components. These authored actors never run a boss script.
+//! Shared boss-grab components and Mario's side of NPC dialog (King Bob-omb's
+//! textbox activation and dialog entry). These authored actors never run a
+//! boss script.
 //! Original native actions/interaction and Rust evolve from the same fixture;
 //! every existing Mario/object snapshot word is compared after every call.
 #[path = "support/playground.rs"]
@@ -11,11 +13,12 @@ use rustario64::{
         controller::A_BUTTON,
         mario::{
             MarioState, StepWorld, animation::update_animation_frame, automatic, constants::*,
-            interaction, moving, object as mario_object, stationary, tick::LevelObjects,
+            cutscene, interaction, moving, object as mario_object, stationary, tick::LevelObjects,
         },
         math::TrigTables,
         object::{
-            ObjectId, held,
+            ObjectId, dialog, held,
+            helpers::dist_between_objects,
             render::ObjectModels,
             script::{Behavior, authored_scripts},
             spawn::spawn_object,
@@ -171,6 +174,22 @@ impl<'a> Fixture<'a> {
                 m.intended_mag = magnitude;
                 m.intended_yaw = yaw;
             }
+            Call::CutsceneAction => result = cutscene::mario_execute_cutscene_action(m, w),
+            Call::NpcDialog(arg) => {
+                w.objects.current = Some(*actor);
+                result = cutscene::set_mario_npc_dialog(m, w, arg) as i32;
+            }
+            Call::ActivateTextbox { radius, height } => {
+                w.objects.current = Some(*actor);
+                let distance = dist_between_objects(w.objects.slot(*actor), &m.obj);
+                let o = w.objects.slot_mut(*actor);
+                o.raw.set_f32(O_DISTANCE_TO_MARIO, distance);
+                result = i32::from(dialog::cur_obj_can_mario_activate_textbox_2(
+                    o, m, radius, height,
+                ));
+            }
+            Call::ReadyToSpeak => result = i32::from(cutscene::mario_ready_to_speak(m)),
+            Call::MarioFlags(flags) => m.flags = flags,
         }
         w.objects.current = w.objects.mario;
         assert_eq!(result, native, "return from {call:?}");
@@ -603,5 +622,205 @@ fn heavy_actions_match_with_owner_rom_animations() {
         &anims,
         &objects,
         "owner-ROM heavy actions",
+    );
+}
+
+/// Mario's NPC dialog chain from an authored fixture: the actor's textbox
+/// activation query, set_mario_npc_dialog's statuses and the reading/waiting
+/// actions through the partial cutscene dispatcher, until Mario returns to
+/// idle (or the unported cap action is recorded on both sides).
+fn npc_dialog_chains(
+    oracle: &Oracle,
+    collision: &CollisionWorld,
+    trig: &TrigTables,
+    anims: &MarioAnimations,
+    objects: &LevelObjects<'_>,
+    label: &str,
+) {
+    let setup = TickSetup::from_level_script(LEVEL_BOB, 1, 0, [0; 3], 0, CAMERA_MODE_RADIAL as u8);
+    let mut calls = 0;
+    let mut spoke = 0;
+    let mut refused = 0;
+    let mut textbox = [0; 2];
+    let mut finished = std::collections::BTreeMap::new();
+    let actions = [
+        ACT_IDLE,
+        ACT_WALKING,
+        ACT_HOLD_IDLE,
+        ACT_FIRST_PERSON,
+        ACT_JUMP,
+        ACT_PUNCHING,
+        ACT_BACKWARD_AIR_KB,
+        ACT_WAITING_FOR_DIALOG,
+        ACT_SHOCKED,
+        ACT_RIDING_SHELL_GROUND,
+    ];
+    // Lateral distance and height pairs straddle the 500/100 (King Bob-omb)
+    // and fixed 160 limits; the angles exercise wrap-around turning.
+    let placements: [[f32; 3]; 8] = [
+        [0.0, 0.0, -100.0],
+        [499.9, 0.0, 0.0],
+        [-500.0, 0.0, 0.0],
+        [300.0, -159.9, -300.0],
+        [-300.0, -160.0, 300.0],
+        [0.0, 99.9, 400.0],
+        [0.0, 100.0, -400.0],
+        [-1.0, 50.0, 1.0],
+    ];
+    for action in actions {
+        for (p, object_pos) in placements.into_iter().enumerate() {
+            for arg in [
+                MARIO_DIALOG_STOP,
+                MARIO_DIALOG_LOOK_FRONT,
+                MARIO_DIALOG_LOOK_UP,
+                MARIO_DIALOG_LOOK_DOWN,
+            ] {
+                for holding in [0, 1] {
+                    // One cap-in-hand chain per action keeps the run short.
+                    let cap = p == 0 && arg == MARIO_DIALOG_LOOK_UP && holding == 0;
+                    let f = GrabFixture {
+                        action,
+                        holding,
+                        object_pos,
+                        mario_yaw: 0x7123,
+                        ..seed()
+                    };
+                    let mut state =
+                        Fixture::begin(oracle, collision, trig, anims, objects, &setup, f);
+                    state.call(oracle, Call::Animation(MARIO_ANIM_IDLE_HEAD_LEFT));
+                    if cap {
+                        state.call(
+                            oracle,
+                            Call::MarioFlags(MARIO_NORMAL_CAP | MARIO_CAP_IN_HAND),
+                        );
+                        calls += 1;
+                    }
+                    let can = state.call(
+                        oracle,
+                        Call::ActivateTextbox {
+                            radius: 500.0,
+                            height: 100.0,
+                        },
+                    );
+                    textbox[can as usize] += 1;
+                    state.call(oracle, Call::ReadyToSpeak);
+                    calls += 3;
+                    let status = state.call(oracle, Call::NpcDialog(arg)) as u32;
+                    calls += 1;
+                    if status == MARIO_DIALOG_STATUS_NONE {
+                        refused += 1;
+                        continue;
+                    }
+                    assert_eq!(state.m.action, ACT_READING_NPC_DIALOG);
+                    spoke += 1;
+                    // Speak for a while, then stop, then let Mario look back.
+                    let mut ticks = 0;
+                    let mut stopped = false;
+                    while state.m.action == ACT_READING_NPC_DIALOG && ticks < 60 {
+                        let status = state.call(
+                            oracle,
+                            Call::NpcDialog(if ticks >= 20 { MARIO_DIALOG_STOP } else { arg }),
+                        ) as u32;
+                        if state.m.action_state < 8 {
+                            assert_eq!(status, MARIO_DIALOG_STATUS_START);
+                        }
+                        stopped |= ticks >= 20;
+                        loop {
+                            calls += 1;
+                            if state.m.action & ACT_GROUP_MASK != ACT_GROUP_CUTSCENE
+                                || state.call(oracle, Call::CutsceneAction) == 0
+                            {
+                                break;
+                            }
+                        }
+                        state.call(oracle, Call::AdvanceAnimation);
+                        calls += 2;
+                        ticks += 1;
+                    }
+                    assert!(stopped);
+                    // ACT_PUTTING_ON_CAP is unported; both sides record it.
+                    if state.m.action & ACT_GROUP_MASK == ACT_GROUP_CUTSCENE {
+                        assert_eq!(state.call(oracle, Call::CutsceneAction), 0);
+                        calls += 1;
+                    }
+                    *finished.entry(state.m.action).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+    // The waiting action, which an NPC can leave Mario in, on its own.
+    let f = GrabFixture {
+        action: ACT_WAITING_FOR_DIALOG,
+        ..seed()
+    };
+    let mut state = Fixture::begin(oracle, collision, trig, anims, objects, &setup, f);
+    for _ in 0..10 {
+        assert_eq!(state.call(oracle, Call::CutsceneAction), 0);
+        state.call(oracle, Call::AdvanceAnimation);
+        calls += 2;
+    }
+    assert!(spoke > 0 && refused > 0 && textbox[0] > 0 && textbox[1] > 0);
+    for action in [ACT_IDLE, ACT_HOLD_IDLE, ACT_PUTTING_ON_CAP] {
+        assert!(
+            finished.contains_key(&action),
+            "no dialog ending in {action:#X}"
+        );
+    }
+    println!(
+        "{label}: {calls} exact calls; {spoke} dialogs, {refused} refused, textbox {textbox:?}, endings {finished:X?}"
+    );
+}
+
+#[test]
+fn npc_dialog_entry_and_reading_actions_match() {
+    let data = terrain();
+    let collision = world(&data);
+    let trig = computed_tables();
+    let anims = authored_animations(0x5EED_000B);
+    let scripts = authored_scripts();
+    let models = ObjectModels::default();
+    let object_anims = ObjectAnimations::default();
+    let objects = LevelObjects::mario_only(&scripts, &models, &object_anims);
+    let oracle = Oracle::load(&data);
+    oracle.set_trig(trig.sine_table(), trig.arctan_table());
+    oracle.set_mario_animations(&anims);
+    oracle.tick_set_objects(&NativeObjects::new(&objects));
+    npc_dialog_chains(
+        &oracle,
+        &collision,
+        &trig,
+        &anims,
+        &objects,
+        "authored NPC dialog",
+    );
+}
+
+#[test]
+#[ignore = "requires RUSTARIO64_ROM; original Mario animations and trig"]
+fn npc_dialog_matches_with_owner_rom_animations() {
+    use rustario64::import::{animation, engine, rom::Rom};
+    let rom = Rom::open(std::path::Path::new(
+        &std::env::var_os("RUSTARIO64_ROM").expect("set RUSTARIO64_ROM"),
+    ))
+    .unwrap();
+    let data = terrain();
+    let collision = world(&data);
+    let trig = engine::trig_tables(&rom).unwrap();
+    let anims = animation::mario_animations(&rom).unwrap();
+    let scripts = authored_scripts();
+    let models = ObjectModels::default();
+    let object_anims = ObjectAnimations::default();
+    let objects = LevelObjects::mario_only(&scripts, &models, &object_anims);
+    let oracle = Oracle::load(&data);
+    oracle.set_trig(trig.sine_table(), trig.arctan_table());
+    oracle.set_mario_animations(&anims);
+    oracle.tick_set_objects(&NativeObjects::new(&objects));
+    npc_dialog_chains(
+        &oracle,
+        &collision,
+        &trig,
+        &anims,
+        &objects,
+        "owner-ROM NPC dialog",
     );
 }

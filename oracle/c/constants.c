@@ -19,6 +19,7 @@
 #include "course_table.h"
 #include "engine/surface_collision.h"
 #include "game/object_list_processor.h"
+#include "game/mario_actions_cutscene.h"
 #include "constants.inc.c"
 
 int oracle_constant_count(void) {

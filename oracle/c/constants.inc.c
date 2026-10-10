@@ -2945,4 +2945,11 @@ static const struct { const char *name; long long value; } sConstants[] = {
     { "OBJ_LIST_POLELIKE", (long long) (s32) (OBJ_LIST_POLELIKE) },
     { "OBJ_LIST_SPAWNER", (long long) (s32) (OBJ_LIST_SPAWNER) },
     { "OBJ_LIST_UNIMPORTANT", (long long) (s32) (OBJ_LIST_UNIMPORTANT) },
+    { "MARIO_DIALOG_LOOK_DOWN", (long long) (u32) (MARIO_DIALOG_LOOK_DOWN) },
+    { "MARIO_DIALOG_LOOK_UP", (long long) (u32) (MARIO_DIALOG_LOOK_UP) },
+    { "MARIO_DIALOG_LOOK_FRONT", (long long) (u32) (MARIO_DIALOG_LOOK_FRONT) },
+    { "MARIO_DIALOG_STOP", (long long) (u32) (MARIO_DIALOG_STOP) },
+    { "MARIO_DIALOG_STATUS_START", (long long) (u32) (MARIO_DIALOG_STATUS_START) },
+    { "MARIO_DIALOG_STATUS_NONE", (long long) (u32) (MARIO_DIALOG_STATUS_NONE) },
+    { "MARIO_DIALOG_STATUS_SPEAK", (long long) (u32) (MARIO_DIALOG_STATUS_SPEAK) },
 };

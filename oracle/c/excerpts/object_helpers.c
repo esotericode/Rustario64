@@ -14,6 +14,8 @@
 #include "game/object_list_processor.h"
 #include "game/rendering_graph_node.h"
 #include "game/spawn_object.h"
+#include "game/level_update.h"
+#include "game/mario_actions_cutscene.h"
 
 /* src/game/object_helpers.c: static s16 sPowersOfTwo[] = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80 } */
 static s16 sPowersOfTwo[] = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80 };
@@ -714,4 +716,34 @@ void obj_set_gfx_pos_at_obj_pos(struct Object *obj1, struct Object *obj2) {
     obj1->header.gfx.angle[0] = obj2->oMoveAnglePitch & 0xFFFF;
     obj1->header.gfx.angle[1] = obj2->oMoveAngleYaw & 0xFFFF;
     obj1->header.gfx.angle[2] = obj2->oMoveAngleRoll & 0xFFFF;
+}
+
+/* src/game/object_helpers.c: lateral_dist_between_objects */
+f32 lateral_dist_between_objects(struct Object *obj1, struct Object *obj2) {
+    f32 dx = obj1->oPosX - obj2->oPosX;
+    f32 dz = obj1->oPosZ - obj2->oPosZ;
+
+    return sqrtf(dx * dx + dz * dz);
+}
+
+/* src/game/object_helpers.c: cur_obj_can_mario_activate_textbox */
+s32 cur_obj_can_mario_activate_textbox(f32 radius, f32 height, UNUSED s32 unused) {
+    if (o->oDistanceToMario < 1500.0f) {
+        f32 latDistToMario = lateral_dist_between_objects(o, gMarioObject);
+        UNUSED s16 angleFromMario = obj_angle_to_object(gMarioObject, o);
+
+        if (latDistToMario < radius && o->oPosY < gMarioObject->oPosY + 160.0f
+            && gMarioObject->oPosY < o->oPosY + height && !(gMarioStates[0].action & ACT_FLAG_AIR)
+            && mario_ready_to_speak()) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+/* src/game/object_helpers.c: cur_obj_can_mario_activate_textbox_2 */
+s32 cur_obj_can_mario_activate_textbox_2(f32 radius, f32 height) {
+    // The last argument here is unused. When this function is called directly the argument is always set to 0x7FFF.
+    return cur_obj_can_mario_activate_textbox(radius, height, 0x1000);
 }

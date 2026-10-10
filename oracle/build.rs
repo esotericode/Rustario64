@@ -16,6 +16,7 @@ fn main() {
         "c/object_step_unit.c",
         "c/standard_motion_unit.c",
         "c/grab_unit.c",
+        "c/dialog_unit.c",
         "c/obj_behaviors_unit.c",
         "c/object_anims_unit.c",
         "c/mario_render_unit.c",

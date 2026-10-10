@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-10
 
-Current project version: **0.0.2** (shared change counter, introduced in session 27).
+Current project version: **0.0.3** (shared change counter, introduced in session 27).
 
 Status: M0 complete. M1 imported level works: BOB's original terrain and textures import from the ROM and render through an optional wgpu viewer with collision/placement overlays. M2 in progress: Mario's complete tick (inputs, non-object actions, his object update and animation frame advance, with the ROM's animations) matches the natively compiled decomp per tick, and BOB's original camera (radial, R/close, C-Up, boss-fight modes, shakes, FOV and graph camera) runs with it in the original frame order, matching the decomp word for word per frame. The viewer's Mario mode drives that frame from keyboard or mapped gamepads and draws from the reference camera; recorded runs replay exactly against the decomp with its own camera. Mario's model and display lists import from the ROM and are posed from each tick as the original render pass does. D1 local ROM launcher and D2 development pause/settings are implemented, with a dedicated desktop entry point and ROM reselection; basic analog gamepad input is implemented; blink, LOD and animation/action switches preserve Mario's pose interpolation. Mario's original BOB shadow is implemented and interpolated independently. The original object system (pool, lists, the ROM's behavior scripts through a ported interpreter, object collision) runs in the frame with BOB's coins (yellow coins, every formation type, sparkles, collection), matching the decomp word for word per frame including every object; coins and sparkles are drawn from the ROM in viewer play with interpolated positions and a development overlay reading the original HUD coin count. BOB's twelve Bob-ombs now run from the ROM's scripts and animations (patrol, fuse, chase, explosion with its camera shake, coin loot, respawn, lava/death-plane deaths, Mario's damage knockback and kicks), matching the decomp word for word per frame, and are drawn with their skinned ROM models, fuse smoke, explosions and death smoke. Mario picks Bob-ombs up, carries, throws and drops them: his holding actions run with the hand position (HOLP) that his render pass now writes through his ROM model with the original matrix stack, compared word for word, and the held Bob-omb is drawn in his hands. Every other object behavior, King Bob-omb, cutscenes, other areas' camera modes and triggers, cutscene/water actions, warps and missions remain missing.
 Sessions 24–25 add King Bob-omb's standard movement and shared grab/release prerequisites, including heavy-object actions checked with the ROM's Mario animations. The boss itself remains disabled. Local Linux Intel GPU startup/drawing and recorded-run replay pass.
@@ -1212,6 +1212,37 @@ Every handoff should report the working result, commands actually run, missing f
   the local Linux runtime. The next committed change is 0.0.3. Windows human
   playtesting remains separate from hosted tests/build/package checks. Continue
   King Bob-omb's documented integration; ROM/assets and test artifacts stay private.
+
+### Session 29 — Mario's NPC dialog entry (2026-10-10, in progress at handoff)
+
+- **Version/result:** **0.0.3**. Continued `a0f53d3`. Translated Mario's side
+  of NPC dialog from mario_actions_cutscene.c: mario_ready_to_speak,
+  set_mario_npc_dialog, act_reading_npc_dialog, act_waiting_for_dialog and the
+  cutscene dispatcher's check_for_instant_quicksand (`simulation::mario::cutscene`);
+  the cutscene group now dispatches these two actions, and every other cutscene
+  action is still a recorded Unsupported boundary. Object side:
+  lateral_dist_between_objects and cur_obj_can_mario_activate_textbox(_2)
+  (`simulation::object::dialog`). MARIO_DIALOG_* constants are generated from
+  the vendored mario_actions_cutscene.h (existing order kept, new names appended).
+- **Finding:** King Bob-omb's `geo_update_held_mario_pos` acts only through
+  `prevObj`, which spawn clears and neither he nor his anchor ever sets, so it
+  is a no-op for him. Grabbed Mario is placed by the already ported anchor.
+  It is not a remaining King Bob-omb prerequisite.
+- **Oracle:** New verbatim excerpt `mario_dialog.c` and three object_helpers.c
+  items; authored `dialog_unit.c` replaces the cutscene recording stub with a
+  partial dispatcher (verbatim quicksand check, the two actions, original tail).
+  Grab fixtures gained dialog operations.
+- **Checks:** `npc_dialog_entry_and_reading_actions_match` and the owner-ROM
+  variant each match 22,754 calls bit for bit (192 dialogs, 448 refused,
+  textbox true/false, endings in idle, hold idle and the recorded unported
+  ACT_PUTTING_ON_CAP). Baseline before changes: all 197 owner-ROM release
+  workspace tests passed. Excerpt check, formatting and core/oracle Clippy pass.
+  **Not rerun after the change:** the full workspace suite, renderer debug GPU
+  tests and mutation checks. Run them first next session.
+- **Next:** cur_obj_update_dialog_with_cutscene needs time stop, the camera's
+  CUTSCENE_DIALOG (cutscene_object_with_dialog) and the dialog box
+  (ingame_menu.c, whose page timing depends on ROM text). Then King Bob-omb's
+  behavior, star and completion. No placement is newly enabled.
 
 ### Bob-omb Battlefield acceptance tracker
 

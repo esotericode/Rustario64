@@ -27,7 +27,7 @@ HEADERS = ["sm64.h", "dialog_ids.h", "surface_terrains.h", "sounds.h", "mario_an
            "object_constants.h", "object_fields.h", "game/camera.h", "game/interaction.h",
            "game/level_update.h", "game/mario.h", "game/save_file.h", "engine/graph_node.h",
            "model_ids.h", "course_table.h", "engine/surface_collision.h",
-           "game/object_list_processor.h"]
+           "game/object_list_processor.h", "game/mario_actions_cutscene.h"]
 
 # (name pattern, Rust type), first match wins. Names that match no group are
 # not mirrored.

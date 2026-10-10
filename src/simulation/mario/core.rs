@@ -829,10 +829,7 @@ fn execute_group(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
             w.event(Event::Unsupported(Unsupported::SubmergedGroup(m.action)));
             0
         }
-        ACT_GROUP_CUTSCENE => {
-            w.event(Event::Unsupported(Unsupported::CutsceneGroup(m.action)));
-            0
-        }
+        ACT_GROUP_CUTSCENE => super::cutscene::mario_execute_cutscene_action(m, w),
         ACT_GROUP_AUTOMATIC => automatic::mario_execute_automatic_action(m, w),
         ACT_GROUP_OBJECT => object::mario_execute_object_action(m, w),
         // An unknown group leaves the loop variable unchanged (TRUE).
@@ -841,7 +838,7 @@ fn execute_group(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
 }
 
 /// execute_mario_action: one tick of Mario's behavior. Returns the particle
-/// flags. Groups that are not ported yet (cutscene, submerged) record an
+/// flags. The submerged group and unported cutscene actions record an
 /// `Unsupported` event and end the loop, like the oracle's boundary.
 pub fn execute_mario_action(m: &mut MarioState, w: &mut StepWorld<'_>) -> u32 {
     if m.action == 0 {

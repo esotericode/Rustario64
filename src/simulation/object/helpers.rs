@@ -29,6 +29,13 @@ pub fn dist_between_objects(obj1: &Object, obj2: &Object) -> f32 {
     (dx * dx + dy * dy + dz * dz).sqrt()
 }
 
+/// lateral_dist_between_objects.
+pub fn lateral_dist_between_objects(obj1: &Object, obj2: &Object) -> f32 {
+    let dx = obj1.raw.f32(O_POS_X) - obj2.raw.f32(O_POS_X);
+    let dz = obj1.raw.f32(O_POS_Z) - obj2.raw.f32(O_POS_Z);
+    (dx * dx + dz * dz).sqrt()
+}
+
 /// obj_angle_to_object.
 pub fn obj_angle_to_object(trig: &TrigTables, obj1: &Object, obj2: &Object) -> i16 {
     let (z1, z2) = (obj1.raw.f32(O_POS_Z), obj2.raw.f32(O_POS_Z));

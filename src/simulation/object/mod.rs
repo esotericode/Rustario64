@@ -16,6 +16,7 @@ pub mod animation;
 pub mod bobomb;
 pub mod coin;
 pub mod collision;
+pub mod dialog;
 pub mod explosion;
 pub mod held;
 pub mod helpers;
