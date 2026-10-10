@@ -954,3 +954,64 @@ Object shadows remain undrawn.
 **Development start point.** The viewer's `--start X,Y,Z[,YAW]` enters the
 level with Mario spawned elsewhere in the area through the same entry; it is
 a development inspection aid like the free camera, not an original warp.
+
+## Holding and Mario's render pass — 2026-10-10 (session 23)
+
+**Mario's render pass is authoritative.** Dropping and throwing put the held
+object at the held object's last position (HOLP), which
+geo_switch_mario_hand_grab_pos writes while the render pass draws Mario's
+hand, from the camera-space matrix stack. `simulation::mario::render` now runs
+geo_process_object for Mario's node and his model's traversal each linked
+frame with the original matrix arithmetic: placement (or the floor-align
+matrix), scale, the animated parts read from his animation as
+geo_process_animated_part reads them, rotation and scale nodes, switches and
+levels of detail. Levels of detail read the integer part of the 16.16
+fixed-point stack top (mtxf_to_mtx), so the stand/run switch and the camera
+distance choose the body, and therefore the hand, as the original does. The
+pass also makes the callbacks' other writes, which earlier sessions left
+undone on both sides as presentation-only: geo_mario_tilt_torso resets the
+torso angles outside walking and butt-sliding (tilt_body_walking approaches
+from them, so this is gameplay state), geo_mario_head_rotation resets the
+head angles, and geo_mario_hand_foot_scaler counts the punch state down. What
+the callbacks write into graph nodes (rotation and scale nodes, a held-object
+node's offset, the wings' active flags) persists in `MarioGraphState`, as in
+the original nodes, rebuilt at each level entry; the scaler's function-local
+counter keeps its boot value.
+
+The pass needs the camera: frames without the linked camera (the Mario-only
+harness) keep the earlier minimal step (his animation only) on both sides,
+and holding is only reachable in linked frames, which every scenario with
+objects uses. Mario's model is MODEL_MARIO's decoded `mario_geo` (the same
+decode presentation uses) with its callback roles; ROM-free tests use an
+authored model with mario_geo's hierarchy and callbacks and invented
+lengths. The shadow node is processed for its children only: its writes are
+drawing state and its animation reads leave the attribute cursor unchanged.
+The castle mirror's callbacks act only in the mirror room and are not ported.
+
+**Holding.** Mario's object, hold, pick-up, placing-down, throwing and heavy
+throw actions, the dive pick-up and the hold landings, slides and air throws
+are translated, with mario_grab/drop/throw_held_object and obj_set_held_state.
+The Bob-omb's held, dropped and thrown loops (ported in session 22) now run.
+The held object's own model is processed inside Mario's hand
+(geo_process_held_object: its animation's once-per-frame advance and its
+switches). Checks against held behaviors the port never spawns (the jumping
+box, the underwater shell, Bowser) are exact as written: such an object cannot
+be held, and Bowser's swing actions panic.
+
+**Oracle.** Mario's node runs through the verbatim traversal
+(rendering_graph_node.c's node processors, geo_process_held_object and the
+node walk), his verbatim callbacks, and a graph built with the verbatim
+graph_node.c constructors from the Rust side's node list, replacing an
+authored mirror. Object models gained real child nodes so a held object's
+model goes through the same traversal. `guMtxF2L` is an authored
+implementation of libultra's documented fixed-point layout (the SDK source
+stays unvendored), and the scaler's static counter is primed through the
+verbatim function at each entry.
+
+**Presentation.** Mario's drawer reads the completed tick's body state (the
+pass's own punch countdown and resets) instead of re-deriving them. The held
+object is drawn with geo_process_held_object's matrix in world coordinates:
+Mario's object rows with the HOLP the pass just wrote as translation, which is
+exactly the camera-space matrix with the camera removed, then the held
+object's own scale. The viewer's `screenshot --inputs RUN.inputs.json`
+replays a recorded run before capturing, for inspecting any moment of play.

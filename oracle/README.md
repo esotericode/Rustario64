@@ -7,8 +7,10 @@ action ports, the camera's components and complete frames of Mario with the
 original area camera, Mario's blob-shadow vertices and animation offsets, and
 the object system (pool, lists, behavior scripts, object collision, yellow
 coins, coin formations, sparkles and coin collection, object animations,
-Bob-ombs with their explosions, loot coins, respawners and sound spawners, and
-Mario's damage and grab-request interactions), and the enemy movement
+Bob-ombs with their explosions, loot coins, respawners and sound spawners,
+Mario's damage and grabbable interactions, and holding: his hold, pick-up and
+throw actions with the render pass's hand position), Mario's object node in the
+render pass through the original traversal, and the enemy movement
 component with the original code
 bit for bit.
 
@@ -37,6 +39,7 @@ be retired or kept only as a fast regression check.
 | `c/behavior_data_unit.c`, `c/behavior_data_boundary.h` | Authored wrapper that compiles the verbatim `behavior_data.c` scripts (coin formation spawn, coin formation, yellow coin, both sparkles, Mario, spin airborne warp, sound spawner, moving yellow coin, Bob-omb, fuse smoke, the three carry-something scripts, explosion, death smoke, respawner) and lists them for segmented-address naming; the boundary header supplies the includes behavior_data.c's own translation unit has and declares the Bob-omb animation table | MIT |
 | `c/object_render_unit.c` | Authored render-pass traversal of non-Mario objects: the camera's look-at transform, `geo_process_object`'s matrices (verbatim math_util functions; an object's throw matrix when obj_orient_graph left one, then cleared), the verbatim `geo_set_animation_globals` frame advance for animated objects, the verbatim `obj_is_in_view` and, for objects in view, the model's switch callbacks (verbatim `geo_switch_anim_state`). The models' node trees come from the Rust importer's ROM decode. Display lists are not modelled | MIT |
 | `c/obj_behaviors_unit.c`, `c/obj_behaviors_boundary.h` | Authored wrapper compiling the verbatim obj_behaviors.c excerpt with the behavior files it includes (moving coin, Bob-omb, explosion, corkbox) in its order and one translation unit, so they share `sObjFloor`; the boundary header supplies the file's includes and routes `alloc_display_list` to the per-frame arena | MIT |
+| `c/mario_render_unit.c`, `c/rendering_traversal_boundary.h` | Authored wrapper that runs Mario's object node through the verbatim render traversal (`excerpts/rendering_traversal.c`: geo_process_object, the node processors, geo_process_held_object and the node walk; geo_process_shadow and obj_is_in_view from their excerpts) and his verbatim geo callbacks (`excerpts/mario_misc.c`, `excerpts/behavior_actions.c`). It builds MODEL_MARIO's graph with the verbatim graph_node.c constructors from the Rust side's node list (the ROM's decoded mario_geo or an authored Mario-shaped stand-in) at each level entry; the camera node's matrix, aborting processors for scene nodes no model contains and the castle mirror's two callbacks (which act only in the mirror room) are authored | MIT |
 | `c/object_anims_unit.c` | Authored host copies of object animation tables: `bobomb_seg8_anims_0802396C` and its animations, built from the Rust importer's decode of the ROM (or the authored test set) with native `struct Animation` headers, and their segmented addresses for the snapshot | MIT |
 | `c/coin_boundary.h`, `c/macro_preset_boundary.h` | Authored context for the `coin.inc.c` excerpt (`o` names gCurrentObject, as in behavior_actions.c) and the stand-in for `sMacroObjectPresets`, which the harness fills from the ROM's table for the presets it spawns | MIT |
 | `c/interaction_unit.c` | Authored wrapper that compiles the `interaction.c` excerpt and reads/resets its file-scope state | MIT |
@@ -95,11 +98,19 @@ include the header that declares them.
   `alloc_display_list`; `oracle_frame_alloc_display_list` serves Mat4 blocks
   from an arena reset at the start of each frame (pool exhaustion is not
   modelled). The snapshot reads a throw matrix's 16 words from it.
+- **Fixed-point matrices:** `guMtxF2L` (libultra, called by math_util.c's
+  `mtxf_to_mtx`) is an authored implementation of its documented 16.16
+  layout; the level-of-detail node reads the integer half of a matrix's z
+  translation from it. The SDK source is not vendored.
+- **Mario's scaler counter:** geo_mario_hand_foot_scaler keeps a
+  function-local counter from boot. Each level entry sets it to a fresh
+  boot's value at area update 0 by calling the verbatim function once
+  (`oracle_render_prime_scaler`) and restores what that call touched, because
+  the oracle runs many entries in one process.
 - **Stand-in scripts:** `bhvObjectWaterWave`, `bhvObjectBubble` and
   `bhvBobombExplosionBubble` exist only as distinct addresses; the Rust side
   stops before spawning water particles, so the native frames never run them.
-- **Aborting:** holding (`obj_set_held_state`), the thrown/dropped vertical
-  movement `cur_obj_move_y`, platform displacement by objects, water droplets,
+- **Aborting:** the thrown/dropped vertical movement `cur_obj_move_y`, platform displacement by objects, water droplets,
   every interaction handler except `interact_coin`, `interact_damage` and
   `interact_grabbable` (verbatim), and the PSS timer. Nothing the compared
   runs reach calls them (the Rust side stops at grabs first); reaching one
@@ -123,10 +134,14 @@ verbatim `update_objects` (`clear_dynamic_surfaces`, the terrain lists,
 Mario's platform displacement, `detect_object_collisions`, the remaining
 lists of `sObjectListUpdateOrder`, with `cur_obj_update` interpreting each
 object's script, then unloading of deactivated objects and
-`update_mario_platform`), the render pass's `geo_process_object` condition
-and `geo_set_animation_globals` for Mario and the authoritative writes for
-the other objects (their animation frame advance, throw-matrix placement and
-switch cases), and `gGlobalTimer++`. The per-frame display-list arena is
+`update_mario_platform`), the render pass for Mario's node (with the camera linked and a Mario model
+given, the verbatim geo_process_object and his model's traversal in
+c/mario_render_unit.c: his animation, his callbacks' body-state writes, levels
+of detail and the held object's node, which writes the HOLP and processes the
+held object's model; otherwise its `geo_process_object` condition and
+`geo_set_animation_globals`) and the authoritative writes for the other
+objects (their animation frame advance, throw-matrix placement and switch
+cases), and `gGlobalTimer++`. The per-frame display-list arena is
 reset where the game selects a new display-list pool. State persists across frames; the Rust side runs
 independently and nothing is copied between them after the level entry.
 
@@ -480,6 +495,19 @@ keep their previous hashes).
 | `src/engine/graph_node.c` | `geo_reset_object_node` | `88af0240dd1f74ee65dedb228ff238f769a4f626` |
 | `src/engine/graph_node.c` | `geo_obj_init` | `97b69e31f8978f659365241f4ae4a25795e37ab0` |
 | `src/engine/graph_node.c` | `geo_obj_init_animation` | `9f2b4dfa96b3071f90a1e8eb8de10563914881c9` |
+| `src/engine/graph_node.c` | `init_graph_node_render_range` | `881f94daf9b875b3734b0fa795f1c6ac23726565` |
+| `src/engine/graph_node.c` | `init_graph_node_switch_case` | `6b8a2e91f612b566565068e00d229b7e18bd981f` |
+| `src/engine/graph_node.c` | `init_graph_node_translation_rotation(struct AllocOnlyPool *pool,` | `22b7ecbb368d233d8afc43691ac662743183af5e` |
+| `src/engine/graph_node.c` | `init_graph_node_translation` | `f25f45d9b93a6ee73b73da93632da6e9d4240e25` |
+| `src/engine/graph_node.c` | `init_graph_node_rotation` | `3abc4542df6f25e324bff43fae9b34ed87b71173` |
+| `src/engine/graph_node.c` | `init_graph_node_scale` | `259e3708e6a94a822618b5f1d1d40621a292b3be` |
+| `src/engine/graph_node.c` | `init_graph_node_culling_radius` | `3ba13f0fe5d0aa98e73e97a2a77a749eec89ffb4` |
+| `src/engine/graph_node.c` | `init_graph_node_animated_part` | `d273d3ddffb7e0fe007ccd141471db2ed1dd9353` |
+| `src/engine/graph_node.c` | `init_graph_node_billboard` | `d6e3a552d24eba9ea8a6a4d428c01c8fb5e6189b` |
+| `src/engine/graph_node.c` | `init_graph_node_display_list` | `bfc0468a32a09bf02d21d361d7695897b216151b` |
+| `src/engine/graph_node.c` | `init_graph_node_shadow` | `0a3b79fed844a5f1a722f1c8e8f9f00df8ff0f02` |
+| `src/engine/graph_node.c` | `init_graph_node_generated` | `81469ba0e63965d179b5599c77aeadc65c106b14` |
+| `src/engine/graph_node.c` | `init_graph_node_held_object` | `6c32d18d187afca394fc06c15b8dad1e6072e2ca` |
 | `src/game/rendering_graph_node.c` | `u8 gCurrAnimType` | `80b38f4e7ab8c61b27a7f35548c8ec0ec5f2faa9` |
 | `src/game/rendering_graph_node.c` | `u8 gCurrAnimEnabled` | `1e41192cd4df6e29975b9b3469502936264c4c17` |
 | `src/game/rendering_graph_node.c` | `s16 gCurrAnimFrame` | `2ae60eb0d31748f486569f657b7ecdb01782e1e9` |
@@ -487,6 +515,39 @@ keep their previous hashes).
 | `src/game/rendering_graph_node.c` | `u16 *gCurrAnimAttribute` | `a57686d19732e4efd0c9aac60a1e41ea4fcab1c0` |
 | `src/game/rendering_graph_node.c` | `s16 *gCurrAnimData` | `e40041ad4b17d1552e716f34f4587fc73b07a7f4` |
 | `src/game/rendering_graph_node.c` | `geo_set_animation_globals` | `6bdef4a257a103b6ac2a5cc6333ce90514fddfd1` |
+| `src/game/rendering_graph_node.c` | `struct GeoAnimState` | `70a4ddf4b32537456929e0fcb5f0631414e04ae6` |
+| `src/game/rendering_graph_node.c` | `struct GeoAnimState gGeoTempState` | `61c52790b656b319452280e71f8a7cdbca27c638` |
+| `src/game/rendering_graph_node.c` | `struct AllocOnlyPool *gDisplayListHeap` | `deff09797f9fccee93d70c8ca6450522c25ca8fe` |
+| `src/game/rendering_graph_node.c` | `struct GraphNodeRoot *gCurGraphNodeRoot = NULL` | `48e55bacb2990e2bfed7c60405cb012dff3af362` |
+| `src/game/rendering_graph_node.c` | `struct GraphNodeMasterList *gCurGraphNodeMasterList = NULL` | `b7d84b539f63c33241db288d044f5541353322a2` |
+| `src/game/rendering_graph_node.c` | `geo_append_display_list` | `418031b0212114099e9852e203982fe32c406185` |
+| `src/game/rendering_graph_node.c` | `geo_process_level_of_detail` | `80a311e695b5a1560618574d45801e7b4fffda47` |
+| `src/game/rendering_graph_node.c` | `geo_process_switch` | `248567439cba6ea40baae6f5bd8d145a3c3aac90` |
+| `src/game/rendering_graph_node.c` | `geo_process_translation_rotation` | `f0da9baf2897ecb66af70abb0539ec09a39d2acd` |
+| `src/game/rendering_graph_node.c` | `geo_process_translation` | `33220bcf2d21f1de28774397975f63b0ea2b5463` |
+| `src/game/rendering_graph_node.c` | `geo_process_rotation` | `494134ab9d4b5c695e2f9633cd147902638e173f` |
+| `src/game/rendering_graph_node.c` | `geo_process_scale` | `c5a9775530fb45b09529c18694932292890e5c4e` |
+| `src/game/rendering_graph_node.c` | `geo_process_billboard` | `4d81e502b154db77dfb164c44835061da4fcecc9` |
+| `src/game/rendering_graph_node.c` | `geo_process_display_list` | `fdbe9e5018d403c855db86048bebcbd3ce6accc6` |
+| `src/game/rendering_graph_node.c` | `geo_process_generated_list` | `9105ef8cdfc1efee82b1805634c2f30facd3f2e6` |
+| `src/game/rendering_graph_node.c` | `geo_process_animated_part` | `236844f1bd832fca0919f39c2f08e0f4bc41aded` |
+| `src/game/rendering_graph_node.c` | `geo_process_object` | `6842f6cae7992738b577b9fc08ad6c2474c828d9` |
+| `src/game/rendering_graph_node.c` | `geo_process_held_object` | `4958d74bf182e15bca3d94aa35e51a0af9a34862` |
+| `src/game/rendering_graph_node.c` | `geo_try_process_children` | `b5a46d4487ccfdc576178e86dbbf789840484375` |
+| `src/game/rendering_graph_node.c` | `geo_process_node_and_siblings` | `3f741773611bbc1415beb50ca258deec54892cd7` |
+| `src/game/mario_misc.c` | `static s8 gMarioBlinkAnimation[7] = { 1, 2, 1, 0, 1, 2, 1 }` | `5c2e7524862d7eec8c55222f0b15abf2fbbf9c53` |
+| `src/game/mario_misc.c` | `static s8 gMarioAttackScaleAnimation[3 * 6]` | `3b70c79e5c2afd152d0fa4103e2b7cb082fd1442` |
+| `src/game/mario_misc.c` | `geo_switch_mario_stand_run` | `a53f3c92a479358d0ab980a980bd7b9102bc6b1f` |
+| `src/game/mario_misc.c` | `geo_switch_mario_eyes` | `ab3e963b2b57a6bab1e3015486736ab659eeee35` |
+| `src/game/mario_misc.c` | `geo_mario_tilt_torso` | `e20c460622dc379c3b93054d00d0454eb0d2d5b6` |
+| `src/game/mario_misc.c` | `geo_mario_head_rotation` | `1208a57b34ef1f0a3217d2fb0a8010fd57b7a598` |
+| `src/game/mario_misc.c` | `geo_switch_mario_hand` | `874bf2ee471669ca93b93429992ee55aca77dbe2` |
+| `src/game/mario_misc.c` | `geo_mario_hand_foot_scaler` | `679b2bbc282a0f17b663cac9f7705300b69fb5ed` |
+| `src/game/mario_misc.c` | `geo_switch_mario_cap_effect` | `2abcf6f54ec46dc4324d76397267c0e985abea4c` |
+| `src/game/mario_misc.c` | `geo_switch_mario_cap_on_off` | `2cbc62afefc55d000c22ae72bfab80598672f024` |
+| `src/game/mario_misc.c` | `geo_mario_rotate_wing_cap_wings` | `86310fa5677bdba37720eb6368edc5109ec13454` |
+| `src/game/mario_misc.c` | `geo_switch_mario_hand_grab_pos` | `fe446df7b422a8c6dd8b66d8cce30cd392c9d30c` |
+| `src/game/behavior_actions.c` | `geo_move_mario_part_from_parent` | `f40b1643f846b04c5f59e98c68f6c478889a30fa` |
 | `src/game/macro_special_objects.c` | `convert_rotation` | `c2b13ce87204743b862a4311fc8425fb6c57027c` |
 | `src/game/macro_special_objects.c` | `#define MACRO_OBJ_Y_ROT 0` | `cdcd3ce74ff09eae30c79ae57dc8ee22c60323e4` |
 | `src/game/macro_special_objects.c` | `#define MACRO_OBJ_X 1` | `8d6c740c56c539563a99ab222ddde0d9b02ed5a0` |
@@ -592,6 +653,10 @@ keep their previous hashes).
 | `src/game/object_helpers.c` | `cur_obj_get_dropped` | `ab6d90f406deed6585a27bd3855d22f5229f711f` |
 | `src/game/object_helpers.c` | `bhv_dust_smoke_loop` | `9738c3949de368bf26e03decbe8789e39261175d` |
 | `src/game/object_helpers.c` | `obj_attack_collided_from_other_object` | `be3236aaaa964ba1a192ef0183c7e3735a022f9c` |
+| `src/game/object_helpers.c` | `obj_update_pos_from_parent_transformation` | `f0963dfb049dd115387f4128e60147a3fefe1f26` |
+| `src/game/object_helpers.c` | `create_transformation_from_matrices` | `252776a164df6abe00ced3c5a1e1ecbcbc6124a8` |
+| `src/game/object_helpers.c` | `obj_set_held_state` | `b12126670f4523905c5fc4cf0231e50b29c8cd8f` |
+| `src/game/object_helpers.c` | `obj_set_gfx_pos_from_pos` | `272c8201ec576c850f654e2e792dfa0093fb9e5f` |
 | `src/game/object_list_processor.c` | `s32 gDebugInfoFlags` | `a2204341e4ce756759788af29809c29f293df4e2` |
 | `src/game/object_list_processor.c` | `s32 gUnknownWallCount` | `d1f15ae124c91e93e5d27199d15d0a3e38181073` |
 | `src/game/object_list_processor.c` | `u32 gObjectCounter` | `f960d8c5a5d992de88bc5021dd8f091e3c18f854` |
@@ -655,18 +720,28 @@ at four yaws for 600 frames each. Both assert coverage (coins collected,
 formations unloading and respawning, both sparkle behaviors, shadowless
 coins).
 
-`--test bobombs` compares the same words with Bob-ombs. The CI tests enter an
+`--test bobombs` compares the same words with Bob-ombs, including holding:
+the held state, Mario's holding actions and the HOLP the render pass
+writes through his model. The CI tests enter an
 authored field (a ramp, a block, a lava tile, a pit over a death plane) with
 twelve Bob-ombs (one stationary) and an authored Bob-omb-shaped animation set
 (invented values): ten seeded runs of 900 frames with movement, jumps, dives
 and attacks let Bob-ombs chase Mario, light fuses, explode, burn, fall, drop
 loot and respawn, and five scripted encounters place Mario beside the
-stationary Bob-omb to jump-kick it (four) and punch it (one). The ignored test starts
+stationary Bob-omb to jump-kick it (four), then punch it up and carry,
+throw, drop, air-throw, jump and land with, walk and turn with, re-grab and
+hold it until its fuse runs out (seven), and dive into it from a run (one);
+the authored set uses an authored Mario-shaped model (mario_geo's hierarchy
+and callbacks with invented lengths). A third CI test carries a Bob-omb from
+a plateau down a slippery slope into a held butt slide. The ignored test adds
+the same holding scripts beside BOB's stationary Bob-omb with the ROM's Mario
+model. The ignored test starts
 Mario beside each of BOB's twelve act-1 Bob-ombs at four yaws for 600 frames
 with the ROM's scripts, animations and models. All assert coverage (fuses,
 chases, explosions, environmental shakes, deaths, respawns, loot, knockbacks,
-launches). A run stops at the first grab (picking up is not ported); the
-frames before it are compared and the stop is reported. `tick_trace --camera`
+launches, held frames, throws, drops, HOLP updates). A run that reaches a
+path the port does not run stops; the frames before it are compared and the
+stop is reported (none does now). `tick_trace --camera`
 and reference-camera replays enter BOB with
 its act-1 objects as the viewer does; the Mario-only trace (no camera) keeps
 Mario as the only object.

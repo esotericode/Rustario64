@@ -634,3 +634,73 @@ s32 obj_attack_collided_from_other_object(struct Object *obj) {
 
     return touchedOtherObject;
 }
+
+/* src/game/object_helpers.c: obj_update_pos_from_parent_transformation */
+void obj_update_pos_from_parent_transformation(Mat4 a0, struct Object *a1) {
+    f32 spC = a1->oParentRelativePosX;
+    f32 sp8 = a1->oParentRelativePosY;
+    f32 sp4 = a1->oParentRelativePosZ;
+
+    a1->oPosX = spC * a0[0][0] + sp8 * a0[1][0] + sp4 * a0[2][0] + a0[3][0];
+    a1->oPosY = spC * a0[0][1] + sp8 * a0[1][1] + sp4 * a0[2][1] + a0[3][1];
+    a1->oPosZ = spC * a0[0][2] + sp8 * a0[1][2] + sp4 * a0[2][2] + a0[3][2];
+}
+
+/* src/game/object_helpers.c: create_transformation_from_matrices */
+void create_transformation_from_matrices(Mat4 a0, Mat4 a1, Mat4 a2) {
+    f32 spC, sp8, sp4;
+
+    spC = a2[3][0] * a2[0][0] + a2[3][1] * a2[0][1] + a2[3][2] * a2[0][2];
+    sp8 = a2[3][0] * a2[1][0] + a2[3][1] * a2[1][1] + a2[3][2] * a2[1][2];
+    sp4 = a2[3][0] * a2[2][0] + a2[3][1] * a2[2][1] + a2[3][2] * a2[2][2];
+
+    a0[0][0] = a1[0][0] * a2[0][0] + a1[0][1] * a2[0][1] + a1[0][2] * a2[0][2];
+    a0[0][1] = a1[0][0] * a2[1][0] + a1[0][1] * a2[1][1] + a1[0][2] * a2[1][2];
+    a0[0][2] = a1[0][0] * a2[2][0] + a1[0][1] * a2[2][1] + a1[0][2] * a2[2][2];
+
+    a0[1][0] = a1[1][0] * a2[0][0] + a1[1][1] * a2[0][1] + a1[1][2] * a2[0][2];
+    a0[1][1] = a1[1][0] * a2[1][0] + a1[1][1] * a2[1][1] + a1[1][2] * a2[1][2];
+    a0[1][2] = a1[1][0] * a2[2][0] + a1[1][1] * a2[2][1] + a1[1][2] * a2[2][2];
+
+    a0[2][0] = a1[2][0] * a2[0][0] + a1[2][1] * a2[0][1] + a1[2][2] * a2[0][2];
+    a0[2][1] = a1[2][0] * a2[1][0] + a1[2][1] * a2[1][1] + a1[2][2] * a2[1][2];
+    a0[2][2] = a1[2][0] * a2[2][0] + a1[2][1] * a2[2][1] + a1[2][2] * a2[2][2];
+
+    a0[3][0] = a1[3][0] * a2[0][0] + a1[3][1] * a2[0][1] + a1[3][2] * a2[0][2] - spC;
+    a0[3][1] = a1[3][0] * a2[1][0] + a1[3][1] * a2[1][1] + a1[3][2] * a2[1][2] - sp8;
+    a0[3][2] = a1[3][0] * a2[2][0] + a1[3][1] * a2[2][1] + a1[3][2] * a2[2][2] - sp4;
+
+    a0[0][3] = 0.0f;
+    a0[1][3] = 0.0f;
+    a0[2][3] = 0.0f;
+    a0[3][3] = 1.0f;
+}
+
+/* src/game/object_helpers.c: obj_set_held_state */
+void obj_set_held_state(struct Object *obj, const BehaviorScript *heldBehavior) {
+    obj->parentObj = o;
+
+    if (obj->oFlags & OBJ_FLAG_HOLDABLE) {
+        if (heldBehavior == bhvCarrySomething3) {
+            obj->oHeldState = HELD_HELD;
+        }
+
+        if (heldBehavior == bhvCarrySomething5) {
+            obj->oHeldState = HELD_THROWN;
+        }
+
+        if (heldBehavior == bhvCarrySomething4) {
+            obj->oHeldState = HELD_DROPPED;
+        }
+    } else {
+        obj->curBhvCommand = segmented_to_virtual(heldBehavior);
+        obj->bhvStackIndex = 0;
+    }
+}
+
+/* src/game/object_helpers.c: obj_set_gfx_pos_from_pos */
+void obj_set_gfx_pos_from_pos(struct Object *obj) {
+    obj->header.gfx.pos[0] = obj->oPosX;
+    obj->header.gfx.pos[1] = obj->oPosY;
+    obj->header.gfx.pos[2] = obj->oPosZ;
+}

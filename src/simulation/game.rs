@@ -23,15 +23,13 @@ use crate::{
         mario::{
             Event, MarioState, PlayerCameraState, StepWorld,
             constants::{ACTIVE_FLAG_MOVE_THROUGH_GRATE, MARIO_VANISH_CAP, SHAKE_SHOCK},
-            tick::{
-                LevelEntry, LevelObjects, RenderedFrame, enter_level_with, render_mario_object,
-                update_objects,
-            },
+            render::{RenderView, render_mario},
+            tick::{LevelEntry, LevelObjects, RenderedFrame, enter_level_with, update_objects},
         },
         math::TrigTables,
         object::{
             object,
-            render::{RenderedMatrices, render_objects},
+            render::{RenderedMatrices, camera_matrix, render_objects},
         },
         rng::Rng,
     },
@@ -103,6 +101,8 @@ pub struct Game<'a> {
     /// The terrain matrices the last render pass placed objects with
     /// (presentation only; the pass cleared them).
     pub rendered_matrices: RenderedMatrices,
+    /// What the last render pass did with Mario's node (presentation).
+    pub rendered_mario: RenderedFrame,
 }
 
 impl<'a> Game<'a> {
@@ -141,6 +141,7 @@ impl<'a> Game<'a> {
             world,
             camera,
             rendered_matrices: RenderedMatrices::new(),
+            rendered_mario: RenderedFrame::default(),
         }
     }
 
@@ -233,7 +234,13 @@ impl<'a> Game<'a> {
         share(camera, w);
         // render_game: the camera nodes enclose the object nodes, Mario's first.
         camera.render(m.action, m.camera_status.pos, w.trig);
-        let rendered = render_mario_object(&mut m.obj, w);
+        let view = RenderView {
+            camera: camera_matrix(w.trig, &camera.graph),
+            fov: camera.graph.fov,
+            camera_mode: w.camera.mode,
+        };
+        let rendered = render_mario(m, w, &view);
+        self.rendered_mario = rendered;
         self.rendered_matrices = render_objects(w, &camera.graph);
         // display_and_vsync.
         w.global_timer = w.global_timer.wrapping_add(1);

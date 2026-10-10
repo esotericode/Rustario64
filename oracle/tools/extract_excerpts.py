@@ -266,6 +266,42 @@ EXCERPTS = [
       *[("function", name) for name in [
           "spawn_coin_in_formation", "bhv_coin_formation_init", "bhv_coin_formation_loop",
           "bhv_coin_sparkles_loop", "bhv_golden_coin_sparkles_loop"]]]),
+    # The render traversal for Mario's object node (c/mario_render_unit.c):
+    # every processor his model and a held object's reach, the held-object
+    # node and the generic node walk. geo_process_shadow comes from
+    # shadow_geo.c and obj_is_in_view from rendering_view.c.
+    ("rendering_traversal.c", "src/game/rendering_graph_node.c",
+     ['"rendering_traversal_boundary.h"'],
+     [("range", "struct GeoAnimState {", "};"),
+      ("line", "struct GeoAnimState gGeoTempState;"),
+      ("line", "struct AllocOnlyPool *gDisplayListHeap;"),
+      ("line", "struct GraphNodeRoot *gCurGraphNodeRoot = NULL;"),
+      ("line", "struct GraphNodeMasterList *gCurGraphNodeMasterList = NULL;"),
+      *[("function", name) for name in [
+          "geo_append_display_list", "geo_process_level_of_detail", "geo_process_switch",
+          "geo_process_translation_rotation", "geo_process_translation", "geo_process_rotation",
+          "geo_process_scale", "geo_process_billboard", "geo_process_display_list",
+          "geo_process_generated_list", "geo_process_animated_part", "geo_process_object",
+          "geo_process_held_object", "geo_try_process_children",
+          "geo_process_node_and_siblings"]]]),
+    # Mario's geo callbacks (the mirror's are authored stand-ins in
+    # c/mario_render_unit.c: they act only for the castle mirror's Mario).
+    ("mario_misc.c", "src/game/mario_misc.c",
+     ['"sm64.h"', '"engine/graph_node.h"', '"engine/math_util.h"', '"game/camera.h"',
+      '"game/level_update.h"', '"game/mario_misc.h"', '"game/object_helpers.h"',
+      '"game/rendering_graph_node.h"'],
+     [("line", "static s8 gMarioBlinkAnimation[7] = { 1, 2, 1, 0, 1, 2, 1 };"),
+      ("range", "static s8 gMarioAttackScaleAnimation[3 * 6] = {", "};"),
+      *[("function", name) for name in [
+          "geo_switch_mario_stand_run", "geo_switch_mario_eyes", "geo_mario_tilt_torso",
+          "geo_mario_head_rotation", "geo_switch_mario_hand", "geo_mario_hand_foot_scaler",
+          "geo_switch_mario_cap_effect", "geo_switch_mario_cap_on_off",
+          "geo_mario_rotate_wing_cap_wings", "geo_switch_mario_hand_grab_pos"]]]),
+    ("behavior_actions.c", "src/game/behavior_actions.c",
+     ['"sm64.h"', '"engine/graph_node.h"', '"game/behavior_actions.h"', '"game/level_update.h"',
+      '"game/object_helpers.h"', '"game/object_list_processor.h"',
+      '"game/rendering_graph_node.h"'],
+     [("function", "geo_move_mario_part_from_parent")]),
     ("rendering_view.c", "src/game/rendering_graph_node.c",
      ['"sm64.h"', '"engine/graph_node.h"', '"engine/math_util.h"'],
      [("function", "obj_is_in_view")]),
@@ -286,7 +322,13 @@ EXCERPTS = [
       ("function", "init_scene_graph_node_links"), ("function", "init_graph_node_object"),
       ("function", "geo_obj_init_spawninfo"),
       *[("function", name) for name in [
-          "init_graph_node_start", "geo_add_child", "geo_remove_child", "geo_make_first_child",
+          "init_graph_node_start", "init_graph_node_render_range", "init_graph_node_switch_case"]],
+      ("range_at", "init_graph_node_translation_rotation(struct AllocOnlyPool *pool,", 1, "}"),
+      *[("function", name) for name in [
+          "init_graph_node_translation", "init_graph_node_rotation", "init_graph_node_scale", "init_graph_node_culling_radius",
+          "init_graph_node_animated_part", "init_graph_node_billboard",
+          "init_graph_node_display_list", "init_graph_node_shadow", "init_graph_node_generated",
+          "init_graph_node_held_object", "geo_add_child", "geo_remove_child", "geo_make_first_child",
           "geo_reset_object_node", "geo_obj_init", "geo_obj_init_animation"]]]),
     ("rendering_graph_node.c", "src/game/rendering_graph_node.c",
      ['"sm64.h"', '"engine/graph_node.h"', '"game/memory.h"', '"game/rendering_graph_node.h"'],
@@ -383,7 +425,9 @@ EXCERPTS = [
           "obj_turn_toward_object", "obj_scale_xyz", "cur_obj_init_animation",
           "cur_obj_set_pos_relative", "cur_obj_enable_rendering_2",
           "cur_obj_move_after_thrown_or_dropped", "cur_obj_get_dropped", "bhv_dust_smoke_loop",
-          "obj_attack_collided_from_other_object"]]]),
+          "obj_attack_collided_from_other_object", "obj_update_pos_from_parent_transformation",
+          "create_transformation_from_matrices", "obj_set_held_state",
+          "obj_set_gfx_pos_from_pos"]]]),
     ("object_list_processor.c", "src/game/object_list_processor.c",
      ['"sm64.h"', '"engine/behavior_script.h"', '"engine/graph_node.h"', '"engine/surface_load.h"',
       '"game/debug.h"', '"game/interaction.h"', '"game/level_update.h"', '"game/mario.h"',

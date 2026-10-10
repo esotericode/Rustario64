@@ -21,7 +21,6 @@ use crate::content::{
     ImportIssue, SegmentLoad,
     visual::{LAYER_COUNT, SkinnedModel},
 };
-use serde::Serialize;
 use std::collections::BTreeMap;
 
 /// One item a render traversal appends to a layer's master list, in order.
@@ -42,39 +41,10 @@ impl Draw {
     }
 }
 
-/// Mario's native geo callbacks (pinned src/game/mario_misc.c), as roles.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
-pub enum MarioCallback {
-    /// geo_mirror_mario_backface_culling: only acts for the castle mirror's Mario.
-    MirrorBackfaceCulling,
-    /// geo_mirror_mario_set_alpha: the vanish cap's alpha and layer.
-    MirrorSetAlpha,
-    /// geo_switch_mario_stand_run: full detail while stationary, LOD otherwise.
-    SwitchStandRun,
-    /// geo_switch_mario_cap_effect: normal, vanish, metal or metal-vanish body.
-    SwitchCapEffect,
-    /// geo_switch_mario_cap_on_off: cap on or off, and the wings' visibility.
-    SwitchCapOnOff,
-    /// geo_switch_mario_eyes: blinking or a fixed eye state.
-    SwitchEyes,
-    /// geo_switch_mario_hand: fists, open, peace sign, holding a cap.
-    SwitchHand,
-    /// geo_mario_head_rotation: the head turn while reading or in water.
-    HeadRotation,
-    /// geo_mario_tilt_torso: the torso tilt while walking and sliding.
-    TiltTorso,
-    /// geo_mario_rotate_wing_cap_wings: the wings' flap.
-    RotateWingCapWings,
-    /// geo_mario_hand_foot_scaler: the punch and kick scale.
-    HandFootScaler,
-    /// geo_move_mario_part_from_parent: positions a held object.
-    MovePartFromParent,
-    /// geo_switch_mario_hand_grab_pos: where a held object sits.
-    HandGrabPos,
-}
+pub use crate::simulation::mario::render::MarioCallback;
 
 impl MarioCallback {
-    fn from_name(name: &str) -> Option<Self> {
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
         Some(match name {
             "geo_mirror_mario_backface_culling" => Self::MirrorBackfaceCulling,
             "geo_mirror_mario_set_alpha" => Self::MirrorSetAlpha,

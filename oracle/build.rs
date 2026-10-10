@@ -16,6 +16,9 @@ fn main() {
         "c/object_step_unit.c",
         "c/obj_behaviors_unit.c",
         "c/object_anims_unit.c",
+        "c/mario_render_unit.c",
+        "c/excerpts/mario_misc.c",
+        "c/excerpts/behavior_actions.c",
         "c/excerpts/spawn_sound.c",
         "c/excerpts/sound_spawner.c",
         "c/excerpts/coin.c",
@@ -87,6 +90,7 @@ fn main() {
         "c/lakitu_state.inc.c",
         "c/object_step_boundary.h",
         "c/obj_behaviors_boundary.h",
+        "c/rendering_traversal_boundary.h",
     ] {
         println!("cargo:rerun-if-changed={dir}");
     }

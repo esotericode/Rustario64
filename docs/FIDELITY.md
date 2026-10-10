@@ -778,3 +778,56 @@ by its shape and by the BOB comparisons, not by an independent reference
 checker. Presentation (skinned object models, billboards, explosion and smoke
 textures) is inspected in local screenshots only and needs a human comparison
 with the original.
+
+## Holding and Mario's render pass (session 23, 2026-10-10)
+
+Mario's object node now goes through the render pass in every frame with the
+linked camera, on both sides: in Rust `simulation::mario::render`, in the
+oracle the verbatim rendering_graph_node.c traversal and mario_misc.c
+callbacks over a graph built with the verbatim graph_node.c constructors. Its
+state writes are compared through the existing words: the HOLP
+(`body.heldObjLastPosition`), the torso and head angles, the punch state, the
+animation frame, and the held object's frame and anim state. The camera, coin
+and Bob-omb suites therefore all cover the pass (the camera-less Mario tick
+suites keep the earlier minimal step on both sides).
+
+```sh
+cargo test --locked --release -p rustario64-oracle --test bobombs -- --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test bobombs -- --include-ignored --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release --test objects bob_bobomb_is_picked -- --ignored --nocapture
+```
+
+| Suite | Data | Identical frames | Coverage |
+| --- | --- | --- | --- |
+| Authored held slide (CI) | A plateau, a slippery slope and a stationary Bob-omb; carried down the slope into a held butt slide, then thrown | 756 | 442 held frames, ACT_HOLD_BUTT_SLIDE reached, 1 throw, 2 drops |
+| Authored encounters (CI) | Authored field, the stationary Bob-omb, an authored Mario-shaped model (mario_geo's hierarchy and callbacks, invented lengths) and an authored animation seed whose holding animations play forward; four jump kicks, seven holding scripts after a punch (carry and throw, fuse in hand, drop, air throw, jump and land, walk and turn, re-grab) and a dive grab | 3,203 | 558 held frames, 4 throws, 3 drops, 10 holding actions, 558 HOLP updates, 59 explosions |
+| BOB Bob-ombs (owner ROM) | Session 22's 48 runs plus the seven holding scripts beside BOB's stationary Bob-omb, with the ROM's Mario model and animations | 30,511 | 897 held frames, 6 throws, 5 drops, 13 holding actions, 896 HOLP updates, 62 explosions, 31 knockbacks |
+
+The authored random Bob-omb runs (9,000 frames), the authored and BOB coin
+suites (5,400 and 9,600) and the camera suites stay identical with the pass
+on both sides. A ROM play test (`tests/objects.rs`) picks BOB's stationary
+Bob-omb up, carries it for 101 frames with `held_visible_object` placing it at
+the HOLP in Mario's hand, and throws it into a launch.
+
+**Seeded mutations.** Twelve single-point changes were applied one at a
+time against the authored Bob-omb and camera suites (development helper, not
+committed): the light-object hand offset, the level-of-detail distance sign,
+the hand scaler's once-per-frame guard, the hand translation row copied into
+the held matrix, the throw's release frame, the throw's lead distance, the
+drop height, the heavy-object grab test, the carrying walk speed, the
+torso-reset action list, the quarter scale of the hand offset and the held
+object's scale. Ten were rejected at a named word and frame in the first run.
+The torso-reset change was not: no script carried a Bob-omb into a held butt
+slide, so `authored_bobomb_carried_into_a_held_butt_slide_matches_the_decomp`
+was added (a slippery slope below a stationary Bob-omb's plateau: 756 frames,
+442 held) and now rejects it. Dropping the held object's scale is invisible to
+simulated state (the scale touches only the matrix's rotation rows; the HOLP
+reads its translation row), so no comparison can see it; the drawer applies
+the same scale.
+
+**Not covered.** Heavy holds (King Bob-omb) and Bowser's swing, holdable
+objects other than Bob-ombs, the castle mirror's Mario, Mario's prevObj
+(burning Mario), camera-less frames' render pass, frames where Mario is out of
+view while holding (covered only incidentally), original N64 execution, and
+the visual placement of the held object against the original game (checked in
+local screenshots only).

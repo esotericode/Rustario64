@@ -115,6 +115,7 @@ unsafe extern "C" {
     );
     fn oracle_tick_set_spawn_infos(infos: *const OracleSpawnInfo, count: i32);
     fn oracle_set_bobomb_animations(table: u32, anims: *const OracleAnimation, count: i32);
+    fn oracle_render_set_mario_model(nodes: *const OracleGeoNode, count: i32, root: i32);
     fn oracle_tick_run(input: *const OracleTickInput);
     fn oracle_tick_snapshot(
         names: *mut *const *const std::ffi::c_char,
@@ -167,6 +168,27 @@ struct OracleModel {
     child_start: *const i32,
     child_count: *const i32,
     children: *const i32,
+}
+
+/// One node of MODEL_MARIO's graph (layout matches `OracleGeoNode` in
+/// c/mario_render_unit.c), from which the oracle builds the node with the
+/// verbatim graph_node.c constructor.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OracleGeoNode {
+    pub kind: i32,
+    pub parent: i32,
+    pub layer: i32,
+    pub has_display_list: i32,
+    /// `MarioCallback` role (its declaration order), or -1.
+    pub callback: i32,
+    pub param: i32,
+    pub param2: i32,
+    pub param3: i32,
+    pub a: [i16; 3],
+    pub b: [i16; 3],
+    pub scale: u32,
+    pub flags: i32,
 }
 
 /// One area spawn info (layout matches `OracleSpawnInfo` in c/tick.c).
@@ -601,7 +623,12 @@ impl Oracle {
                 o.bobomb_table,
                 animations.as_ptr(),
                 animations.len() as i32,
-            )
+            );
+            oracle_render_set_mario_model(
+                o.mario_model.as_ptr(),
+                o.mario_model.len() as i32,
+                o.mario_root,
+            );
         };
     }
 

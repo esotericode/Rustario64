@@ -14,7 +14,7 @@
 use super::{Object, ObjectId, ThrowMatrix};
 use crate::simulation::{
     camera::system::GraphCamera,
-    mario::{StepWorld, constants::*},
+    mario::{StepWorld, constants::*, render::MarioModel},
     math::{
         Mat4, TrigTables, mtxf_billboard, mtxf_identity, mtxf_lookat, mtxf_mul,
         mtxf_rotate_zxy_and_translate, mtxf_scale_vec3f,
@@ -54,11 +54,14 @@ pub struct ObjectModel {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ObjectModels {
     loaded: BTreeMap<u16, Option<ObjectModel>>,
+    /// MODEL_MARIO's graph, which the render pass traverses for Mario.
+    mario: Option<MarioModel>,
 }
 
 /// No models: for worlds that never spawn objects.
 pub static NO_MODELS: ObjectModels = ObjectModels {
     loaded: BTreeMap::new(),
+    mario: None,
 };
 
 impl ObjectModels {
@@ -77,6 +80,16 @@ impl ObjectModels {
 
     pub fn ids(&self) -> impl Iterator<Item = u16> + '_ {
         self.loaded.keys().copied()
+    }
+
+    /// Load MODEL_MARIO's graph (registering the model ID).
+    pub fn set_mario_model(&mut self, model: MarioModel) {
+        self.loaded.entry(MODEL_MARIO as u16).or_insert(None);
+        self.mario = Some(model);
+    }
+
+    pub fn mario_model(&self) -> Option<&MarioModel> {
+        self.mario.as_ref()
     }
 }
 
@@ -128,7 +141,7 @@ pub fn obj_is_in_view(
 
 /// geo_process_node_and_siblings over a model for `o`: switch callbacks write
 /// the object; only the selected case's subtree is processed.
-fn process_model(o: &mut Object, model: &ObjectModel, node: usize) {
+pub(crate) fn process_model(o: &mut Object, model: &ObjectModel, node: usize) {
     let n = &model.nodes[node];
     match &n.kind {
         RenderNodeKind::Plain | RenderNodeKind::CullingRadius { .. } => {
@@ -263,7 +276,12 @@ pub struct VisibleObject {
     pub cases: Vec<(usize, usize)>,
 }
 
-fn selected_cases(o: &Object, model: &ObjectModel, node: usize, out: &mut Vec<(usize, usize)>) {
+pub(crate) fn selected_cases(
+    o: &Object,
+    model: &ObjectModel,
+    node: usize,
+    out: &mut Vec<(usize, usize)>,
+) {
     let n = &model.nodes[node];
     match &n.kind {
         RenderNodeKind::Plain | RenderNodeKind::CullingRadius { .. } => {
@@ -390,6 +408,7 @@ pub fn authored_models() -> ObjectModels {
             root: 0,
         }),
     );
+    models.set_mario_model(crate::simulation::mario::render::authored_mario_model());
     models.insert(MODEL_YELLOW_COIN as u16, Some(switch(8, true)));
     models.insert(MODEL_YELLOW_COIN_NO_SHADOW as u16, Some(switch(8, true)));
     models.insert(MODEL_SPARKLES as u16, Some(switch(12, false)));

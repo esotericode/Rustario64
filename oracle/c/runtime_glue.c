@@ -311,12 +311,6 @@ s32 mario_execute_submerged_action(struct MarioState *m) {
 }
 
 /* ---- Unreachable without objects ---- */
-void obj_set_held_state(struct Object *obj, const BehaviorScript *heldBehavior) {
-    (void) obj;
-    (void) heldBehavior;
-    unreachable_without_objects("obj_set_held_state");
-}
-
 void stop_shell_music(void) {
     unreachable_without_objects("stop_shell_music (shell object)");
 }
@@ -588,9 +582,22 @@ void spawn_macro_abs_special(s32 model, const BehaviorScript *behavior, s16 x, s
     (void) unkC;
 }
 
+/* libultra's float-to-fixed matrix conversion (authored from its documented
+ * layout: the 16 integer halves of the 16.16 values first, then the 16
+ * fraction halves, two per word). The level-of-detail node reads the integer
+ * half of the translation's z. */
 void guMtxF2L(float mf[4][4], Mtx *m) {
-    (void) mf;
-    (void) m;
+    s32 r, c;
+    for (r = 0; r < 4; r++) {
+        for (c = 0; c < 2; c++) {
+            s32 first = (s32) (mf[r][2 * c] * 65536.0f);
+            s32 second = (s32) (mf[r][2 * c + 1] * 65536.0f);
+            m->m[r / 2][(r % 2) * 2 + c] =
+                (s32) (((u32) first & 0xFFFF0000u) | (((u32) second >> 16) & 0xFFFFu));
+            m->m[2 + r / 2][(r % 2) * 2 + c] =
+                (s32) ((((u32) first << 16) & 0xFFFF0000u) | ((u32) second & 0xFFFFu));
+        }
+    }
 }
 
 /* ---- Mario animation DMA (memory.c boundary) ----

@@ -1,7 +1,8 @@
 //! BOB's act-1 objects from the owner's ROM: which placements the port
 //! spawns (every coin and Bob-omb placement) and which it records as
-//! unported, a played session that collects a yellow coin, and Bob-ombs that
-//! chase Mario and explode. The per-frame object words are
+//! unported, a played session that collects a yellow coin, Bob-ombs that
+//! chase Mario and explode, and one Mario picks up, carries (drawn in his
+//! hand) and throws. The per-frame object words are
 //! compared against the native decomp in oracle/tests/objects.rs; this test
 //! checks the import and the play integration without the oracle.
 use rustario64::{
@@ -12,7 +13,7 @@ use rustario64::{
     simulation::{
         collision::CollisionWorld,
         game::GameEntry,
-        mario::{constants as c, core::SpawnPoint, tick::LevelEntry},
+        mario::{constants as c, core::SpawnPoint, render::held_visible_object, tick::LevelEntry},
         object::{ObjectList, RespawnInfo, render::visible_objects, script::Behavior},
     },
 };
@@ -424,4 +425,124 @@ fn bob_bobomb_chases_explodes_and_respawns() {
         );
     }
     assert!(drawer.builds() >= 4);
+}
+
+/// Mario punches BOB's stationary Bob-omb up, carries it (it is drawn in his
+/// hand, at the hand position the render pass wrote), and throws it.
+#[test]
+#[ignore = "requires RUSTARIO64_ROM"]
+fn bob_bobomb_is_picked_up_carried_and_thrown() {
+    let Some(rom) = rom() else {
+        eprintln!("RUSTARIO64_ROM is not set; skipping");
+        return;
+    };
+    let imported = bob::import(&rom).unwrap();
+    let trig = engine::trig_tables(&rom).unwrap();
+    let anims = rustario64::import::animation::mario_animations(&rom).unwrap();
+    let world = CollisionWorld::load_area_terrain(&imported.collision).unwrap();
+    let camera = imported.visual.as_ref().unwrap().camera.unwrap();
+    let script_entry = GameEntry::script_start(&imported.level, &camera).unwrap();
+    let content = objects::bob(&rom, &imported.level, Act::new(1).unwrap()).unwrap();
+    let scripts = &content.content.scripts;
+    let bobomb = scripts.address(Behavior::Bobomb);
+    let stationary = content
+        .area
+        .macros
+        .iter()
+        .find(|e| {
+            e.behavior == bobomb && i32::from(e.preset_param) == c::BOBOMB_BP_STYPE_STATIONARY
+        })
+        .unwrap();
+    let start = [stationary.pos[0], stationary.pos[1], stationary.pos[2] + 88];
+    let entry = GameEntry {
+        mario: LevelEntry {
+            spawn: SpawnPoint::from_level_script(
+                1,
+                script_entry.mario.spawn.area_index as u8,
+                180,
+                start,
+            ),
+            ..script_entry.mario
+        },
+        ..script_entry
+    };
+    let mut session = Session::new(&world, &trig, &anims, content.level_objects(), entry);
+    let mut drawer = ObjectDrawer::for_level(
+        &content.content,
+        LevelModels {
+            segments: &content.level_segments,
+            registrations: &content.level_models,
+            animations: &content.animations,
+        },
+        &trig,
+    );
+    let basis = BillboardBasis {
+        right: [1.0, 0.0, 0.0],
+        up: [0.0, 1.0, 0.0],
+        toward: [0.0, 0.0, 1.0],
+    };
+    let (mut held_frames, mut drawn_in_hand, mut thrown) = (0, 0, false);
+    for frame in 0..160 {
+        let pad = Pad {
+            b: frame == 10 || frame == 110,
+            ..Pad::default()
+        };
+        if !session.step(&pad) {
+            panic!("stopped at frame {frame}: {:?}", session.stopped());
+        }
+        let (m, w) = (session.mario(), session.world());
+        let held = held_visible_object(m, w, &session.game().rendered_mario);
+        if m.held_obj.is_some() {
+            held_frames += 1;
+        }
+        if let Some(held) = &held {
+            let holp = m.body.held_obj_last_position;
+            let matrix = held.throw_matrix.unwrap();
+            assert_eq!([matrix[3][0], matrix[3][1], matrix[3][2]], holp);
+            assert!(
+                (0..3).all(|i| (holp[i] - m.pos[i]).abs() < 250.0),
+                "the hand position {holp:?} is far from Mario at {:?}",
+                m.pos
+            );
+            drawn_in_hand += 1;
+        }
+        let mut visible = visible_objects(
+            session.world(),
+            &session.game().camera.graph,
+            &session.game().rendered_matrices,
+        );
+        visible.extend(held);
+        drawer.update(visible).unwrap();
+        for alpha in [0.0, 0.5, 1.0] {
+            for frame in drawer.frame(alpha, true, basis) {
+                for v in frame.vertices.iter().flatten() {
+                    assert!(
+                        v.position
+                            .iter()
+                            .all(|p| p.is_finite() && p.abs() < 20000.0)
+                    );
+                }
+            }
+        }
+        let w = session.world();
+        for list in [
+            ObjectList::Destructive,
+            ObjectList::Level,
+            ObjectList::Default,
+        ] {
+            for id in w.objects.list(list) {
+                let o = w.objects.slot(id);
+                if o.behavior == bobomb && o.raw.s32(c::O_ACTION) == c::BOBOMB_ACT_LAUNCHED {
+                    thrown = true;
+                }
+            }
+        }
+    }
+    println!("held {held_frames} frames, drawn in hand {drawn_in_hand}, thrown {thrown}");
+    assert!(held_frames > 30, "Mario did not pick the Bob-omb up");
+    assert!(
+        drawn_in_hand > 30,
+        "the held Bob-omb was not drawn in his hand"
+    );
+    assert!(thrown, "the throw did not launch the Bob-omb");
 }

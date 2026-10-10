@@ -3,9 +3,14 @@
 //! addresses in the Rust side's behavior segment, the loaded models' render
 //! traversals, and the macro entries and spawn infos whose scripts the port
 //! runs), and the Rust side of the object words c/tick.c's snapshot names.
-use crate::tick_trace::Words;
+use crate::{OracleGeoNode, tick_trace::Words};
+use rustario64::import::geo::GeoNodeKind;
 use rustario64::simulation::{
-    mario::{MarioState, StepWorld, tick::LevelObjects},
+    mario::{
+        MarioState, StepWorld,
+        render::{MarioCallback, MarioModel},
+        tick::LevelObjects,
+    },
     object::{
         AnimRef, Object, ObjectId, ObjectList, RespawnInfo, ThrowMatrix, render::RenderNodeKind,
         script::Behavior,
@@ -76,6 +81,157 @@ pub struct NativeObjects {
     /// bobomb_seg8_anims_0802396C.
     pub bobomb_table: u32,
     pub bobomb_animations: Vec<NativeAnimation>,
+    /// MODEL_MARIO's graph for c/mario_render_unit.c (empty without one),
+    /// and its root's index.
+    pub mario_model: Vec<OracleGeoNode>,
+    pub mario_root: i32,
+}
+
+/// MODEL_MARIO's nodes in registration order with their parents, as
+/// c/mario_render_unit.c builds them.
+pub fn mario_geo_nodes(model: &MarioModel) -> (Vec<OracleGeoNode>, i32) {
+    let layout = &model.layout;
+    let mut parent = vec![-1i32; layout.nodes.len()];
+    for (i, node) in layout.nodes.iter().enumerate() {
+        for &child in &node.children {
+            parent[child] = i as i32;
+        }
+    }
+    let role = |i: usize| match model.role(i) {
+        None => -1,
+        Some(role) => match role {
+            MarioCallback::MirrorBackfaceCulling => 0,
+            MarioCallback::MirrorSetAlpha => 1,
+            MarioCallback::SwitchStandRun => 2,
+            MarioCallback::SwitchCapEffect => 3,
+            MarioCallback::SwitchCapOnOff => 4,
+            MarioCallback::SwitchEyes => 5,
+            MarioCallback::SwitchHand => 6,
+            MarioCallback::HeadRotation => 7,
+            MarioCallback::TiltTorso => 8,
+            MarioCallback::RotateWingCapWings => 9,
+            MarioCallback::HandFootScaler => 10,
+            MarioCallback::MovePartFromParent => 11,
+            MarioCallback::HandGrabPos => 12,
+        },
+    };
+    let nodes = layout
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(i, node)| {
+            let mut out = OracleGeoNode {
+                parent: parent[i],
+                layer: i32::from(node.kind.layer()),
+                callback: role(i),
+                flags: i32::from(node.flags as i16),
+                ..Default::default()
+            };
+            let dl = |d: Option<u32>| i32::from(d.is_some());
+            match node.kind {
+                GeoNodeKind::Start => out.kind = 0,
+                GeoNodeKind::LevelOfDetail {
+                    min_distance,
+                    max_distance,
+                } => {
+                    out.kind = 1;
+                    out.param = i32::from(min_distance);
+                    out.param2 = i32::from(max_distance);
+                }
+                GeoNodeKind::SwitchCase { num_cases, .. } => {
+                    out.kind = 2;
+                    out.param = i32::from(num_cases);
+                }
+                GeoNodeKind::TranslationRotation {
+                    translation,
+                    rotation,
+                    display_list,
+                    ..
+                } => {
+                    out.kind = 3;
+                    out.a = translation;
+                    out.b = rotation;
+                    out.has_display_list = dl(display_list);
+                }
+                GeoNodeKind::Translation {
+                    translation,
+                    display_list,
+                    ..
+                } => {
+                    out.kind = 4;
+                    out.a = translation;
+                    out.has_display_list = dl(display_list);
+                }
+                GeoNodeKind::Rotation {
+                    rotation,
+                    display_list,
+                    ..
+                } => {
+                    out.kind = 5;
+                    out.b = rotation;
+                    out.has_display_list = dl(display_list);
+                }
+                GeoNodeKind::Scale {
+                    scale,
+                    display_list,
+                    ..
+                } => {
+                    out.kind = 6;
+                    out.scale = scale;
+                    out.has_display_list = dl(display_list);
+                }
+                GeoNodeKind::AnimatedPart {
+                    translation,
+                    display_list,
+                    ..
+                } => {
+                    out.kind = 7;
+                    out.a = translation;
+                    out.has_display_list = dl(display_list);
+                }
+                GeoNodeKind::Billboard {
+                    translation,
+                    display_list,
+                    ..
+                } => {
+                    out.kind = 8;
+                    out.a = translation;
+                    out.has_display_list = dl(display_list);
+                }
+                GeoNodeKind::DisplayList { .. } => {
+                    out.kind = 9;
+                    out.has_display_list = 1;
+                }
+                GeoNodeKind::Shadow {
+                    shadow_type,
+                    solidity,
+                    scale,
+                } => {
+                    out.kind = 10;
+                    out.param = i32::from(shadow_type);
+                    out.param2 = i32::from(solidity);
+                    out.param3 = i32::from(scale);
+                }
+                GeoNodeKind::Generated { param, .. } => {
+                    out.kind = 11;
+                    out.param = i32::from(param);
+                }
+                GeoNodeKind::HeldObject { param, offset, .. } => {
+                    out.kind = 12;
+                    out.param = i32::from(param);
+                    out.a = offset;
+                }
+                GeoNodeKind::CullingRadius { radius } => {
+                    out.kind = 13;
+                    out.param = i32::from(radius);
+                }
+                ref other => panic!("Mario's model holds a {other:?} node"),
+            }
+            out
+        })
+        .collect();
+    let root = layout.root.expect("Mario's model has no root") as i32;
+    (nodes, root)
 }
 
 impl NativeObjects {
@@ -89,8 +245,12 @@ impl NativeObjects {
             preset_behaviors: vec![0; 366],
             preset_models: vec![0; 366],
             preset_params: vec![0; 366],
+            mario_root: -1,
             ..Default::default()
         };
+        if let Some(model) = objects.models.mario_model() {
+            (out.mario_model, out.mario_root) = mario_geo_nodes(model);
+        }
         for model in objects.models.ids() {
             let mut native = NativeModel {
                 model: i32::from(model),

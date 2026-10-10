@@ -25,6 +25,9 @@ use crate::simulation::{
     math::{approach_f32, approach_s32},
 };
 
+use super::stationary::told_to_drop;
+use crate::simulation::object::object;
+
 const TERRAIN_JUMP: i32 = SOUND_ACTION_TERRAIN_JUMP as i32;
 
 fn floor(m: &MarioState, w: &StepWorld<'_>) -> Surface {
@@ -544,6 +547,65 @@ fn act_freefall(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     0
 }
 
+/// The held object's oInteractionSubtype & INT_SUBTYPE_HOLDABLE_NPC (the
+/// original dereferences heldObj).
+fn holding_npc(m: &MarioState, w: &StepWorld<'_>) -> bool {
+    let held = m
+        .held_obj
+        .expect("Mario holds no object (the original dereferences NULL)");
+    object(&w.objects, &m.obj, held)
+        .raw
+        .u32(O_INTERACTION_SUBTYPE)
+        & INT_SUBTYPE_HOLDABLE_NPC
+        != 0
+}
+
+fn act_hold_jump(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if told_to_drop(m) {
+        return drop_and_set_mario_action(m, w, ACT_FREEFALL, 0);
+    }
+    if m.input & INPUT_B_PRESSED != 0 && !holding_npc(m, w) {
+        return set_mario_action(m, w, ACT_AIR_THROW, 0);
+    }
+    if m.input & INPUT_Z_PRESSED != 0 {
+        return drop_and_set_mario_action(m, w, ACT_GROUND_POUND, 0);
+    }
+    play_mario_sound(m, w, TERRAIN_JUMP, 0);
+    common_air_action_step(
+        m,
+        w,
+        ACT_HOLD_JUMP_LAND,
+        MARIO_ANIM_JUMP_WITH_LIGHT_OBJ,
+        AIR_STEP_CHECK_LEDGE_GRAB,
+    );
+    0
+}
+
+fn act_hold_freefall(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    let animation = if m.action_arg == 0 {
+        MARIO_ANIM_FALL_WITH_LIGHT_OBJ
+    } else {
+        MARIO_ANIM_FALL_FROM_SLIDING_WITH_LIGHT_OBJ
+    };
+    if told_to_drop(m) {
+        return drop_and_set_mario_action(m, w, ACT_FREEFALL, 0);
+    }
+    if m.input & INPUT_B_PRESSED != 0 && !holding_npc(m, w) {
+        return set_mario_action(m, w, ACT_AIR_THROW, 0);
+    }
+    if m.input & INPUT_Z_PRESSED != 0 {
+        return drop_and_set_mario_action(m, w, ACT_GROUND_POUND, 0);
+    }
+    common_air_action_step(
+        m,
+        w,
+        ACT_HOLD_FREEFALL_LAND,
+        animation,
+        AIR_STEP_CHECK_LEDGE_GRAB,
+    );
+    0
+}
+
 fn act_side_flip(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     if m.input & INPUT_B_PRESSED != 0 {
         return set_mario_action(m, w, ACT_DIVE, 0);
@@ -651,7 +713,7 @@ fn act_dive(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     }
     set_mario_animation(m, w, MARIO_ANIM_DIVE);
     if mario_check_object_grab(m, w) {
-        mario_grab_used_object(m);
+        mario_grab_used_object(m, w);
         m.body.grab_pos = GRAB_POS_LIGHT_OBJ;
         if m.action != ACT_DIVE {
             return 1;
@@ -702,7 +764,7 @@ fn act_dive(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
 fn act_air_throw(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     m.action_timer = m.action_timer.wrapping_add(1);
     if m.action_timer == 4 {
-        mario_throw_held_object(m);
+        mario_throw_held_object(m, w);
     }
     play_sound_if_no_flag(m, w, SOUND_MARIO_WAH2, MARIO_MARIO_SOUND_PLAYED);
     set_mario_animation(m, w, MARIO_ANIM_THROW_LIGHT_OBJECT);
@@ -739,6 +801,29 @@ fn act_water_jump(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
             set_mario_action(m, w, ACT_LEDGE_GRAB, 0);
             reset_camera_mode(w);
         }
+        AIR_STEP_HIT_LAVA_WALL => {
+            lava_boost_on_wall(m, w);
+        }
+        _ => {}
+    }
+    0
+}
+
+fn act_hold_water_jump(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if told_to_drop(m) {
+        return drop_and_set_mario_action(m, w, ACT_FREEFALL, 0);
+    }
+    if m.forward_vel < 15.0 {
+        mario_set_forward_vel(m, w, 15.0);
+    }
+    play_mario_sound(m, w, SOUND_ACTION_UNKNOWN432 as i32, 0);
+    set_mario_animation(m, w, MARIO_ANIM_JUMP_WITH_LIGHT_OBJ);
+    match perform_air_step(m, w, 0) {
+        AIR_STEP_LANDED => {
+            set_mario_action(m, w, ACT_HOLD_JUMP_LAND, 0);
+            reset_camera_mode(w);
+        }
+        AIR_STEP_HIT_WALL => mario_set_forward_vel(m, w, 15.0),
         AIR_STEP_HIT_LAVA_WALL => {
             lava_boost_on_wall(m, w);
         }
@@ -1147,7 +1232,7 @@ fn act_getting_blown(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
 
 fn act_air_hit_wall(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     if m.held_obj.is_some() {
-        mario_drop_held_object(m);
+        mario_drop_held_object(m, w);
     }
     m.action_timer = m.action_timer.wrapping_add(1);
     if m.action_timer <= 2 {
@@ -1221,6 +1306,42 @@ fn act_backward_rollout(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     if m.action_state == 1 && m.obj.gfx.anim.anim_frame == 2 {
         m.action_state = 2;
     }
+    0
+}
+
+fn act_hold_butt_slide_air(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if told_to_drop(m) {
+        return drop_and_set_mario_action(m, w, ACT_HOLD_FREEFALL, 1);
+    }
+    m.action_timer = m.action_timer.wrapping_add(1);
+    if m.action_timer > 30 && m.pos[1] - m.floor_height > 500.0 {
+        return set_mario_action(m, w, ACT_HOLD_FREEFALL, 1);
+    }
+    update_air_with_turn(m, w);
+    match perform_air_step(m, w, 0) {
+        AIR_STEP_LANDED => {
+            if m.action_state == 0 && m.vel[1] < 0.0 && floor(m, w).normal[1] >= 0.9848077 {
+                m.vel[1] = -m.vel[1] / 2.0;
+                m.action_state = 1;
+            } else {
+                set_mario_action(m, w, ACT_HOLD_BUTT_SLIDE, 0);
+            }
+            play_mario_landing_sound(m, w, SOUND_ACTION_TERRAIN_LANDING);
+        }
+        AIR_STEP_HIT_WALL => {
+            if m.vel[1] > 0.0 {
+                m.vel[1] = 0.0;
+            }
+            mario_drop_held_object(m, w);
+            m.particle_flags |= PARTICLE_VERTICAL_STAR;
+            set_mario_action(m, w, ACT_BACKWARD_AIR_KB, 0);
+        }
+        AIR_STEP_HIT_LAVA_WALL => {
+            lava_boost_on_wall(m, w);
+        }
+        _ => {}
+    }
+    set_mario_animation(m, w, MARIO_ANIM_SLIDING_ON_BOTTOM_WITH_LIGHT_OBJ);
     0
 }
 
@@ -1715,14 +1836,12 @@ pub fn mario_execute_airborne_action(m: &mut MarioState, w: &mut StepWorld<'_>) 
         ACT_FLYING => act_flying(m, w),
         ACT_TOP_OF_POLE_JUMP => act_top_of_pole_jump(m, w),
         ACT_VERTICAL_WIND => act_vertical_wind(m, w),
-        ACT_HOLD_JUMP
-        | ACT_HOLD_FREEFALL
-        | ACT_HOLD_WATER_JUMP
-        | ACT_RIDING_SHELL_JUMP
-        | ACT_RIDING_SHELL_FALL
-        | ACT_HOLD_BUTT_SLIDE_AIR
-        | ACT_RIDING_HOOT => panic!(
-            "airborne action {:#X} holds, rides or uses an object; objects are not simulated yet",
+        ACT_HOLD_JUMP => act_hold_jump(m, w),
+        ACT_HOLD_FREEFALL => act_hold_freefall(m, w),
+        ACT_HOLD_WATER_JUMP => act_hold_water_jump(m, w),
+        ACT_HOLD_BUTT_SLIDE_AIR => act_hold_butt_slide_air(m, w),
+        ACT_RIDING_SHELL_JUMP | ACT_RIDING_SHELL_FALL | ACT_RIDING_HOOT => panic!(
+            "airborne action {:#X} rides an object that is not ported",
             m.action
         ),
         action => panic!("airborne action {action:#X} is not in the original table"),

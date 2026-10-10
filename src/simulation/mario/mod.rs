@@ -25,6 +25,7 @@ pub mod inputs;
 pub mod interaction;
 pub mod moving;
 pub mod object;
+pub mod render;
 pub mod stationary;
 pub mod step;
 pub mod tick;
@@ -321,6 +322,8 @@ pub struct StepWorld<'a> {
     pub area: AreaObjects,
     /// gRandomSeed16, shared by objects and the camera.
     pub rng: Rng,
+    /// What Mario's geo callbacks wrote into his graph nodes.
+    pub mario_graph: render::MarioGraphState,
     /// gTimeStopState.
     pub time_stop_state: u32,
     /// gCurrCourseNum.
@@ -365,6 +368,7 @@ impl<'a> StepWorld<'a> {
             objects: ObjectPool::new(),
             area: AreaObjects::default(),
             rng: Rng::default(),
+            mario_graph: render::MarioGraphState::default(),
             time_stop_state: 0,
             course_num: 0,
         }

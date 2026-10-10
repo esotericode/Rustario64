@@ -64,11 +64,15 @@ What works now:
   original patrol, blink, fuse, chase, kick launch, explosion (with its camera
   shake and death smoke), lava and death-plane deaths, yellow-coin loot and
   respawner, with the original `object_step` movement and Mario's damage
-  knockback. **Complete frames with Bob-ombs match the decomp word for word**
-  (9,000 authored frames and 1,284 kick encounter frames in CI, 27,055 on BOB's
+  knockback. Mario picks them up with a punch or a dive, carries them, throws
+  them (also in the air), sets them down, or holds one until its fuse runs
+  out: his holding actions and the hand position the original render pass
+  writes through his ROM model (`simulation::mario::render`). **Complete frames
+  with Bob-ombs and holding match the decomp word for word** (9,000 authored
+  frames and 3,203 kick and holding encounter frames in CI, 30,511 on BOB's
   twelve Bob-ombs with your ROM). The viewer draws them with their skinned,
-  animated ROM model, fuse smoke and explosions. Picking a Bob-omb up (punch or
-  dive into it) is not ported yet: play stops with a message there.
+  animated ROM model, fuse smoke and explosions, and in Mario's hands while
+  he carries one.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
   **full-tick** and input-stage trace pairs.
 - The original enemy `object_step` physics (wall reflection, slopes/friction,
@@ -78,8 +82,7 @@ What works now:
 This is level exploration with Mario's movement and camera, not mission
 support: of the objects only the coins and Bob-ombs are simulated. King
 Bob-omb, other enemies, trees, signs, red coins, the cannon lid and every other
-placement are recorded as unported and not spawned. Holding and throwing
-objects are not ported. There are no camera cutscenes, original pause behavior, cutscene or water
+placement are recorded as unported and not spawned. There are no camera cutscenes, original pause behavior, cutscene or water
 actions, warps, deaths, or missions. Play stops where the port stops
 (unsupported paths, falling off the course); R re-enters.
 The comparisons are against the natively compiled decomp, not N64 execution.
@@ -256,6 +259,9 @@ cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
 # Offscreen: Mario after 90 frames of holding the stick up, from the original camera
 cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
   screenshot /path/to/sm64.z64 --out private/mario.png --mario-ticks 90
+# Offscreen: the last frame of a recorded run (its tick inputs replayed)
+cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
+  screenshot /path/to/sm64.z64 --out private/run.png --inputs private/runs/run-001.inputs.json
 ```
 
 Mario mode (`--mario`, or M in the window): WASD is the stick (hold Shift to
@@ -388,11 +394,10 @@ is never spawned; it is listed in `AreaObjects::skipped` with the reason.
 
 ## Next increment
 
-Physical-GPU Windows/Linux playtesting continues. Coins and Bob-ombs now work.
-Next is holding: Mario's hand position (HOLP) from an authoritative render
-pass and the picking-up, hold and throw actions, so Bob-ombs can be carried and
-thrown. Then the first mission's remaining actors (King Bob-omb, the star) with
-the camera cutscenes that mission needs. Original-execution traces remain the
+Physical-GPU Windows/Linux playtesting continues. Coins, Bob-ombs and carrying
+and throwing them now work. Next is King Bob-omb (his movement, grabbing and
+throwing Mario, being thrown, dialogs and the star) with the camera cutscenes
+the first mission needs. Original-execution traces remain the
 eventual authority. Skybox and placement models remain M1 work.
 
 Camera checks without a ROM: `cargo test --locked -p rustario64-oracle --test camera --test lakitu --test radial --test camera_tick`;

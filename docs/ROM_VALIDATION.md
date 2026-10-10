@@ -316,5 +316,6 @@ placements spawn too, with the Bob-omb's animation table (segmented
 0x0802396C: two animations of 13 animated parts) decoded from the level's
 common0 segment, and 82 placements are recorded as unported
 (`tests/objects.rs`). With these scripts, presets, animations and models,
-9,600 BOB frames of objects, 27,055 BOB frames of Bob-omb encounters and the
+9,600 BOB frames of objects, 30,511 BOB frames of Bob-omb encounters (with
+holding, through the ROM's `mario_geo` as MODEL_MARIO's render graph) and the
 77,112 BOB camera frames match the native decomp word for word.

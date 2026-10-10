@@ -7,9 +7,11 @@
 //! with lava, a death-plane pit, a ramp and a walled block; the ignored test
 //! starts Mario beside each of BOB's Bob-ombs with the owner's ROM.
 //!
-//! Picking a Bob-omb up (a punch or dive into it) reaches the held-object
-//! actions, which the port does not run yet: the Rust run stops there and
-//! the comparison covers the frames before it (each stop is reported).
+//! Picking a Bob-omb up runs Mario's holding actions and the render pass's
+//! hand position (HOLP, written by geo_switch_mario_hand_grab_pos through
+//! the original matrix stack), which throws and drops read. A run that
+//! reaches a path the port does not run stops; the comparison covers the
+//! frames before it and the stop is reported.
 #[path = "support/playground.rs"]
 mod playground;
 use playground::{
@@ -125,6 +127,18 @@ fn scenario<'a>(
     pos: [i16; 3],
     rng_seed: u16,
 ) -> GameScenario<'a> {
+    scenario_in(world, trig, anims, yaw, pos, rng_seed, placements())
+}
+
+fn scenario_in<'a>(
+    world: &'a rustario64::simulation::collision::CollisionWorld,
+    trig: &'a rustario64::simulation::math::TrigTables,
+    anims: &'a rustario64::content::animation::MarioAnimations,
+    yaw: i16,
+    pos: [i16; 3],
+    rng_seed: u16,
+    area: AreaObjects,
+) -> GameScenario<'a> {
     let mario = LevelEntry::from_level_script(c::LEVEL_BOB, 1, yaw, pos, 0, 1);
     GameScenario {
         collision: world,
@@ -134,7 +148,7 @@ fn scenario<'a>(
             scripts: &SCRIPTS,
             models: &MODELS,
             animations: &ANIMATIONS,
-            area: placements(),
+            area,
         },
         entry: GameEntry {
             mario,
@@ -207,6 +221,17 @@ struct Coverage {
     loot_collected: usize,
     knockbacks: usize,
     env_shakes: usize,
+    /// Bob-omb frames in Mario's hands, and its releases: thrown (it
+    /// leaves the hand launched) or dropped (the held state's one frame is
+    /// cleared by the Bob-omb's own loop in the same frame).
+    held_frames: usize,
+    throws: usize,
+    drops: usize,
+    /// Frames on which the render pass moved the HOLP.
+    holp_updates: usize,
+    /// Mario frames in a holding action, and the distinct ones seen.
+    hold_action_frames: usize,
+    hold_actions: std::collections::BTreeSet<u32>,
     stops: Vec<String>,
 }
 
@@ -228,6 +253,20 @@ fn tally(
         };
         let slot = &rest[..rest.find(']').unwrap()];
         if rest.ends_with("].behavior") && *value == bobomb {
+            let held_key = format!("objects[{slot}].raw[0x{:02X}]", c::O_HELD_STATE);
+            let held = words[&held_key] as i32;
+            cov.held_frames += usize::from(held == c::HELD_HELD);
+            let was_held = previous.is_some_and(|p| {
+                p.get(&format!("objects[{slot}].behavior")) == Some(&bobomb)
+                    && p[&held_key] as i32 == c::HELD_HELD
+            });
+            if was_held && held != c::HELD_HELD {
+                if action_of(slot) as i32 == c::BOBOMB_ACT_LAUNCHED {
+                    cov.throws += 1;
+                } else {
+                    cov.drops += 1;
+                }
+            }
             let fuse = words[&format!("objects[{slot}].raw[0x{:02X}]", c::O_BOBOMB_FUSE_LIT)];
             cov.fuse_frames += usize::from(fuse == 1);
             let action = action_of(slot) as i32;
@@ -249,8 +288,39 @@ fn tally(
                 usize::from(words[&format!("objects[{slot}].raw[0x{:02X}]", c::O_TIMER)] == 1);
         }
     }
+    let action = words["m.action"];
+    if matches!(
+        action,
+        c::ACT_PICKING_UP
+            | c::ACT_DIVE_PICKING_UP
+            | c::ACT_PLACING_DOWN
+            | c::ACT_THROWING
+            | c::ACT_AIR_THROW
+            | c::ACT_AIR_THROW_LAND
+            | c::ACT_HOLD_IDLE
+            | c::ACT_HOLD_WALKING
+            | c::ACT_HOLD_DECELERATING
+            | c::ACT_HOLD_JUMP
+            | c::ACT_HOLD_FREEFALL
+            | c::ACT_HOLD_JUMP_LAND
+            | c::ACT_HOLD_FREEFALL_LAND
+            | c::ACT_HOLD_JUMP_LAND_STOP
+            | c::ACT_HOLD_FREEFALL_LAND_STOP
+            | c::ACT_HOLD_BEGIN_SLIDING
+            | c::ACT_HOLD_BUTT_SLIDE
+            | c::ACT_HOLD_BUTT_SLIDE_AIR
+            | c::ACT_HOLD_BUTT_SLIDE_STOP
+    ) {
+        cov.hold_action_frames += 1;
+        cov.hold_actions.insert(action);
+    }
     if let Some(previous) = previous {
-        let action = words["m.action"];
+        let holp = |w: &BTreeMap<String, u32>| {
+            (0..3)
+                .map(|i| w[&format!("body.heldObjLastPosition[{i}]")])
+                .collect::<Vec<_>>()
+        };
+        cov.holp_updates += usize::from(holp(words) != holp(previous));
         if action != previous["m.action"]
             && matches!(
                 action,
@@ -307,13 +377,20 @@ fn compare(
 
 fn report(label: &str, cov: &Coverage) {
     println!(
-        "{label}: {} frames identical; Bob-omb frames with a lit fuse {}, chasing {}, launched {}; \
+        "{label}: {} frames identical; Bob-omb frames with a lit fuse {}, chasing {}, launched {}, \
+         held {} ({} throws, {} drops); Mario frames holding {} in {} actions, {} HOLP updates; \
          {} explosions ({} environmental shakes), {} lava and {} death-plane deaths, {} respawns, \
          {} coins collected, {} knockbacks",
         cov.frames,
         cov.fuse_frames,
         cov.chase_frames,
         cov.launched_frames,
+        cov.held_frames,
+        cov.throws,
+        cov.drops,
+        cov.hold_action_frames,
+        cov.hold_actions.len(),
+        cov.holp_updates,
         cov.explosions,
         cov.env_shakes,
         cov.lava_deaths,
@@ -371,14 +448,19 @@ fn authored_bobombs_match_the_decomp() {
     );
 }
 
-/// Scripted encounters: a jump kick launches a Bob-omb into an explosion,
-/// and a punch into one starts picking it up (where the port stops).
+/// Scripted encounters with the stationary Bob-omb at (0, 0, -700): jump
+/// kicks launch it into an explosion; punches pick it up, then Mario carries
+/// it, throws it on the ground and in the air, drops it, lets its fuse run
+/// out in his hands, and dives into it from a run.
 #[test]
-fn authored_bobomb_kick_and_grab_match_the_decomp() {
+fn authored_bobomb_kicks_and_holding_match_the_decomp() {
     let stream = field();
     let world = world(&stream);
     let trig = computed_tables();
-    let anims = authored_animations(0x5EED_0005);
+    // A seed whose punch, pick-up, carry, throw, drop and dive animations
+    // play forward (the invented set can freeze or reverse any of them,
+    // which ends a pick-up never, identically on both sides).
+    let anims = authored_animations(0x5EED_000B);
     let oracle = Oracle::load(&stream);
     oracle.set_trig(trig.sine_table(), trig.arctan_table());
     oracle.set_mario_animations(&anims);
@@ -393,9 +475,9 @@ fn authored_bobomb_kick_and_grab_match_the_decomp() {
             n,
         ));
     };
-    // Mario faces the stationary Bob-omb at (0, 0, -700) inside its reach
-    // (the hitboxes touch below 102 units; yaw 180 faces -z), then jumps and
-    // kicks it without moving the stick.
+    // Mario faces the stationary Bob-omb inside its reach (the hitboxes
+    // touch below 102 units; yaw 180 faces -z), then jumps and kicks it
+    // without moving the stick.
     for (i, (wait, kick_at)) in [(10, 4), (12, 5), (20, 6), (8, 3)].into_iter().enumerate() {
         let s = scenario(
             &world,
@@ -413,20 +495,160 @@ fn authored_bobomb_kick_and_grab_match_the_decomp() {
         compare(&oracle, &s, &format!("kick-{i}"), &inputs, &mut cov);
     }
     let kicked = cov.launched_frames;
-    // A ground punch into it.
-    let s = scenario(&world, &trig, &anims, 180, [0, 0, -610], 91);
+    // A ground punch picks it up; then each script, from the hold.
+    let scripts = holding_scripts();
+    for (i, (name, script)) in scripts.into_iter().enumerate() {
+        let s = scenario(&world, &trig, &anims, 180, [0, 0, -610], 91 + i as u16);
+        let mut inputs = vec![];
+        push(&mut inputs, 10, 0, [0, 0]);
+        push(&mut inputs, 1, B_BUTTON, [0, 0]);
+        script(&mut inputs);
+        compare(&oracle, &s, name, &inputs, &mut cov);
+    }
+    // A dive from a short run.
+    let s = scenario(&world, &trig, &anims, 180, [0, 0, -330], 101);
     let mut inputs = vec![];
-    push(&mut inputs, 10, 0, [0, 0]);
-    push(&mut inputs, 1, B_BUTTON, [0, 0]);
+    push(&mut inputs, 8, 0, [0, 70]);
+    push(&mut inputs, 1, B_BUTTON, [0, 70]);
     push(&mut inputs, 60, 0, [0, 0]);
-    compare(&oracle, &s, "grab", &inputs, &mut cov);
+    push(&mut inputs, 1, B_BUTTON, [0, 0]);
+    push(&mut inputs, 150, 0, [0, 0]);
+    compare(&oracle, &s, "dive-grab", &inputs, &mut cov);
     report("authored Bob-omb encounters", &cov);
     assert!(kicked > 0, "no kick launched the Bob-omb");
     assert!(cov.explosions > 0);
+    assert!(cov.held_frames > 0, "no Bob-omb was held");
+    assert!(cov.throws > 0 && cov.drops > 0, "no throw or no drop");
+    assert!(cov.holp_updates > 0, "the render pass never moved the HOLP");
+    for action in [
+        c::ACT_PICKING_UP,
+        c::ACT_HOLD_IDLE,
+        c::ACT_HOLD_WALKING,
+        c::ACT_THROWING,
+        c::ACT_AIR_THROW,
+        c::ACT_HOLD_JUMP,
+    ] {
+        assert!(
+            cov.hold_actions.contains(&action),
+            "no frame in holding action {action:#X}"
+        );
+    }
+    assert!(cov.stops.is_empty(), "a run stopped: {:?}", cov.stops);
+}
+
+/// What Mario does once a punch has picked a Bob-omb up: carry and throw
+/// it, hold it until its fuse runs out, drop it (Z), throw it from a jump,
+/// jump and land with it, walk and turn with it, and drop and pick it up
+/// again.
+type Script = fn(&mut Vec<TickInput>);
+fn holding_scripts() -> [(&'static str, Script); 7] {
+    [
+        ("carry-and-throw", |out| {
+            push_inputs(out, 40, 0, [0, 0]);
+            push_inputs(out, 35, 0, [0, 70]);
+            push_inputs(out, 1, B_BUTTON, [0, 70]);
+            push_inputs(out, 200, 0, [0, 0]);
+        }),
+        ("fuse-in-hand", |out| {
+            push_inputs(out, 230, 0, [0, 0]);
+        }),
+        ("drop", |out| {
+            push_inputs(out, 40, 0, [0, 0]);
+            push_inputs(out, 3, Z_TRIG, [0, 0]);
+            push_inputs(out, 150, 0, [0, 0]);
+        }),
+        ("air-throw", |out| {
+            push_inputs(out, 40, 0, [0, 0]);
+            push_inputs(out, 6, A_BUTTON, [0, 0]);
+            push_inputs(out, 1, A_BUTTON | B_BUTTON, [0, 0]);
+            push_inputs(out, 200, 0, [0, 0]);
+        }),
+        ("jump-and-land", |out| {
+            push_inputs(out, 40, 0, [0, 0]);
+            push_inputs(out, 12, A_BUTTON, [40, 60]);
+            push_inputs(out, 30, 0, [0, 0]);
+            push_inputs(out, 1, B_BUTTON, [0, 0]);
+            push_inputs(out, 150, 0, [0, 0]);
+        }),
+        ("walk-turn-and-stop", |out| {
+            push_inputs(out, 40, 0, [0, 0]);
+            push_inputs(out, 30, 0, [127, 0]);
+            push_inputs(out, 30, 0, [0, -127]);
+            push_inputs(out, 20, 0, [0, 0]);
+            push_inputs(out, 1, B_BUTTON, [0, 0]);
+            push_inputs(out, 150, 0, [0, 0]);
+        }),
+        ("regrab", |out| {
+            push_inputs(out, 40, 0, [0, 0]);
+            push_inputs(out, 3, Z_TRIG, [0, 0]);
+            push_inputs(out, 20, 0, [0, 0]);
+            push_inputs(out, 1, B_BUTTON, [0, 0]);
+            push_inputs(out, 120, 0, [0, 0]);
+        }),
+    ]
+}
+
+/// A plateau at y = 500 above a slippery slope down to the ground: carried
+/// down the slope, a Bob-omb rides along in a held butt slide (the torso
+/// tilt the render pass keeps), then Mario stands and throws it.
+#[test]
+fn authored_bobomb_carried_into_a_held_butt_slide_matches_the_decomp() {
+    let mut b = Builder::default();
+    b.flat(c::SURFACE_DEFAULT, [-2000, 2000], [-3000, 0], 0, true);
+    b.ramp(c::SURFACE_SLIPPERY, [-2000, 2000], [0, 1000], [0, 500]);
+    b.flat(c::SURFACE_DEFAULT, [-2000, 2000], [1000, 2500], 500, true);
+    let stream = b.stream();
+    let world = world(&stream);
+    let trig = computed_tables();
+    let anims = authored_animations(0x5EED_000B);
+    let oracle = Oracle::load(&stream);
+    oracle.set_trig(trig.sine_table(), trig.arctan_table());
+    oracle.set_mario_animations(&anims);
+    let area = AreaObjects {
+        area_index: 1,
+        macros: vec![entry(0, STATIONARY, [0, 500, 1300], 0)],
+        spawn_infos: vec![],
+        skipped: vec![],
+    };
+    let mut cov = Coverage::default();
+    for (i, run) in [30, 45, 60].into_iter().enumerate() {
+        let s = scenario_in(
+            &world,
+            &trig,
+            &anims,
+            180,
+            [0, 500, 1390],
+            300 + i as u16,
+            area.clone(),
+        );
+        let mut inputs = vec![];
+        push_inputs(&mut inputs, 10, 0, [0, 0]);
+        push_inputs(&mut inputs, 1, B_BUTTON, [0, 0]);
+        push_inputs(&mut inputs, 35, 0, [0, 0]);
+        push_inputs(&mut inputs, run, 0, [0, 80]);
+        push_inputs(&mut inputs, 40, 0, [0, 0]);
+        push_inputs(&mut inputs, 1, B_BUTTON, [0, 0]);
+        push_inputs(&mut inputs, 120, 0, [0, 0]);
+        compare(&oracle, &s, &format!("slope-{run}"), &inputs, &mut cov);
+    }
+    report("authored held slide", &cov);
     assert!(
-        cov.stops.iter().any(|s| s.starts_with("grab")),
-        "the punch did not reach the held-object boundary"
+        cov.hold_actions.contains(&c::ACT_HOLD_BUTT_SLIDE),
+        "no held butt slide"
     );
+    assert!(cov.held_frames > 0 && cov.holp_updates > 0);
+    assert!(cov.stops.is_empty(), "a run stopped: {:?}", cov.stops);
+}
+
+fn push_inputs(out: &mut Vec<TickInput>, n: usize, buttons: u16, stick: [i8; 2]) {
+    out.extend(std::iter::repeat_n(
+        TickInput {
+            buttons,
+            stick,
+            camera_yaw: 0,
+        },
+        n,
+    ));
 }
 
 #[test]
@@ -509,9 +731,51 @@ fn bob_bobombs_match_the_decomp_with_rom_data() {
             );
         }
     }
+    // The holding scripts beside BOB's stationary Bob-omb: Mario 88 units
+    // to its +z side, facing it, punches it up first.
+    let stationary = content
+        .area
+        .macros
+        .iter()
+        .find(|e| {
+            e.behavior == bobomb && i32::from(e.preset_param) == c::BOBOMB_BP_STYPE_STATIONARY
+        })
+        .expect("BOB act 1 has a stationary Bob-omb")
+        .pos;
+    for (i, (name, script)) in holding_scripts().into_iter().enumerate() {
+        let s = GameScenario {
+            collision: &world,
+            trig: &trig,
+            anims: &anims,
+            objects: content.level_objects(),
+            entry: GameEntry {
+                mario: LevelEntry {
+                    spawn: rustario64::simulation::mario::core::SpawnPoint::from_level_script(
+                        1,
+                        script_entry.mario.spawn.area_index as u8,
+                        180,
+                        [stationary[0], stationary[1], stationary[2] + 88],
+                    ),
+                    ..script_entry.mario
+                },
+                rng_seed: 200 + i as u16,
+                ..script_entry
+            },
+        };
+        let mut inputs = vec![];
+        push_inputs(&mut inputs, 10, 0, [0, 0]);
+        push_inputs(&mut inputs, 1, B_BUTTON, [0, 0]);
+        script(&mut inputs);
+        compare(&oracle, &s, &format!("bob-{name}"), &inputs, &mut cov);
+    }
     report("BOB Bob-ombs", &cov);
     assert!(cov.frames >= 10_000, "too few compared frames");
     assert!(cov.fuse_frames > 0 && cov.chase_frames > 0);
     assert!(cov.explosions > 0 && cov.env_shakes > 0);
     assert!(cov.knockbacks > 0);
+    assert!(
+        cov.held_frames > 0 && cov.holp_updates > 0,
+        "no Bob-omb was carried"
+    );
+    assert!(cov.throws > 0 && cov.drops > 0, "no throw or no drop");
 }

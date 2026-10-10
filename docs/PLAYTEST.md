@@ -10,8 +10,9 @@ texture animation stays at 30 Hz. BOB's twelve act-1 Bob-ombs walk, light their
 fuses and chase Mario, explode (shaking the camera and knocking Mario back),
 drop a coin the first time they explode, and respawn once Mario is far away;
 they are drawn with their animated ROM model, fuse smoke, explosions and smoke.
-Punching or diving into a Bob-omb (picking it up) stops play with a message:
-holding is not ported yet. Object shadows and original HUD typography are
+Punching or diving into a Bob-omb picks it up: Mario carries it (walking,
+jumping and landing), throws it with B (also in the air), drops it with Z, or
+holds it until its fuse runs out. Object shadows and original HUD typography are
 pending. Missions, King Bob-omb and every other object (including the cannon
 lid), camera cutscenes, original pause behavior, water/cutscene actions, warps, saves,
 audio are missing. Basic controller input is available; remapping, calibration,
@@ -22,16 +23,17 @@ unsupported paths; R re-enters.
 
 Windows and Linux ZIP builds are attached to successful runs of the
 [Rust foundation workflow](https://github.com/esotericode/Rustario64/actions/workflows/rust.yml).
-Choose the latest successful run for the branch under test (Bob-ombs are on
-`claude/jolly-noether-2tta72`, stacked on the controller and desktop launcher
-changes), then
+Choose the latest successful run for the branch under test (Bob-ombs and
+holding are on `claude/jolly-noether-2tta72`, stacked on the controller and
+desktop launcher changes), then
 download `rustario64-windows-x86_64` or `rustario64-linux-x86_64` under Artifacts.
 GitHub's artifact ZIP contains the runtime ZIP; extract both layers. The build
 identifier is in the runtime folder's BUILD_INFO.txt.
 
-The Bob-omb increment enables BOB's Bob-ombs in play with per-frame decomp
-comparisons. The launcher, controller, coin and Bob-omb exploration flow is the
-current manual test target.
+The Bob-omb and holding increments enable BOB's Bob-ombs in play, including
+carrying and throwing them, with per-frame decomp comparisons. The launcher,
+controller, coin and Bob-omb exploration flow is the current manual test
+target.
 
 Extract the whole ZIP. Keep your own ROM outside this folder. Only the original
 8 MiB US v1.0 ROM is supported, identified after byte-order normalization by
@@ -162,8 +164,19 @@ drops a yellow coin that can be collected. Jump-kick a Bob-omb (A, then B in
 the air): it flies off and explodes when it lands. Walk away and return:
 it respawns at its home. Compare the explosion and smoke look with the original
 game at 30, 60 and 144 Hz with interpolation on and off; report any part that
-pops, faces the wrong way or flickers. Punching or diving into one ends play
-with a "holding objects" message; that is the expected current boundary.
+pops, faces the wrong way or flickers.
+
+## Holding checks
+
+Punch a Bob-omb (B while standing next to it, facing it) or dive into it
+(B while running). Mario lifts it over his hands; check that it stays in his
+hands while he stands, walks, runs, turns, jumps and lands, with no lag or
+jitter at high frame rates. Press B to throw it (it flies forward and explodes
+where it lands), B in the air to throw it from a jump, Z to set it down (it
+walks off again), or hold it until the fuse runs out (it explodes beside him
+and knocks him back). Report where the Bob-omb sits relative to his hands
+compared with the original game, especially while running far from the
+camera (Mario's lower-detail body is used there).
 
 ## Controller and launcher checks
 

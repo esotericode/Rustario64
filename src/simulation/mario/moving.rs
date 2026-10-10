@@ -1,6 +1,6 @@
 //! Moving actions, translated from pinned CC0
-//! src/game/mario_actions_moving.c. Actions that hold or ride an object panic
-//! until objects are simulated.
+//! src/game/mario_actions_moving.c, including the ACT_HOLD_* family. Riding
+//! a shell panics (shells are not ported).
 use super::{
     MarioState, Mat4, StepWorld, ThrowMatrix,
     animation::{
@@ -18,6 +18,7 @@ use super::{
     inputs::{mario_floor_is_slippery, mario_get_floor_class},
     interaction::{mario_check_object_grab, mario_drop_held_object, mario_grab_used_object},
     object::mario_update_punch_sequence,
+    stationary::told_to_drop,
     step::{
         mario_bonk_reflection, mario_push_off_steep_floor, mario_set_forward_vel,
         mario_update_moving_sand, mario_update_quicksand, mario_update_windy_ground,
@@ -73,6 +74,21 @@ const TRIPLE_JUMP_LAND: LandingAction = LandingAction {
     end_action: ACT_TRIPLE_JUMP_LAND_STOP,
     a_pressed_action: ACT_UNINITIALIZED,
     ..JUMP_LAND
+};
+/// sHoldJumpLandAction.
+const HOLD_JUMP_LAND: LandingAction = LandingAction {
+    num_frames: 4,
+    unk02: 5,
+    very_steep_action: ACT_HOLD_FREEFALL,
+    end_action: ACT_HOLD_JUMP_LAND_STOP,
+    a_pressed_action: ACT_HOLD_JUMP,
+    off_floor_action: ACT_HOLD_FREEFALL,
+    slide_action: ACT_HOLD_BEGIN_SLIDING,
+};
+/// sHoldFreefallLandAction.
+const HOLD_FREEFALL_LAND: LandingAction = LandingAction {
+    end_action: ACT_HOLD_FREEFALL_LAND_STOP,
+    ..HOLD_JUMP_LAND
 };
 const BACKFLIP_LAND: LandingAction = LandingAction {
     unk02: 0,
@@ -484,7 +500,7 @@ fn check_ground_dive_or_punch(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 
 
 /// begin_braking_action.
 fn begin_braking_action(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
-    mario_drop_held_object(m);
+    mario_drop_held_object(m, w);
     if m.action_state == 1 {
         m.face_angle[1] = m.action_arg as i16;
         return set_mario_action(m, w, ACT_STANDING_AGAINST_WALL, 0);
@@ -647,7 +663,7 @@ fn tilt_body_walking(m: &mut MarioState, start_yaw: i16) {
 
 fn act_walking(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     let start_yaw = m.face_angle[1];
-    mario_drop_held_object(m);
+    mario_drop_held_object(m, w);
     if should_begin_sliding(m, w) {
         return set_mario_action(m, w, ACT_BEGIN_SLIDING, 0);
     }
@@ -861,6 +877,183 @@ fn act_decelerating(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     0
 }
 
+/// anim_and_audio_for_hold_walk.
+fn anim_and_audio_for_hold_walk(m: &mut MarioState, w: &mut StepWorld<'_>) {
+    let mut speed = if m.intended_mag > m.forward_vel {
+        m.intended_mag
+    } else {
+        m.forward_vel
+    };
+    if speed < 2.0 {
+        speed = 2.0;
+    }
+    loop {
+        match m.action_timer {
+            0 => {
+                if speed > 6.0 {
+                    m.action_timer = 1;
+                } else {
+                    // (Speed crash) at 2^15 speed.
+                    let accel = f32_to_s32(speed * 65536.0);
+                    set_mario_anim_with_accel(m, w, MARIO_ANIM_SLOW_WALK_WITH_LIGHT_OBJ, accel);
+                    play_step_sound(m, w, 12, 62);
+                    return;
+                }
+            }
+            1 => {
+                if speed < 3.0 {
+                    m.action_timer = 0;
+                } else if speed > 11.0 {
+                    m.action_timer = 2;
+                } else {
+                    let accel = f32_to_s32(speed * 65536.0);
+                    set_mario_anim_with_accel(m, w, MARIO_ANIM_WALK_WITH_LIGHT_OBJ, accel);
+                    play_step_sound(m, w, 12, 62);
+                    return;
+                }
+            }
+            2 => {
+                if speed < 8.0 {
+                    m.action_timer = 1;
+                } else {
+                    // (Speed crash) at 2^16 speed.
+                    let accel = f32_to_s32(speed / 2.0 * 65536.0);
+                    set_mario_anim_with_accel(m, w, MARIO_ANIM_RUN_WITH_LIGHT_OBJ, accel);
+                    play_step_sound(m, w, 10, 49);
+                    return;
+                }
+            }
+            // The original's switch has no other case and loops forever.
+            timer => panic!("anim_and_audio_for_hold_walk with action timer {timer} never ends"),
+        }
+    }
+}
+
+/// anim_and_audio_for_heavy_walk.
+fn anim_and_audio_for_heavy_walk(m: &mut MarioState, w: &mut StepWorld<'_>) {
+    let accel = f32_to_s32(m.intended_mag * 65536.0);
+    set_mario_anim_with_accel(m, w, MARIO_ANIM_WALK_WITH_HEAVY_OBJ, accel);
+    play_step_sound(m, w, 26, 79);
+}
+
+/// act_hold_walking (the held object is never bhvJumpingBox: the crazy box
+/// is not ported).
+fn act_hold_walking(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if told_to_drop(m) {
+        return drop_and_set_mario_action(m, w, ACT_WALKING, 0);
+    }
+    if should_begin_sliding(m, w) {
+        return set_mario_action(m, w, ACT_HOLD_BEGIN_SLIDING, 0);
+    }
+    if m.input & INPUT_B_PRESSED != 0 {
+        return set_mario_action(m, w, ACT_THROWING, 0);
+    }
+    if m.input & INPUT_A_PRESSED != 0 {
+        return set_jumping_action(m, w, ACT_HOLD_JUMP, 0);
+    }
+    if m.input & INPUT_UNKNOWN_5 != 0 {
+        return set_mario_action(m, w, ACT_HOLD_DECELERATING, 0);
+    }
+    if m.input & INPUT_Z_PRESSED != 0 {
+        return drop_and_set_mario_action(m, w, ACT_CROUCH_SLIDE, 0);
+    }
+    m.intended_mag *= 0.4;
+    update_walking_speed(m, w);
+    match perform_ground_step(m, w) {
+        GROUND_STEP_LEFT_GROUND => {
+            set_mario_action(m, w, ACT_HOLD_FREEFALL, 0);
+        }
+        GROUND_STEP_HIT_WALL if m.forward_vel > 16.0 => {
+            mario_set_forward_vel(m, w, 16.0);
+        }
+        _ => {}
+    }
+    anim_and_audio_for_hold_walk(m, w);
+    if 0.4 * m.intended_mag - m.forward_vel > 10.0 {
+        m.particle_flags |= PARTICLE_DUST;
+    }
+    0
+}
+
+fn act_hold_heavy_walking(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if m.input & INPUT_B_PRESSED != 0 {
+        return set_mario_action(m, w, ACT_HEAVY_THROW, 0);
+    }
+    if should_begin_sliding(m, w) {
+        return drop_and_set_mario_action(m, w, ACT_BEGIN_SLIDING, 0);
+    }
+    if m.input & INPUT_UNKNOWN_5 != 0 {
+        return set_mario_action(m, w, ACT_HOLD_HEAVY_IDLE, 0);
+    }
+    m.intended_mag *= 0.1;
+    update_walking_speed(m, w);
+    match perform_ground_step(m, w) {
+        GROUND_STEP_LEFT_GROUND => {
+            drop_and_set_mario_action(m, w, ACT_FREEFALL, 0);
+        }
+        GROUND_STEP_HIT_WALL if m.forward_vel > 10.0 => {
+            mario_set_forward_vel(m, w, 10.0);
+        }
+        _ => {}
+    }
+    anim_and_audio_for_heavy_walk(m, w);
+    0
+}
+
+fn act_hold_decelerating(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    let slope_class = mario_get_floor_class(m, w);
+    if told_to_drop(m) {
+        return drop_and_set_mario_action(m, w, ACT_WALKING, 0);
+    }
+    if should_begin_sliding(m, w) {
+        return set_mario_action(m, w, ACT_HOLD_BEGIN_SLIDING, 0);
+    }
+    if m.input & INPUT_B_PRESSED != 0 {
+        return set_mario_action(m, w, ACT_THROWING, 0);
+    }
+    if m.input & INPUT_A_PRESSED != 0 {
+        return set_jumping_action(m, w, ACT_HOLD_JUMP, 0);
+    }
+    if m.input & INPUT_Z_PRESSED != 0 {
+        return drop_and_set_mario_action(m, w, ACT_CROUCH_SLIDE, 0);
+    }
+    if m.input & INPUT_NONZERO_ANALOG != 0 {
+        return set_mario_action(m, w, ACT_HOLD_WALKING, 0);
+    }
+    if update_decelerating_speed(m, w) {
+        return set_mario_action(m, w, ACT_HOLD_IDLE, 0);
+    }
+    m.intended_mag *= 0.4;
+    match perform_ground_step(m, w) {
+        GROUND_STEP_LEFT_GROUND => {
+            set_mario_action(m, w, ACT_HOLD_FREEFALL, 0);
+        }
+        GROUND_STEP_HIT_WALL => {
+            if slope_class == SURFACE_CLASS_VERY_SLIPPERY {
+                mario_bonk_reflection(m, w, true);
+            } else {
+                mario_set_forward_vel(m, w, 0.0);
+            }
+        }
+        _ => {}
+    }
+    if slope_class == SURFACE_CLASS_VERY_SLIPPERY {
+        set_mario_animation(m, w, MARIO_ANIM_IDLE_WITH_LIGHT_OBJ);
+        w.play_sound(SOUND_MOVING_TERRAIN_SLIDE.wrapping_add(m.terrain_sound_addend));
+        adjust_sound_for_speed(m, w);
+        m.particle_flags |= PARTICLE_DUST;
+    } else {
+        // (Speed crash) above 2^15 speed.
+        let mut accel = f32_to_s32(m.forward_vel * 65536.0);
+        if accel < 0x1000 {
+            accel = 0x1000;
+        }
+        set_mario_anim_with_accel(m, w, MARIO_ANIM_WALK_WITH_LIGHT_OBJ, accel);
+        play_step_sound(m, w, 12, 62);
+    }
+    0
+}
+
 fn act_crawling(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     if should_begin_sliding(m, w) {
         return set_mario_action(m, w, ACT_BEGIN_SLIDING, 0);
@@ -1042,6 +1235,22 @@ fn act_butt_slide(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     cancel
 }
 
+fn act_hold_butt_slide(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if told_to_drop(m) {
+        return drop_and_set_mario_action(m, w, ACT_BUTT_SLIDE, 0);
+    }
+    let cancel = common_slide_action_with_jump(
+        m,
+        w,
+        ACT_HOLD_BUTT_SLIDE_STOP,
+        ACT_HOLD_JUMP,
+        ACT_HOLD_BUTT_SLIDE_AIR,
+        MARIO_ANIM_SLIDING_ON_BOTTOM_WITH_LIGHT_OBJ,
+    );
+    tilt_body_butt_slide(m, w);
+    cancel
+}
+
 fn act_crouch_slide(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     if m.input & INPUT_ABOVE_SLIDE != 0 {
         return set_mario_action(m, w, ACT_BUTT_SLIDE, 0);
@@ -1126,6 +1335,19 @@ fn stomach_slide_action(
     0
 }
 
+fn act_hold_stomach_slide(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if told_to_drop(m) {
+        return drop_and_set_mario_action(m, w, ACT_STOMACH_SLIDE, 0);
+    }
+    stomach_slide_action(
+        m,
+        w,
+        ACT_DIVE_PICKING_UP,
+        ACT_HOLD_FREEFALL,
+        MARIO_ANIM_SLIDE_DIVE,
+    )
+}
+
 fn act_dive_slide(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     if m.input & INPUT_ABOVE_SLIDE == 0 && m.input & (INPUT_A_PRESSED | INPUT_B_PRESSED) != 0 {
         let rollout = if m.forward_vel > 0.0 {
@@ -1143,7 +1365,7 @@ fn act_dive_slide(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
         set_mario_action(m, w, ACT_STOMACH_SLIDE_STOP, 0);
     }
     if mario_check_object_grab(m, w) {
-        mario_grab_used_object(m);
+        mario_grab_used_object(m, w);
         m.body.grab_pos = GRAB_POS_LIGHT_OBJ;
         return 1;
     }
@@ -1336,6 +1558,24 @@ fn landing(
     0
 }
 
+/// act_hold_jump_land and act_hold_freefall_land.
+fn hold_landing(
+    m: &mut MarioState,
+    w: &mut StepWorld<'_>,
+    drop_action: u32,
+    action: &LandingAction,
+    animation: i32,
+) -> i32 {
+    if told_to_drop(m) {
+        return drop_and_set_mario_action(m, w, drop_action, 0);
+    }
+    if common_landing_cancels(m, w, action, set_jumping_action) != 0 {
+        return 1;
+    }
+    common_landing_action(m, w, animation as i16, ACT_HOLD_FREEFALL);
+    0
+}
+
 fn act_side_flip_land(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     if common_landing_cancels(m, w, &SIDE_FLIP_LAND, set_jumping_action) != 0 {
         return 1;
@@ -1524,17 +1764,36 @@ pub fn mario_execute_moving_action(m: &mut MarioState, w: &mut StepWorld<'_>) ->
             ACT_FREEFALL,
         ),
         ACT_LONG_JUMP_LAND => act_long_jump_land(m, w),
-        ACT_HOLD_WALKING
-        | ACT_HOLD_HEAVY_WALKING
-        | ACT_HOLD_DECELERATING
-        | ACT_RIDING_SHELL_GROUND
-        | ACT_HOLD_BUTT_SLIDE
-        | ACT_HOLD_STOMACH_SLIDE
-        | ACT_HOLD_JUMP_LAND
-        | ACT_HOLD_FREEFALL_LAND
-        | ACT_HOLD_QUICKSAND_JUMP_LAND => {
+        ACT_HOLD_WALKING => act_hold_walking(m, w),
+        ACT_HOLD_HEAVY_WALKING => act_hold_heavy_walking(m, w),
+        ACT_HOLD_DECELERATING => act_hold_decelerating(m, w),
+        ACT_HOLD_BUTT_SLIDE => act_hold_butt_slide(m, w),
+        ACT_HOLD_STOMACH_SLIDE => act_hold_stomach_slide(m, w),
+        ACT_HOLD_JUMP_LAND => hold_landing(
+            m,
+            w,
+            ACT_JUMP_LAND_STOP,
+            &HOLD_JUMP_LAND,
+            MARIO_ANIM_JUMP_LAND_WITH_LIGHT_OBJ,
+        ),
+        ACT_HOLD_FREEFALL_LAND => hold_landing(
+            m,
+            w,
+            ACT_FREEFALL_LAND_STOP,
+            &HOLD_FREEFALL_LAND,
+            MARIO_ANIM_FALL_LAND_WITH_LIGHT_OBJ,
+        ),
+        ACT_HOLD_QUICKSAND_JUMP_LAND => quicksand_jump_land_action(
+            m,
+            w,
+            MARIO_ANIM_JUMP_WITH_LIGHT_OBJ,
+            MARIO_ANIM_JUMP_LAND_WITH_LIGHT_OBJ,
+            ACT_HOLD_JUMP_LAND_STOP,
+            ACT_HOLD_FREEFALL,
+        ),
+        ACT_RIDING_SHELL_GROUND => {
             panic!(
-                "moving action {:#X} holds or rides an object; objects are not simulated yet",
+                "moving action {:#X} rides a shell, which is not ported",
                 m.action
             )
         }

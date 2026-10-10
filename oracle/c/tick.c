@@ -211,6 +211,11 @@ s32 oracle_render_model_of(struct GraphNode *node);
 void oracle_render_load_models(void);
 void oracle_render_object(struct Object *obj, s8 rootAreaIndex);
 void oracle_render_begin(void);
+/* Mario's object node through the verbatim traversal (mario_render_unit.c). */
+s32 oracle_render_has_mario(void);
+void oracle_render_load_mario(void);
+void oracle_render_prime_scaler(void);
+void oracle_render_mario(s8 rootAreaIndex);
 
 void oracle_tick_set_models(const OracleModel *models, s32 count) {
     oracle_render_set_models(models, count);
@@ -353,6 +358,8 @@ void oracle_tick_begin(const OracleTickSetup *s) {
     init_graph_node_start(NULL, (struct GraphNodeStart *) &gObjParentGraphNode);
     clear_objects();
     oracle_render_load_models();
+    oracle_render_load_mario();
+    oracle_render_prime_scaler();
 
     /* level_cmd_init_mario and level_cmd_set_mario_start_pos */
     memset(gMarioSpawnInfo, 0, sizeof(*gMarioSpawnInfo));
@@ -482,7 +489,11 @@ void oracle_tick_run(const OracleTickInput *in) {
     if (sCameraLinked) {
         oracle_camera_render();
     }
-    tick_render_mario();
+    if (sCameraLinked && oracle_render_has_mario()) {
+        oracle_render_mario(sRootAreaIndex);
+    } else {
+        tick_render_mario();
+    }
     tick_render_objects();
     gGlobalTimer++;
 }

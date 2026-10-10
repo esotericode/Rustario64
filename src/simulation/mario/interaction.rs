@@ -14,15 +14,39 @@ use super::{
     core::{self, drop_and_set_mario_action},
     step::{mario_set_forward_vel, resolve_and_return_wall_collisions},
 };
+use crate::simulation::object::{object_mut, script::Behavior};
 
 fn needs_objects(what: &str) -> ! {
     panic!("{what} needs objects, which are not simulated yet")
 }
 
-/// Holding an object needs Mario's held-object actions and the render
-/// pass's hand position (HOLP), which are not ported yet.
-fn needs_holding(what: &str) -> ! {
-    panic!("{what}: holding objects (Mario's hold actions and the hand position) is not ported yet")
+/// obj_set_held_state, run from Mario's code (`o`, the object that becomes
+/// the parent, is gCurrentObject: his object). Holdable objects take the
+/// held state their behavior reads; others run the carry script.
+fn obj_set_held_state(
+    m: &mut MarioState,
+    w: &mut StepWorld<'_>,
+    id: ObjectId,
+    held_behavior: Behavior,
+) {
+    let parent = w.objects.current;
+    let script = w.behaviors.address(held_behavior);
+    let o = object_mut(&mut w.objects, &mut m.obj, id);
+    o.parent = parent;
+    if o.raw.u32(O_FLAGS) & OBJ_FLAG_HOLDABLE != 0 {
+        if held_behavior == Behavior::CarrySomething3 {
+            o.raw.set_s32(O_HELD_STATE, HELD_HELD);
+        }
+        if held_behavior == Behavior::CarrySomething5 {
+            o.raw.set_s32(O_HELD_STATE, HELD_THROWN);
+        }
+        if held_behavior == Behavior::CarrySomething4 {
+            o.raw.set_s32(O_HELD_STATE, HELD_DROPPED);
+        }
+    } else {
+        o.cur_bhv_command = script;
+        o.bhv_stack_index = 0;
+    }
 }
 
 /// mario_stop_riding_object.
@@ -33,29 +57,52 @@ pub fn mario_stop_riding_object(m: &mut MarioState) {
 }
 
 /// mario_grab_used_object.
-pub fn mario_grab_used_object(m: &mut MarioState) {
+pub fn mario_grab_used_object(m: &mut MarioState, w: &mut StepWorld<'_>) {
     if m.held_obj.is_none() {
-        needs_holding("mario_grab_used_object");
+        let used = m
+            .used_obj
+            .expect("mario_grab_used_object with no usedObj (the original dereferences NULL)");
+        m.held_obj = Some(used);
+        obj_set_held_state(m, w, used, Behavior::CarrySomething3);
     }
 }
 
-/// mario_drop_held_object.
-pub fn mario_drop_held_object(m: &mut MarioState) {
-    if m.held_obj.is_some() {
-        needs_holding("mario_drop_held_object");
+/// mario_drop_held_object: at the HOLP's x and z, Mario's height. Held
+/// objects are never bhvKoopaShellUnderwater (not ported), so no shell
+/// music stops.
+pub fn mario_drop_held_object(m: &mut MarioState, w: &mut StepWorld<'_>) {
+    if let Some(held) = m.held_obj {
+        obj_set_held_state(m, w, held, Behavior::CarrySomething4);
+        let holp = m.body.held_obj_last_position;
+        let (y, yaw) = (m.pos[1], m.face_angle[1]);
+        let raw = &mut object_mut(&mut w.objects, &mut m.obj, held).raw;
+        raw.set_f32(O_POS_X, holp[0]);
+        raw.set_f32(O_POS_Y, y);
+        raw.set_f32(O_POS_Z, holp[2]);
+        raw.set_s32(O_MOVE_ANGLE_YAW, i32::from(yaw));
+        m.held_obj = None;
     }
 }
 
-/// mario_throw_held_object.
-pub fn mario_throw_held_object(m: &mut MarioState) {
-    if m.held_obj.is_some() {
-        needs_holding("mario_throw_held_object");
+/// mario_throw_held_object: from the HOLP, 32 units ahead of Mario.
+pub fn mario_throw_held_object(m: &mut MarioState, w: &mut StepWorld<'_>) {
+    if let Some(held) = m.held_obj {
+        obj_set_held_state(m, w, held, Behavior::CarrySomething5);
+        let holp = m.body.held_obj_last_position;
+        let yaw = m.face_angle[1];
+        let (s, c) = (w.trig.sins(i32::from(yaw)), w.trig.coss(i32::from(yaw)));
+        let raw = &mut object_mut(&mut w.objects, &mut m.obj, held).raw;
+        raw.set_f32(O_POS_X, holp[0] + 32.0 * s);
+        raw.set_f32(O_POS_Y, holp[1]);
+        raw.set_f32(O_POS_Z, holp[2] + 32.0 * c);
+        raw.set_s32(O_MOVE_ANGLE_YAW, i32::from(yaw));
+        m.held_obj = None;
     }
 }
 
 /// mario_stop_riding_and_holding.
-pub fn mario_stop_riding_and_holding(m: &mut MarioState, _w: &mut StepWorld<'_>) {
-    mario_drop_held_object(m);
+pub fn mario_stop_riding_and_holding(m: &mut MarioState, w: &mut StepWorld<'_>) {
+    mario_drop_held_object(m, w);
     mario_stop_riding_object(m);
     if m.action == ACT_RIDING_HOOT {
         needs_objects("releasing Hoot");

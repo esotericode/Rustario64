@@ -21,7 +21,10 @@ use super::{
 use crate::{
     content::{Act, ImportedArea, SegmentLoad, animation::ObjectAnimations},
     simulation::{
-        mario::tick::LevelObjects,
+        mario::{
+            render::{MarioCallback, MarioModel},
+            tick::LevelObjects,
+        },
         object::{
             render::{ObjectModel, ObjectModels, RenderNode, RenderNodeKind},
             script::{Behavior, BehaviorScripts, Native},
@@ -367,7 +370,35 @@ impl ObjectContent {
                 .and_then(|segments| traversal(segments, registration.pointer).ok());
             models.insert(*model, traversal);
         }
+        if let Some(model) = self.mario_model() {
+            models.set_mario_model(model);
+        }
         models
+    }
+
+    /// MODEL_MARIO's graph from its registration (`mario_geo`), with the
+    /// version adapter's callback roles; None if a callback is unknown or
+    /// the layout does not decode.
+    pub fn mario_model(&self) -> Option<MarioModel> {
+        let registration = self.main_models.get(&version::MODEL_MARIO)?;
+        if !registration.geometry_layout {
+            return None;
+        }
+        let layout = geo::decode(&self.segments, registration.pointer).ok()?;
+        let callbacks: BTreeMap<u32, MarioCallback> = version::MARIO_GEO_CALLBACKS
+            .iter()
+            .map(|&(name, address)| MarioCallback::from_name(name).map(|role| (address, role)))
+            .collect::<Option<_>>()?;
+        for node in &layout.nodes {
+            if let GeoNodeKind::SwitchCase { callback, .. }
+            | GeoNodeKind::Generated { callback, .. }
+            | GeoNodeKind::HeldObject { callback, .. } = node.kind
+                && !callbacks.contains_key(&callback)
+            {
+                return None;
+            }
+        }
+        Some(MarioModel { layout, callbacks })
     }
 
     /// The animation tables of every LOAD_ANIMATIONS the port's runnable

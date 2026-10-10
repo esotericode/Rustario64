@@ -23,8 +23,8 @@ use rustario64::{
         shadow::{ShadowDrawer, player_shadow},
     },
     simulation::{
-        collision::CollisionWorld, game::GameEntry, math::TrigTables,
-        object::render::visible_objects,
+        collision::CollisionWorld, game::GameEntry, mario::render::held_visible_object,
+        math::TrigTables, object::render::visible_objects,
     },
 };
 use rustario64_render::{
@@ -54,7 +54,7 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 const HELP: &str = "Rustario64 development viewer (Bob-omb Battlefield, area 1)\n\n\
   rustario64-viewer [launch]   Open the local ROM launcher and presentation settings.\n\
-  rustario64-viewer screenshot /path/to/sm64.z64 --out private/bob.png [--view start|overview|summit|top] [--size 1280x960] [--msaa 4] [--no-cull] [--no-fog] [--collision] [--placements] [--mario-ticks N] [--start X,Y,Z[,YAW]]\n\
+  rustario64-viewer screenshot /path/to/sm64.z64 --out private/bob.png [--view start|overview|summit|top] [--size 1280x960] [--msaa 4] [--no-cull] [--no-fog] [--collision] [--placements] [--mario-ticks N] [--inputs RUN.inputs.json] [--start X,Y,Z[,YAW]]\n\
   rustario64-viewer view /path/to/sm64.z64 [--view start] [--msaa 4] [--no-fog] [--frames N] [--mario] [--no-interpolation] [--record NEW_PRIVATE_DIR] [--start X,Y,Z[,YAW]]\n\n\
   View controls: WASD move, Q/E down/up, Shift faster, hold right mouse or arrow keys to look,\n\
   1-4 select presets, C collision overlay, P placement markers, F fog, M Mario mode, Esc pause/settings.\n\
@@ -67,6 +67,7 @@ const HELP: &str = "Rustario64 development viewer (Bob-omb Battlefield, area 1)\
   placeholder box if they cannot be imported). Play stops at paths the port does not support\n\
   and at warps (falling off the course); R re-enters.\n\
   --mario-ticks N renders Mario after N frames of holding the stick up, from the original camera.\n\
+  --inputs RUN.inputs.json renders Mario after replaying a recorded run's tick inputs instead.\n\
   --start X,Y,Z[,YAW] enters the level with Mario at another point (development entry; yaw in degrees).\n\
   --record writes each run's tick inputs to a new directory for exact replay against the decomp:\n\
   cargo run -p rustario64-oracle --example tick_trace -- ROM NEW_DIR --inputs RUN.inputs.json\n\
@@ -84,6 +85,7 @@ struct Options {
     frames: Option<u64>,
     mario: bool,
     mario_ticks: Option<u64>,
+    inputs: Option<PathBuf>,
     interpolation: bool,
     record: Option<PathBuf>,
     vsync: bool,
@@ -105,6 +107,7 @@ fn parse(args: &[String]) -> AppResult<Options> {
         frames: None,
         mario: false,
         mario_ticks: None,
+        inputs: None,
         interpolation: true,
         record: None,
         vsync: true,
@@ -139,6 +142,7 @@ fn parse(args: &[String]) -> AppResult<Options> {
                     "--msaa" => options.msaa = value(i)?.parse()?,
                     "--frames" => options.frames = Some(value(i)?.parse()?),
                     "--mario-ticks" => options.mario_ticks = Some(value(i)?.parse()?),
+                    "--inputs" => options.inputs = Some(PathBuf::from(value(i)?)),
                     "--record" => options.record = Some(value(i)?.into()),
                     "--start" => {
                         let parts: Vec<i16> = value(i)?
@@ -309,11 +313,17 @@ impl ObjectDrawing {
     }
 
     fn tick(&mut self, session: &Session<'_>) {
-        let objects = visible_objects(
+        let mut objects = visible_objects(
             session.world(),
             &session.game().camera.graph,
             &session.game().rendered_matrices,
         );
+        // The object in Mario's hand, where the render pass put it.
+        objects.extend(held_visible_object(
+            session.mario(),
+            session.world(),
+            &session.game().rendered_mario,
+        ));
         if let Err(error) = self.drawer.update(objects) {
             eprintln!("warning: object models could not be built: {error}");
             // Avoid retaining stale coins after a failed presentation import.
@@ -455,7 +465,33 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
     let mut level = load(rom_path)?;
     start_at(&mut level, options);
     let (info, mut renderer) = rustario64_render::headless(render_options(options))?;
-    let mario = options.mario_ticks.is_some();
+    // A replayed run, or N ticks holding the stick up.
+    let pads: Option<Vec<Pad>> = match (&options.inputs, options.mario_ticks) {
+        (Some(path), _) => {
+            let log = rustario64::trace::InputLog::from_json(&std::fs::read(path)?)?;
+            println!(
+                "Replaying {} ticks recorded from {} by {}",
+                log.inputs.len(),
+                log.entry,
+                log.producer
+            );
+            Some(
+                log.inputs
+                    .iter()
+                    .map(|t| Pad::from_tick(t.buttons, t.stick))
+                    .collect(),
+            )
+        }
+        (None, Some(ticks)) => Some(vec![
+            Pad {
+                up: true,
+                ..Pad::default()
+            };
+            ticks as usize
+        ]),
+        (None, None) => None,
+    };
+    let mario = pads.is_some();
     upload(
         &mut renderer,
         &level,
@@ -466,8 +502,8 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
     let view = options.view.as_deref().unwrap_or("start");
     let graphics = graphics_options(options);
     let mut model_builds = None;
-    let camera = match options.mario_ticks {
-        Some(ticks) => {
+    let camera = match &pads {
+        Some(pads) => {
             let mut session = level.session();
             let follow = |session: &Session<'_>| {
                 let camera = present::reference_view(
@@ -481,12 +517,8 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
             };
             let mut model = MarioModel::new(&level, &session, &follow(&session)?);
             let mut objects = ObjectDrawing::new(&level, &session);
-            let hold_up = Pad {
-                up: true,
-                ..Pad::default()
-            };
-            for _ in 0..ticks {
-                if !session.step(&hold_up) {
+            for pad in pads {
+                if !session.step(pad) {
                     break;
                 }
                 objects.tick(&session);

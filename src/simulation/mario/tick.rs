@@ -15,7 +15,7 @@
 //! render pass's presentation-only writes (matrices, torso and head angles,
 //! the hand-scale counter).
 use super::{
-    MarioObject, MarioState, SaveInputs, StepWorld, SurfaceRef, ThrowMatrix,
+    MarioObject, MarioState, ObjectId, SaveInputs, StepWorld, SurfaceRef, ThrowMatrix,
     animation::update_animation_frame,
     constants::*,
     core::{
@@ -295,6 +295,8 @@ pub struct RenderedFrame {
     /// The floor-alignment matrix (`StepWorld::floor_align_matrix` index)
     /// that replaced the object's position and angles, which the pass clears.
     pub throw_matrix: Option<usize>,
+    /// The object the pass drew in his hand (`mario::render`).
+    pub held: Option<ObjectId>,
 }
 
 /// What the render pass changes in Mario's object: geo_process_node_and_siblings
@@ -318,6 +320,7 @@ pub fn render_mario_object(obj: &mut MarioObject, w: &StepWorld<'_>) -> Rendered
         return RenderedFrame {
             processed: true,
             throw_matrix,
+            held: None,
         };
     }
     RenderedFrame::default()

@@ -156,6 +156,260 @@ struct GraphNodeStart *init_graph_node_start(struct AllocOnlyPool *pool,
     return graphNode;
 }
 
+/* src/engine/graph_node.c: init_graph_node_render_range */
+struct GraphNodeLevelOfDetail *init_graph_node_render_range(struct AllocOnlyPool *pool,
+                                                            struct GraphNodeLevelOfDetail *graphNode,
+                                                            s16 minDistance, s16 maxDistance) {
+    if (pool != NULL) {
+        graphNode = alloc_only_pool_alloc(pool, sizeof(struct GraphNodeLevelOfDetail));
+    }
+
+    if (graphNode != NULL) {
+        init_scene_graph_node_links(&graphNode->node, GRAPH_NODE_TYPE_LEVEL_OF_DETAIL);
+        graphNode->minDistance = minDistance;
+        graphNode->maxDistance = maxDistance;
+    }
+
+    return graphNode;
+}
+
+/* src/engine/graph_node.c: init_graph_node_switch_case */
+struct GraphNodeSwitchCase *init_graph_node_switch_case(struct AllocOnlyPool *pool,
+                                                        struct GraphNodeSwitchCase *graphNode,
+                                                        s16 numCases, s16 selectedCase,
+                                                        GraphNodeFunc nodeFunc, s32 unused) {
+    if (pool != NULL) {
+        graphNode = alloc_only_pool_alloc(pool, sizeof(struct GraphNodeSwitchCase));
+    }
+
+    if (graphNode != NULL) {
+        init_scene_graph_node_links(&graphNode->fnNode.node, GRAPH_NODE_TYPE_SWITCH_CASE);
+        graphNode->numCases = numCases;
+        graphNode->selectedCase = selectedCase;
+        graphNode->fnNode.func = nodeFunc;
+        graphNode->unused = unused;
+
+        if (nodeFunc != NULL) {
+            nodeFunc(GEO_CONTEXT_CREATE, &graphNode->fnNode.node, pool);
+        }
+    }
+
+    return graphNode;
+}
+
+/* src/engine/graph_node.c: init_graph_node_translation_rotation(struct AllocOnlyPool *pool, */
+struct GraphNodeTranslationRotation *
+init_graph_node_translation_rotation(struct AllocOnlyPool *pool,
+                                     struct GraphNodeTranslationRotation *graphNode, s32 drawingLayer,
+                                     void *displayList, Vec3s translation, Vec3s rotation) {
+    if (pool != NULL) {
+        graphNode = alloc_only_pool_alloc(pool, sizeof(struct GraphNodeTranslationRotation));
+    }
+
+    if (graphNode != NULL) {
+        init_scene_graph_node_links(&graphNode->node, GRAPH_NODE_TYPE_TRANSLATION_ROTATION);
+
+        vec3s_copy(graphNode->translation, translation);
+        vec3s_copy(graphNode->rotation, rotation);
+        graphNode->node.flags = (drawingLayer << 8) | (graphNode->node.flags & 0xFF);
+        graphNode->displayList = displayList;
+    }
+
+    return graphNode;
+}
+
+/* src/engine/graph_node.c: init_graph_node_translation */
+struct GraphNodeTranslation *init_graph_node_translation(struct AllocOnlyPool *pool,
+                                                         struct GraphNodeTranslation *graphNode,
+                                                         s32 drawingLayer, void *displayList,
+                                                         Vec3s translation) {
+    if (pool != NULL) {
+        graphNode = alloc_only_pool_alloc(pool, sizeof(struct GraphNodeTranslation));
+    }
+
+    if (graphNode != NULL) {
+        init_scene_graph_node_links(&graphNode->node, GRAPH_NODE_TYPE_TRANSLATION);
+
+        vec3s_copy(graphNode->translation, translation);
+        graphNode->node.flags = (drawingLayer << 8) | (graphNode->node.flags & 0xFF);
+        graphNode->displayList = displayList;
+    }
+
+    return graphNode;
+}
+
+/* src/engine/graph_node.c: init_graph_node_rotation */
+struct GraphNodeRotation *init_graph_node_rotation(struct AllocOnlyPool *pool,
+                                                   struct GraphNodeRotation *graphNode,
+                                                   s32 drawingLayer, void *displayList,
+                                                   Vec3s rotation) {
+    if (pool != NULL) {
+        graphNode = alloc_only_pool_alloc(pool, sizeof(struct GraphNodeRotation));
+    }
+
+    if (graphNode != NULL) {
+        init_scene_graph_node_links(&graphNode->node, GRAPH_NODE_TYPE_ROTATION);
+        vec3s_copy(graphNode->rotation, rotation);
+        graphNode->node.flags = (drawingLayer << 8) | (graphNode->node.flags & 0xFF);
+        graphNode->displayList = displayList;
+    }
+
+    return graphNode;
+}
+
+/* src/engine/graph_node.c: init_graph_node_scale */
+struct GraphNodeScale *init_graph_node_scale(struct AllocOnlyPool *pool,
+                                             struct GraphNodeScale *graphNode, s32 drawingLayer,
+                                             void *displayList, f32 scale) {
+    if (pool != NULL) {
+        graphNode = alloc_only_pool_alloc(pool, sizeof(struct GraphNodeScale));
+    }
+
+    if (graphNode != NULL) {
+        init_scene_graph_node_links(&graphNode->node, GRAPH_NODE_TYPE_SCALE);
+        graphNode->node.flags = (drawingLayer << 8) | (graphNode->node.flags & 0xFF);
+        graphNode->scale = scale;
+        graphNode->displayList = displayList;
+    }
+
+    return graphNode;
+}
+
+/* src/engine/graph_node.c: init_graph_node_culling_radius */
+struct GraphNodeCullingRadius *init_graph_node_culling_radius(struct AllocOnlyPool *pool,
+                                                              struct GraphNodeCullingRadius *graphNode,
+                                                              s16 radius) {
+    if (pool != NULL) {
+        graphNode = alloc_only_pool_alloc(pool, sizeof(struct GraphNodeCullingRadius));
+    }
+
+    if (graphNode != NULL) {
+        init_scene_graph_node_links(&graphNode->node, GRAPH_NODE_TYPE_CULLING_RADIUS);
+        graphNode->cullingRadius = radius;
+    }
+
+    return graphNode;
+}
+
+/* src/engine/graph_node.c: init_graph_node_animated_part */
+struct GraphNodeAnimatedPart *init_graph_node_animated_part(struct AllocOnlyPool *pool,
+                                                            struct GraphNodeAnimatedPart *graphNode,
+                                                            s32 drawingLayer, void *displayList,
+                                                            Vec3s translation) {
+    if (pool != NULL) {
+        graphNode = alloc_only_pool_alloc(pool, sizeof(struct GraphNodeAnimatedPart));
+    }
+
+    if (graphNode != NULL) {
+        init_scene_graph_node_links(&graphNode->node, GRAPH_NODE_TYPE_ANIMATED_PART);
+        vec3s_copy(graphNode->translation, translation);
+        graphNode->node.flags = (drawingLayer << 8) | (graphNode->node.flags & 0xFF);
+        graphNode->displayList = displayList;
+    }
+
+    return graphNode;
+}
+
+/* src/engine/graph_node.c: init_graph_node_billboard */
+struct GraphNodeBillboard *init_graph_node_billboard(struct AllocOnlyPool *pool,
+                                                     struct GraphNodeBillboard *graphNode,
+                                                     s32 drawingLayer, void *displayList,
+                                                     Vec3s translation) {
+    if (pool != NULL) {
+        graphNode = alloc_only_pool_alloc(pool, sizeof(struct GraphNodeBillboard));
+    }
+
+    if (graphNode != NULL) {
+        init_scene_graph_node_links(&graphNode->node, GRAPH_NODE_TYPE_BILLBOARD);
+        vec3s_copy(graphNode->translation, translation);
+        graphNode->node.flags = (drawingLayer << 8) | (graphNode->node.flags & 0xFF);
+        graphNode->displayList = displayList;
+    }
+
+    return graphNode;
+}
+
+/* src/engine/graph_node.c: init_graph_node_display_list */
+struct GraphNodeDisplayList *init_graph_node_display_list(struct AllocOnlyPool *pool,
+                                                          struct GraphNodeDisplayList *graphNode,
+                                                          s32 drawingLayer, void *displayList) {
+    if (pool != NULL) {
+        graphNode = alloc_only_pool_alloc(pool, sizeof(struct GraphNodeDisplayList));
+    }
+
+    if (graphNode != NULL) {
+        init_scene_graph_node_links(&graphNode->node, GRAPH_NODE_TYPE_DISPLAY_LIST);
+        graphNode->node.flags = (drawingLayer << 8) | (graphNode->node.flags & 0xFF);
+        graphNode->displayList = displayList;
+    }
+
+    return graphNode;
+}
+
+/* src/engine/graph_node.c: init_graph_node_shadow */
+struct GraphNodeShadow *init_graph_node_shadow(struct AllocOnlyPool *pool,
+                                               struct GraphNodeShadow *graphNode, s16 shadowScale,
+                                               u8 shadowSolidity, u8 shadowType) {
+    if (pool != NULL) {
+        graphNode = alloc_only_pool_alloc(pool, sizeof(struct GraphNodeShadow));
+    }
+
+    if (graphNode != NULL) {
+        init_scene_graph_node_links(&graphNode->node, GRAPH_NODE_TYPE_SHADOW);
+        graphNode->shadowScale = shadowScale;
+        graphNode->shadowSolidity = shadowSolidity;
+        graphNode->shadowType = shadowType;
+    }
+
+    return graphNode;
+}
+
+/* src/engine/graph_node.c: init_graph_node_generated */
+struct GraphNodeGenerated *init_graph_node_generated(struct AllocOnlyPool *pool,
+                                                     struct GraphNodeGenerated *graphNode,
+                                                     GraphNodeFunc gfxFunc, s32 parameter) {
+    if (pool != NULL) {
+        graphNode = alloc_only_pool_alloc(pool, sizeof(struct GraphNodeGenerated));
+    }
+
+    if (graphNode != NULL) {
+        init_scene_graph_node_links(&graphNode->fnNode.node, GRAPH_NODE_TYPE_GENERATED_LIST);
+        graphNode->fnNode.func = gfxFunc;
+        graphNode->parameter = parameter;
+
+        if (gfxFunc != NULL) {
+            gfxFunc(GEO_CONTEXT_CREATE, &graphNode->fnNode.node, pool);
+        }
+    }
+
+    return graphNode;
+}
+
+/* src/engine/graph_node.c: init_graph_node_held_object */
+struct GraphNodeHeldObject *init_graph_node_held_object(struct AllocOnlyPool *pool,
+                                                        struct GraphNodeHeldObject *graphNode,
+                                                        struct Object *objNode,
+                                                        Vec3s translation,
+                                                        GraphNodeFunc nodeFunc, s32 playerIndex) {
+    if (pool != NULL) {
+        graphNode = alloc_only_pool_alloc(pool, sizeof(struct GraphNodeHeldObject));
+    }
+
+    if (graphNode != NULL) {
+        init_scene_graph_node_links(&graphNode->fnNode.node, GRAPH_NODE_TYPE_HELD_OBJ);
+        vec3s_copy(graphNode->translation, translation);
+        graphNode->objNode = objNode;
+        graphNode->fnNode.func = nodeFunc;
+        graphNode->playerIndex = playerIndex;
+
+        if (nodeFunc != NULL) {
+            nodeFunc(GEO_CONTEXT_CREATE, &graphNode->fnNode.node, pool);
+        }
+    }
+
+    return graphNode;
+}
+
 /* src/engine/graph_node.c: geo_add_child */
 struct GraphNode *geo_add_child(struct GraphNode *parent, struct GraphNode *childNode) {
     struct GraphNode *parentFirstChild;

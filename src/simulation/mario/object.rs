@@ -1,20 +1,26 @@
 //! Object-group actions, translated from pinned CC0
-//! src/game/mario_actions_object.c. Punching and the stomach-slide stop need
-//! no object; picking up, placing, throwing and the Bowser swing hold one and
-//! panic until objects are simulated.
+//! src/game/mario_actions_object.c: punching, picking up (standing and from
+//! a dive), placing down, throwing and the heavy throw. The Bowser swing's
+//! actions are unreachable (Bowser is not ported) and panic.
 use super::{
     MarioState, StepWorld,
     animation::{is_anim_at_end, is_anim_past_end, set_mario_animation},
     constants::*,
+    core::play_sound_if_no_flag,
     core::{
         check_common_action_exits, drop_and_set_mario_action, play_mario_action_sound,
         set_mario_action, set_water_plunge_action,
     },
-    interaction::mario_check_object_grab,
+    interaction::{
+        mario_check_object_grab, mario_drop_held_object, mario_grab_used_object,
+        mario_throw_held_object,
+    },
     step::{
         mario_set_forward_vel, mario_update_quicksand, perform_ground_step, stationary_ground_step,
     },
 };
+
+use crate::simulation::object::object;
 
 /// sPunchingForwardVelocities.
 const PUNCHING_FORWARD_VELOCITIES: [i8; 8] = [0, 1, 1, 2, 3, 5, 7, 10];
@@ -150,6 +156,117 @@ fn act_punching(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     0
 }
 
+/// The held object's oInteractionSubtype (the original dereferences heldObj).
+fn held_interaction_subtype(m: &MarioState, w: &StepWorld<'_>) -> u32 {
+    let held = m
+        .held_obj
+        .expect("Mario holds no object (the original dereferences NULL)");
+    object(&w.objects, &m.obj, held)
+        .raw
+        .u32(O_INTERACTION_SUBTYPE)
+}
+
+fn act_picking_up(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if m.input & INPUT_STOMPED != 0 {
+        return drop_and_set_mario_action(m, w, ACT_SHOCKWAVE_BOUNCE, 0);
+    }
+    if m.input & INPUT_OFF_FLOOR != 0 {
+        return drop_and_set_mario_action(m, w, ACT_FREEFALL, 0);
+    }
+    if m.action_state == 0 && is_anim_at_end(m, w) {
+        // While the animation plays the used object can unload (the
+        // original's fake-object cloning); the port keeps the slot's ID.
+        mario_grab_used_object(m, w);
+        play_sound_if_no_flag(m, w, SOUND_MARIO_HRMM, MARIO_MARIO_SOUND_PLAYED);
+        m.action_state = 1;
+    }
+    if m.action_state == 1 {
+        if held_interaction_subtype(m, w) & INT_SUBTYPE_GRABS_MARIO != 0 {
+            m.body.grab_pos = GRAB_POS_HEAVY_OBJ;
+            set_mario_animation(m, w, MARIO_ANIM_GRAB_HEAVY_OBJECT);
+            if is_anim_at_end(m, w) {
+                set_mario_action(m, w, ACT_HOLD_HEAVY_IDLE, 0);
+            }
+        } else {
+            m.body.grab_pos = GRAB_POS_LIGHT_OBJ;
+            set_mario_animation(m, w, MARIO_ANIM_PICK_UP_LIGHT_OBJ);
+            if is_anim_at_end(m, w) {
+                set_mario_action(m, w, ACT_HOLD_IDLE, 0);
+            }
+        }
+    }
+    stationary_ground_step(m, w);
+    0
+}
+
+fn act_dive_picking_up(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if m.input & INPUT_STOMPED != 0 {
+        return drop_and_set_mario_action(m, w, ACT_SHOCKWAVE_BOUNCE, 0);
+    }
+    // Landing on a slope or being pushed off a ledge leaves the object held
+    // in a non-holding action (the original's hands-free holding).
+    if m.input & INPUT_OFF_FLOOR != 0 {
+        return set_mario_action(m, w, ACT_FREEFALL, 0);
+    }
+    if m.input & INPUT_ABOVE_SLIDE != 0 {
+        return set_mario_action(m, w, ACT_BEGIN_SLIDING, 0);
+    }
+    animated_stationary_ground_step(m, w, MARIO_ANIM_STOP_SLIDE_LIGHT_OBJ, ACT_HOLD_IDLE);
+    0
+}
+
+fn act_placing_down(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if m.input & INPUT_STOMPED != 0 {
+        return drop_and_set_mario_action(m, w, ACT_SHOCKWAVE_BOUNCE, 0);
+    }
+    if m.input & INPUT_OFF_FLOOR != 0 {
+        return drop_and_set_mario_action(m, w, ACT_FREEFALL, 0);
+    }
+    m.action_timer = m.action_timer.wrapping_add(1);
+    if m.action_timer == 8 {
+        mario_drop_held_object(m, w);
+    }
+    animated_stationary_ground_step(m, w, MARIO_ANIM_PLACE_LIGHT_OBJ, ACT_IDLE);
+    0
+}
+
+fn act_throwing(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if m.held_obj.is_some() && held_interaction_subtype(m, w) & INT_SUBTYPE_HOLDABLE_NPC != 0 {
+        return set_mario_action(m, w, ACT_PLACING_DOWN, 0);
+    }
+    if m.input & INPUT_STOMPED != 0 {
+        return drop_and_set_mario_action(m, w, ACT_SHOCKWAVE_BOUNCE, 0);
+    }
+    if m.input & INPUT_OFF_FLOOR != 0 {
+        return drop_and_set_mario_action(m, w, ACT_FREEFALL, 0);
+    }
+    m.action_timer = m.action_timer.wrapping_add(1);
+    if m.action_timer == 7 {
+        mario_throw_held_object(m, w);
+        play_sound_if_no_flag(m, w, SOUND_MARIO_WAH2, MARIO_MARIO_SOUND_PLAYED);
+        play_sound_if_no_flag(m, w, SOUND_ACTION_THROW, MARIO_ACTION_SOUND_PLAYED);
+    }
+    animated_stationary_ground_step(m, w, MARIO_ANIM_GROUND_THROW, ACT_IDLE);
+    0
+}
+
+fn act_heavy_throw(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if m.input & INPUT_STOMPED != 0 {
+        return drop_and_set_mario_action(m, w, ACT_SHOCKWAVE_BOUNCE, 0);
+    }
+    if m.input & INPUT_OFF_FLOOR != 0 {
+        return drop_and_set_mario_action(m, w, ACT_FREEFALL, 0);
+    }
+    m.action_timer = m.action_timer.wrapping_add(1);
+    if m.action_timer == 13 {
+        mario_drop_held_object(m, w);
+        play_sound_if_no_flag(m, w, SOUND_MARIO_WAH2, MARIO_MARIO_SOUND_PLAYED);
+        play_sound_if_no_flag(m, w, SOUND_ACTION_THROW, MARIO_ACTION_SOUND_PLAYED);
+    }
+    animated_stationary_ground_step(m, w, MARIO_ANIM_HEAVY_THROW, ACT_IDLE);
+    0
+}
+
 fn act_stomach_slide_stop(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     if m.input & INPUT_STOMPED != 0 {
         return set_mario_action(m, w, ACT_SHOCKWAVE_BOUNCE, 0);
@@ -190,16 +307,13 @@ pub fn mario_execute_object_action(m: &mut MarioState, w: &mut StepWorld<'_>) ->
     let cancel = match m.action {
         ACT_PUNCHING => act_punching(m, w),
         ACT_STOMACH_SLIDE_STOP => act_stomach_slide_stop(m, w),
-        ACT_PICKING_UP
-        | ACT_DIVE_PICKING_UP
-        | ACT_PLACING_DOWN
-        | ACT_THROWING
-        | ACT_HEAVY_THROW
-        | ACT_PICKING_UP_BOWSER
-        | ACT_HOLDING_BOWSER
-        | ACT_RELEASING_BOWSER => panic!(
-            "object action {:#X}: holding objects (Mario's hold actions and the hand position) \
-             is not ported yet",
+        ACT_PICKING_UP => act_picking_up(m, w),
+        ACT_DIVE_PICKING_UP => act_dive_picking_up(m, w),
+        ACT_PLACING_DOWN => act_placing_down(m, w),
+        ACT_THROWING => act_throwing(m, w),
+        ACT_HEAVY_THROW => act_heavy_throw(m, w),
+        ACT_PICKING_UP_BOWSER | ACT_HOLDING_BOWSER | ACT_RELEASING_BOWSER => panic!(
+            "object action {:#X} swings Bowser, who is not ported",
             m.action
         ),
         action => panic!("object action {action:#X} is not in the original table"),
