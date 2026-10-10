@@ -516,7 +516,7 @@ is advertised as faithful, and no graphics setting changes movement inputs.
 ## Desktop playtesting and GUI — 2026-10-09
 
 Windows x86_64 and Linux x86_64 are early distribution targets. CI builds the
-two runtime binaries natively on Windows Server 2025 and Ubuntu 24.04, without
+runtime binaries natively on Windows Server 2025 and Ubuntu 24.04, without
 building the C oracle; native core tests run on both. The Linux headless job
 still owns the native-C/GPU comparison suite. Windows native oracle fidelity
 is not implied by a successful Windows runtime build.
@@ -791,3 +791,45 @@ The window overlay reads `StepWorld::hud.coins` and
 count-up. Its egui typography is development presentation; original HUD glyphs,
 coin shadows, remaining HUD elements and audio playback are still pending.
 Offscreen screenshots draw the same objects but omit the window text overlay.
+
+
+## Controller input and desktop ROM selection — 2026-10-10 (session 19)
+
+The owner requested controller input and ROM selection without console commands
+before further mission work. The render crate uses gilrs 0.11.2 (gilrs-core
+0.6.8, locked) for mapped devices and hotplug events; Windows uses its default
+Windows Gaming Input backend and Linux uses evdev/libudev. Initialization errors
+are visible in the menu and retain keyboard input. Remapping, calibration,
+rumble and gamepad navigation of menus remain outside this basic increment.
+
+Desktop input profile v1 maps finite normalized left-stick axes (positive Y up)
+to a circular unit clamp, multiplies by 80 and rounds to raw N64 bytes. gilrs'
+default dead-zone/rescaling and jitter filters are disabled; the original
+controller still applies its dead zone and 64-unit radial clamp once per tick.
+Right-stick/D-pad directions become C buttons with 0.55/0.4 hysteresis; analog
+trigger press/release thresholds are 0.5/0.4. Buttons combine across sources,
+keyboard directions take precedence, and taps are consumed once on the next
+30 Hz tick. The first connected device is selected, with session-only selection
+or Keyboard only in the launcher/pause UI. Unplugging the selected device pauses.
+
+Focus, pause, restart, inspection, ROM and device boundaries discard pending
+input and require buttons released/sticks neutral before controller gameplay
+rearms. Events continue draining while inactive; Start is an edge-triggered
+desktop pause command. Neither Start nor device identity enters gameplay.
+Existing schema-2 logs already store final buttons/raw stick/camera yaw for each
+tick, so no schema change is needed to reproduce this input profile.
+
+`rustario64-desktop` is a small sibling-process entry point. On Windows it has
+the GUI subsystem and starts the console viewer with CREATE_NO_WINDOW, while
+`rustario64-viewer` retains diagnostics and redirects normally. Startup errors
+have a native dialog. The launcher accepts an optional local ROM path to prefill
+selection. Packaging verifies Windows x64 GUI/console PE headers and preserves
+Linux executable permissions. Both menus scroll on smaller windows.
+
+Choose another ROM returns to the launcher in the same window/device, ends any
+private recording, clears GPU models and input, and starts a fresh session on
+Play. The only supported ROM's imported level is retained for this process;
+every newly selected file still passes `Rom::open` identity validation before
+reuse. This prevents repeat imports from accumulating the viewer's lifetime
+allocations. Failed selection keeps the cache and a usable launcher. ROM bytes,
+assets, paths and logs are never part of a desktop bundle.

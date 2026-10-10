@@ -34,7 +34,7 @@ What works now:
   field of view and the graph camera. Mario and the camera run in the original
   frame order; **complete frames match the decomp word for word** (19,512
   authored frames in CI, 77,112 on Bob-omb Battlefield with your ROM).
-- **Mario mode in the viewer**: the keyboard drives that same frame at 30 Hz,
+- **Mario mode in the viewer**: keyboard or a mapped controller drives that same frame at 30 Hz,
   the window draws through the original camera (interpolated between frames),
   and every run can be recorded and replayed exactly against the decomp.
 - **Mario's model from your ROM**: his geo layout and display lists, posed each
@@ -77,7 +77,7 @@ decompilation; see [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md).
 | Crate | Path | Purpose |
 | --- | --- | --- |
 | `rustario64` | `.` | GPU-free core: import, content, simulation (Mario, the reference camera, the game frame), the play session that drives it from held controls, traces, headless CLI |
-| `rustario64-render` | `render/` | Optional wgpu renderer and the `rustario64-viewer` development binary |
+| `rustario64-render` | `render/` | Optional wgpu renderer, controller input, `rustario64-viewer` diagnostics and `rustario64-desktop` launcher |
 | `rustario64-oracle` | `oracle/` | Development-only: the pinned CC0 decomp's collision, math, Mario, camera and object code compiled natively for bitwise component and full-tick differential tests (needs a C compiler); never a runtime dependency |
 
 The core never depends on the renderer, so simulation and replay comparisons run
@@ -88,12 +88,14 @@ without a GPU or window.
 Rust 1.99.0 (current stable as of 2026-10-08) with rustfmt and Clippy is selected
 by `rust-toolchain.toml`. Linux x86_64 is the locally checked platform. CI also builds/tests the Rust
 runtime on Windows x86_64. Both targets passed build/test/package CI at
-`be65225`; consult each new run before treating that revision as verified. Dependencies use
+`8abf4e8`; consult each new run before treating that revision as verified. Dependencies use
 compatible SemVer requirements; committed Cargo.lock and `--locked` make builds
 reproducible. Upgrade the toolchain and lockfile together and rerun the component
 oracles; compiler age is not a requirement for original gameplay behavior.
 
 ```sh
+# Linux desktop builds need pkg-config and libudev development files:
+# sudo apt-get install pkg-config libudev-dev
 rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
 cargo fmt --all --check
 cargo test --locked --workspace --all-targets
@@ -117,11 +119,15 @@ schedules with identical tick records. This tests scaffolding, not Mario.
 
 ### Desktop test bundles
 
-The `Desktop runtime` jobs build the two Rust runtime binaries on Linux and
+The `Desktop runtime` jobs build the three Rust runtime binaries on Linux and
 Windows and upload `rustario64-linux-x86_64` / `rustario64-windows-x86_64` ZIPs
 as workflow artifacts. The C oracle, ROMs, caches and extracted content never
-ship. Open `rustario64-viewer` (double-click on Windows, or run it without arguments)
-for the local ROM launcher. CLI entry points remain available for diagnostics and recording.
+ship. Open `rustario64-desktop.exe` on Windows for the ROM-selection window
+without a console. Open `rustario64-desktop` on Linux (file-manager execution
+depends on the desktop). Browse, type a path or drop your ROM, then select Play.
+Pause/settings includes controller selection and Choose another ROM.
+`rustario64-viewer` without arguments also opens the launcher; its console
+entry points remain available for diagnostics and recording.
 See [docs/PLAYTEST.md](docs/PLAYTEST.md) for commands, controls and missing features.
 
 Settings live in `%APPDATA%/rustario64/settings.json` on Windows and
@@ -209,6 +215,14 @@ overlay. Coin shadows and original HUD glyphs remain pending. Offscreen
 `--mario-ticks` images include coins/sparkles; the text overlay is window-only.
 
 #### Move Mario
+
+Basic controllers: left stick moves, A/Cross jumps, B/Circle attacks,
+LT/LB/RT crouches, RB changes camera, right stick or D-pad supplies C buttons,
+and Start pauses/resumes. Choose a controller in the launcher or pause menu.
+Disconnecting it pauses play. Center sticks and release buttons after a pause,
+focus change or restart before controller input resumes. Keyboard remains usable.
+Remapping, calibration, rumble and menu navigation are future work; see the
+mapping and hardware checklist in [docs/PLAYTEST.md](docs/PLAYTEST.md).
 
 ```sh
 # Window: Mario mode from the start, recording each run's inputs privately

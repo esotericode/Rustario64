@@ -9,15 +9,16 @@ original HUD value (which counts up every other tick). Coin positions interpolat
 texture animation stays at 30 Hz. Coin shadows and original HUD typography are
 pending. Missions, every other object (including the cannon lid), camera
 cutscenes, original pause behavior, water/cutscene actions, warps, saves,
-gamepad controls and audio are missing. Play stops on
+audio are missing. Basic controller input is available; remapping, calibration,
+rumble and controller-driven menu navigation are pending. Play stops on
 unsupported paths; R re-enters.
 
 ## Start
 
 Windows and Linux ZIP builds are attached to successful runs of the
 [Rust foundation workflow](https://github.com/esotericode/Rustario64/actions/workflows/rust.yml).
-Choose the latest successful run for the branch under test (this coin drawing
-increment is on `codex/bob-coin-presentation`), then
+Choose the latest successful run for the branch under test (this controller and
+desktop-launching increment is on `codex/controller-desktop-launch`), then
 download `rustario64-windows-x86_64` or `rustario64-linux-x86_64` under Artifacts.
 GitHub's artifact ZIP contains the runtime ZIP; extract both layers. The build
 identifier is in the runtime folder's BUILD_INFO.txt.
@@ -26,11 +27,17 @@ Extract the whole ZIP. Keep your own ROM outside this folder. Only the original
 8 MiB US v1.0 ROM is supported, identified after byte-order normalization by
 SHA-1 `9bef1128717f958171a4afac3ed78ee2bb4e86ce` (Z64, V64 or N64).
 The build contains no ROM or game assets; it imports your ROM locally at launch.
-Open `rustario64-viewer.exe` on Windows or run `./rustario64-viewer` on Linux.
+Double-click `rustario64-desktop.exe` on Windows; it opens the ROM-selection
+window without a console. Open `rustario64-desktop` on Linux; if your file
+manager does not execute programs, run `./rustario64-desktop` once from a terminal.
+The viewer and desktop launcher must stay in the same extracted folder.
 Choose Browse, enter a local path, or drag the ROM into the launcher, then select
 Play. Unsupported or unreadable ROMs show an error and allow another selection.
 Remembering the path is opt-in and happens after successful validation/import.
-The launcher offers interpolation, fog, VSync, fullscreen and window-size choices.
+The launcher offers interpolation, fog, VSync, fullscreen, window-size choices
+and controller selection. It scrolls to fit smaller windows. Pause/settings has
+Choose another ROM, which returns to selection in the same window. Every selected
+file is validated even when the supported ROM's imported data is reused.
 Settings are stored separately from content in `%APPDATA%/rustario64/settings.json`
 or `$XDG_CONFIG_HOME/rustario64/settings.json` (default `~/.config` on Linux).
 Invalid settings fall back to defaults with an error. Linux Browse needs a desktop
@@ -52,7 +59,7 @@ Linux (terminal, in the extracted folder):
 ./rustario64-viewer view "$HOME/Games/sm64.z64" --mario --record private/runs
 ```
 
-Linux needs a compatible system Vulkan or GL driver and X11/Wayland libraries
+Linux needs libudev, a compatible system Vulkan or GL driver and X11/Wayland libraries
 (for example libxkbcommon-x11-0 for X11). Windows needs a compatible GPU driver.
 The current CI uses Ubuntu 24.04 and Windows Server 2025 x86_64; older desktop
 OS versions and physical GPU/controller combinations need human testing.
@@ -70,6 +77,33 @@ and pending taps. No game frames run while paused/unfocused or inspecting; elaps
 time and catch-up backlog from those periods are discarded. A running stall keeps
 its backlog, draining at most eight fixed ticks per displayed frame. The development
 pause freezes the camera too; the original game’s pause-camera behavior is pending.
+
+Mapped controllers use physical button positions (Xbox / PlayStation labels):
+
+| Controller control | Original input / desktop action |
+| --- | --- |
+| Left stick | Analog N64 stick; partial deflection walks |
+| A / Cross (south face button) | A: jump |
+| B / Circle (east face button) | B: punch/dive |
+| LT / L2, LB / L1, or RT / R2 | Z: crouch/ground pound |
+| RB / R1 | R: Lakitu/Mario camera |
+| Right stick or D-pad | C buttons: rotate, zoom and first person |
+| Start / Options | Development pause/resume |
+
+The first connected controller is selected automatically. Select another or
+Keyboard only in the launcher or pause menu; this choice lasts for the session.
+Keyboard and controller buttons combine; held WASD takes movement priority.
+The left stick has no additional host dead zone: normalized axes map to a
+circular radius of 80 raw units, then the original controller applies its dead
+zone/clamp at 30 Hz. Right-stick camera directions use 0.55 press / 0.4 release
+thresholds; analog triggers use 0.5 / 0.4. Short button/camera taps reach one tick.
+Disconnecting the selected controller pauses and releases inputs. After focus,
+pause, restart, inspection or device changes, release buttons and center sticks
+before controller gameplay rearms. Reconnection stays paused until resumed.
+Start works in play/pause; other menus currently use mouse and keyboard.
+Unmapped devices may require an SDL-compatible mapping through
+`SDL_GAMECONTROLLERCONFIG`. A backend error appears in the menu and keyboard
+controls remain usable. Physical controller compatibility still needs testing.
 
 Presentation flags: `--msaa 4`, `--no-fog`, `--no-cull`, `--size 1280x960`,
 `--no-interpolation`, `--fullscreen`, `--no-vsync`. C/P/F toggle collision, placements and fog in the window.
@@ -99,3 +133,14 @@ counts up. Check at 60 Hz and higher with interpolation on/off, then pause,
 resume, change focus, toggle M and restart: objects must not streak from old
 positions or reappear after collection. Missing actors are listed by the
 importer; this remains exploration, not a completed mission.
+
+## Controller and launcher checks
+
+Open the desktop launcher by double-click, browse to your local ROM, and play.
+Test gradual walk/run deflection, jump, dive, ground pound, C-button rotation,
+zoom/C-Up and R camera. Check brief taps at 60 Hz or faster and simultaneous
+keyboard/controller presses. Pause with Start, hold controls across a focus
+change, unplug while moving, reconnect, then resume: no stale movement or taps
+should occur. Try two controllers and Keyboard only. Choose another ROM, test
+an unreadable/unsupported file, then select the valid ROM again. Report controller
+model, USB/Bluetooth, mapping and OS alongside the normal build/GPU details.

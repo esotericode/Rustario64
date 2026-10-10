@@ -628,7 +628,7 @@ fn camera_frames_are_identical_at_every_presentation_rate() {
 
 /// Held controls as a player gives them: segments of held directions,
 /// buttons, C buttons and R, with single-tick taps and releases between.
-fn held_controls(seed: u64, ticks: usize) -> Vec<Pad> {
+fn held_controls(seed: u64, ticks: usize, analog: bool) -> Vec<Pad> {
     let mut rng = Lcg(seed ^ 0x9AD);
     let mut pad = Pad::default();
     (0..ticks)
@@ -648,7 +648,19 @@ fn held_controls(seed: u64, ticks: usize) -> Vec<Pad> {
                     c_down: rng.chance(10),
                     c_left: rng.chance(6),
                     c_right: rng.chance(6),
+                    analog_stick: analog.then(|| {
+                        rustario64::play::analog_stick(
+                            (rng.next() % 201) as f32 / 100.0 - 1.0,
+                            (rng.next() % 201) as f32 / 100.0 - 1.0,
+                        )
+                    }),
                 };
+                if analog {
+                    pad.up = false;
+                    pad.down = false;
+                    pad.left = false;
+                    pad.right = false;
+                }
             } else if rng.chance(6) {
                 match rng.next() % 5 {
                     0 => pad.a ^= true,
@@ -669,6 +681,15 @@ fn held_controls(seed: u64, ticks: usize) -> Vec<Pad> {
 /// Re-entering the level and playing the same controls gives the same words.
 #[test]
 fn played_sessions_with_the_camera_replay_exactly_in_the_decomp() {
+    compare_played_sessions(false);
+}
+
+#[test]
+fn desktop_analog_sessions_replay_exactly_in_the_decomp() {
+    compare_played_sessions(true);
+}
+
+fn compare_played_sessions(analog: bool) {
     let stream = playground();
     let world = world(&stream);
     let trig = computed_tables();
@@ -689,7 +710,7 @@ fn played_sessions_with_the_camera_replay_exactly_in_the_decomp() {
         let s = scenario(&world, &trig, &anims, yaw, pos, seed as u16);
         let mut session = Session::new(&world, &trig, &anims, s.objects.clone(), s.entry);
         let initial = capture_game(session.game());
-        let controls = held_controls(seed as u64, 600);
+        let controls = held_controls(seed as u64, 600, analog);
         let mut words = vec![initial];
         for (tick, pad) in controls.iter().enumerate() {
             if !session.step(pad) {
@@ -750,12 +771,97 @@ fn played_sessions_with_the_camera_replay_exactly_in_the_decomp() {
         yaws.extend(log.inputs.iter().map(|i| i.camera_yaw));
     }
     println!(
-        "played sessions with the camera: {frames} frames identical, {} camera yaws, modes {:?}",
+        "played sessions with the camera (analog={analog}): {frames} frames identical, {} camera yaws, modes {:?}",
         yaws.len(),
         modes
     );
     assert!(frames > 1500, "sessions stopped early: {frames} frames");
     assert!(yaws.len() > 100, "the camera barely turned");
+}
+
+#[test]
+#[ignore = "requires RUSTARIO64_ROM; desktop analog profile at BOB's script start with coins"]
+fn bob_desktop_analog_session_replays_every_word_in_the_decomp() {
+    use rustario64::import::{animation, bob, collision, engine, mio0, objects, rom::Rom, version};
+    let path = std::env::var_os("RUSTARIO64_ROM").expect("set RUSTARIO64_ROM");
+    let rom = Rom::open(std::path::Path::new(&path)).unwrap();
+    let imported = bob::import(&rom).unwrap();
+    let trig = engine::trig_tables(&rom).unwrap();
+    let anims = animation::mario_animations(&rom).unwrap();
+    let content = objects::bob(
+        &rom,
+        &imported.level,
+        rustario64::content::Act::new(1).unwrap(),
+    )
+    .unwrap();
+    let world = CollisionWorld::load_area_terrain(&imported.collision).unwrap();
+    let range = version::BOB_TERRAIN;
+    let terrain = mio0::decode(
+        rom.reader().slice(range.start, range.len()).unwrap(),
+        version::MAX_SEGMENT_BYTES,
+    )
+    .unwrap();
+    let start = (version::BOB_COLLISION & 0xffffff) as usize;
+    let (_, consumed) = collision::decode(&terrain[start..]).unwrap();
+    let stream: Vec<i16> = terrain[start..start + consumed]
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|b| i16::from_be_bytes(*b))
+        .collect();
+    let oracle = Oracle::load(&stream);
+    oracle.set_trig(trig.sine_table(), trig.arctan_table());
+    oracle.set_mario_animations(&anims);
+    let entry = GameEntry::script_start(
+        &imported.level,
+        &imported.visual.as_ref().unwrap().camera.unwrap(),
+    )
+    .unwrap();
+    let scenario = GameScenario {
+        collision: &world,
+        trig: &trig,
+        anims: &anims,
+        objects: content.level_objects(),
+        entry,
+    };
+    let mut session = Session::new(&world, &trig, &anims, scenario.objects.clone(), entry);
+    let mut words = vec![capture_game(session.game())];
+    for pad in held_controls(0, 600, true) {
+        if !session.step(&pad) || matches!(session.stopped(), Some(Stop::Panic(_))) {
+            break;
+        }
+        words.push(capture_game(session.game()));
+    }
+    let log = session.input_log(
+        "desktop-analog-test",
+        rom.fingerprint(),
+        rustario64::play::BOB_SCRIPT_START,
+    );
+    let log = InputLog::from_json(&log.to_json_pretty()).unwrap();
+    let inputs = &log.inputs[..words.len() - 1];
+    assert!(
+        inputs
+            .iter()
+            .any(|i| i.stick != [0, 0] && i.stick[0].abs() < 57)
+    );
+    let native = scenario.native(&oracle, inputs);
+    for (i, (expected, actual)) in native.iter().zip(&words).enumerate() {
+        assert!(
+            first_difference(expected, actual).is_none(),
+            "BOB analog frame {i}: {:?}",
+            first_difference(expected, actual)
+        );
+    }
+    println!(
+        "BOB desktop analog session: {} frames identical, including all object/HUD/camera words",
+        inputs.len()
+    );
+    assert_eq!(
+        inputs.len(),
+        600,
+        "analog session stopped early: {:?}",
+        session.stopped()
+    );
 }
 
 #[test]

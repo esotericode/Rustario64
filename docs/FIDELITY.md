@@ -659,3 +659,23 @@ existing independent native frame comparisons remain the simulation evidence;
 these new drawing tests establish read-only presentation and exercised visual
 paths, not pixel equivalence with the original renderer. Coin shadows and
 original HUD typography remain absent.
+
+
+## Desktop controller input (session 19, 2026-10-10)
+
+Desktop profile v1 maps normalized axes into raw stick bytes, before the existing
+reference controller processing. Authored host-event tests cover partial/full
+and diagonal deflection, button aliases, short taps, camera hysteresis and D-pad
+sources, neutral gates, Start edges, selection, unplug/reconnect and keyboard
+composition. The existing 3,600-frame keyboard session replay remains intact.
+A separate 3,600-frame analog session test uses six authored starts and verifies
+every Mario/camera word, serialized log replay, pause snapping and reset against
+the native decomp. With the owner's ROM, a further 600-frame analog session at
+BOB's script start compares every Mario, camera, HUD, object/list/free-list and
+RNG word against native C. All are identical in optimized builds.
+
+The desktop tests also validate local ROM import, return/reselection, failure
+recovery and reuse of the imported level, without a window. egui form generation
+is tested at 800×720 and 640×480. These tests are not physical controller, native
+file-dialog, desktop double-click or N64 hardware validation. Those human checks
+remain in docs/PLAYTEST.md. No movement, camera or object rules are changed.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package only the two Rust runtime binaries and required notices (MIT).
+"""Package only the three Rust runtime binaries and required notices (MIT).
 
 Never walks target/, private/, or the repository to discover bundle files.
 The native C oracle and all ROM-derived content are excluded by construction.
@@ -7,13 +7,20 @@ The native C oracle and all ROM-derived content are excluded by construction.
 import argparse
 import json
 import subprocess
+import shutil
+import stat
+import struct
 from pathlib import Path
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGETS = {"linux-x86_64": "", "windows-x86_64": ".exe"}
 TRIPLES = {"linux-x86_64": "x86_64-unknown-linux-gnu", "windows-x86_64": "x86_64-pc-windows-msvc"}
+RUNTIME_BINARIES = ["rustario64", "rustario64-viewer", "rustario64-desktop"]
 FALLBACK_LICENSES = {
+    ("gilrs", "0.11.2"): [ROOT / "LICENSES/dependencies/gilrs-0.11.2-MIT.txt",
+                           ROOT / "LICENSES/dependencies/gilrs-0.11.2-controller-db-ZLIB.txt"],
+    ("gilrs-core", "0.6.8"): [ROOT / "LICENSES/dependencies/gilrs-0.11.2-MIT.txt"],
     ("gl_generator", "0.14.0"): [ROOT / "LICENSES/dependencies/gl_generator-0.14.0-APACHE.txt"],
     ("khronos_api", "3.1.0"): [ROOT / "LICENSES/dependencies/khronos_api-3.1.0-APACHE.txt"],
     ("profiling", "1.0.18"): [ROOT / "LICENSES/dependencies/profiling-1.0.18-MIT.txt"],
@@ -67,15 +74,36 @@ def dependency_notices(metadata: dict) -> str:
     return "\n".join(out)
 
 
+def windows_subsystem(path: Path) -> int:
+    """Read the bounded PE headers; verify the packaged Windows x64 entry point."""
+    with path.open("rb") as source:
+        dos = source.read(64)
+        if len(dos) != 64 or dos[:2] != b"MZ":
+            raise ValueError(f"not a Windows executable: {path}")
+        offset = struct.unpack_from("<I", dos, 60)[0]
+        if not 64 <= offset <= 4096:
+            raise ValueError(f"invalid PE header offset: {path}")
+        source.seek(offset)
+        header = source.read(94)
+        if len(header) != 94 or header[:4] != b"PE\0\0" or struct.unpack_from("<H", header, 4)[0] != 0x8664 or struct.unpack_from("<H", header, 24)[0] != 0x20B:
+            raise ValueError(f"not a Windows x64 PE executable: {path}")
+        return struct.unpack_from("<H", header, 92)[0]
+
+
 def package(target: str, release_dir: Path, output: Path, notices: str, build_info: str) -> Path:
     suffix = TARGETS[target]
     files = [(release_dir / (name + suffix), name + suffix)
-             for name in ["rustario64", "rustario64-viewer"]]
+             for name in RUNTIME_BINARIES]
     files += [(ROOT / name, "README.md" if name == "docs/PLAYTEST.md" else name)
               for name in NOTICES]
     for source, _ in files:
         if source.is_symlink() or not source.is_file():
             raise ValueError(f"missing regular bundle file: {source}")
+    if target == "windows-x86_64":
+        for name in RUNTIME_BINARIES:
+            expected = 2 if name == "rustario64-desktop" else 3
+            if windows_subsystem(release_dir / (name + suffix)) != expected:
+                raise ValueError(f"incorrect Windows GUI/console subsystem: {name}")
     output.mkdir(parents=True, exist_ok=True)
     archive = output / f"rustario64-{target}.zip"
     # An existing artifact is an error so partial/old bundles cannot be reused.
@@ -83,7 +111,16 @@ def package(target: str, release_dir: Path, output: Path, notices: str, build_in
         bundle.writestr(f"rustario64-{target}/THIRD_PARTY_NOTICES.txt", notices)
         bundle.writestr(f"rustario64-{target}/BUILD_INFO.txt", build_info)
         for source, destination in files:
-            bundle.write(source, f"rustario64-{target}/{destination}")
+            name = f"rustario64-{target}/{destination}"
+            if target == "linux-x86_64" and destination in RUNTIME_BINARIES:
+                info = zipfile.ZipInfo.from_file(source, name)
+                info.create_system = 3
+                info.external_attr = (stat.S_IFREG | 0o755) << 16
+                info.compress_type = zipfile.ZIP_DEFLATED
+                with source.open("rb") as data, bundle.open(info, "w") as entry:
+                    shutil.copyfileobj(data, entry)
+            else:
+                bundle.write(source, name)
     return archive
 
 

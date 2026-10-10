@@ -30,6 +30,7 @@ use rustario64::{
 use rustario64_render::{
     RenderOptions, Renderer, camera,
     camera::FlyCamera,
+    controller::Controllers,
     desktop::{FrameClock, Settings, Ui},
     overlay, play as present,
 };
@@ -649,6 +650,8 @@ struct App {
     settings: Settings,
     settings_error: Option<String>,
     initial_overlays: (bool, bool),
+    controllers: Controllers,
+    choose_rom: bool,
 }
 
 fn create_gpu(
@@ -717,6 +720,7 @@ impl App {
         self.last = None;
         self.keys = Keys::default();
         self.play.release_all();
+        self.controllers.clear();
         self.play.session.snap_presentation();
         self.objects.drawer.snap();
         if let Some(mario) = self.mario.as_mut() {
@@ -737,6 +741,7 @@ impl App {
         self.objects.reset(&self.play.session);
         self.play.reported_stop = false;
         self.play.release_all();
+        self.controllers.clear();
         self.clock.reset();
         if let Some(mario) = self.mario.as_mut() {
             mario.reset(&self.play.session, &self.camera);
@@ -744,6 +749,18 @@ impl App {
     }
 
     fn redraw(&mut self) {
+        let actions = self.controllers.poll(
+            self.play.active
+                && self.focused
+                && !self.paused
+                && self.play.session.stopped().is_none(),
+            self.focused,
+        );
+        if actions.disconnected {
+            self.pause(true);
+        } else if actions.pause {
+            self.pause(!self.paused);
+        }
         let now = Instant::now();
         let elapsed = self.last.map_or(Duration::ZERO, |last| now - last);
         self.last = Some(now);
@@ -757,7 +774,7 @@ impl App {
         let play = &mut self.play;
         if running {
             for _ in 0..drained {
-                let pad = play.next_pad();
+                let pad = play.next_pad().combined(&self.controllers.next_pad());
                 if play.session.step(&pad) {
                     self.objects.tick(&play.session);
                     // The render pass picks the level of detail from the
@@ -852,20 +869,26 @@ impl App {
                     .collapsible(false)
                     .default_width(380.0)
                     .show(ctx, |ui| {
-                        ui.heading("Bob-omb Battlefield");
-                        if let Some(stop) = play.session.stopped() {
-                            ui.label(format!("Play stopped: {stop}"));
-                        }
-                        self.settings.controls(ui);
-                        ui.separator();
-                        ui.label("WASD move · Space jump · J attack · K crouch");
-                        ui.label("Arrows: C buttons · E: R camera · R: restart");
-                        if let Some(error) = &self.settings_error {
-                            ui.colored_label(egui::Color32::LIGHT_RED, error);
-                        }
-                        resume = ui.button("Resume · Esc").clicked();
-                        restart = ui.button("Restart course").clicked();
-                        quit = ui.button("Quit").clicked();
+                        egui::ScrollArea::vertical()
+                            .max_height((ctx.content_rect().height() - 60.0).max(100.0))
+                            .show(ui, |ui| {
+                                ui.heading("Bob-omb Battlefield");
+                                if let Some(stop) = play.session.stopped() {
+                                    ui.label(format!("Play stopped: {stop}"));
+                                }
+                                self.settings.controls(ui);
+                                ui.separator();
+                                ui.label("WASD move · Space jump · J attack · K crouch");
+                                ui.label("Arrows: C buttons · E: R camera · R: restart");
+                                self.controllers.controls(ui);
+                                if let Some(error) = &self.settings_error {
+                                    ui.colored_label(egui::Color32::LIGHT_RED, error);
+                                }
+                                resume = ui.button("Resume · Esc / Start").clicked();
+                                restart = ui.button("Restart course").clicked();
+                                self.choose_rom = ui.button("Choose another ROM").clicked();
+                                quit = ui.button("Quit").clicked();
+                            });
                     });
             }
         });
@@ -978,6 +1001,7 @@ impl App {
                 // Held keys belong to the mode they were pressed in.
                 self.keys = Keys::default();
                 self.play.release_all();
+                self.controllers.clear();
                 self.play.active ^= true;
                 self.clock.reset();
                 self.play.session.snap_presentation();
@@ -1194,6 +1218,8 @@ fn make_app(level: Level, options: &Options) -> AppResult<App> {
         },
         settings_error: None,
         initial_overlays: (options.collision, options.placements),
+        controllers: Controllers::default(),
+        choose_rom: false,
     };
     Ok(app)
 }
@@ -1214,13 +1240,23 @@ fn finish_app(app: &mut App) -> AppResult<()> {
 
 fn view(rom_path: &Path, options: &Options) -> AppResult<()> {
     let mut app = make_app(load(rom_path)?, options)?;
-    let event_loop = EventLoop::new()?;
-    let result = event_loop.run_app(&mut app);
-    result?;
-    finish_app(&mut app)
+    app.controllers = Controllers::new();
+    let mut desktop = Desktop {
+        gpu: None,
+        settings: app.settings.clone(),
+        path: rom_path.to_string_lossy().into_owned(),
+        remember: app.settings.rom_path.is_some(),
+        game: Some(app),
+        error: None,
+        fatal: None,
+        controllers: Controllers::default(),
+        parked_level: None,
+    };
+    run_desktop(&mut desktop)
 }
 
 /// One event loop and one GPU/window across launcher and play.
+#[derive(Default)]
 struct Desktop {
     gpu: Option<Gpu>,
     game: Option<App>,
@@ -1229,10 +1265,34 @@ struct Desktop {
     remember: bool,
     error: Option<String>,
     fatal: Option<String>,
+    controllers: Controllers,
+    /// The only supported ROM has one identity. Keep its imported data when
+    /// returning to selection, and revalidate each selected file before reuse.
+    parked_level: Option<Level>,
 }
 
 impl Desktop {
+    fn return_to_launcher(&mut self) {
+        let Some(mut game) = self.game.take() else {
+            return;
+        };
+        self.error = finish_app(&mut game).err().map(|e| e.to_string());
+        self.settings = game.settings;
+        self.controllers = game.controllers;
+        self.controllers.clear();
+        self.parked_level = Some(game.level);
+        if let Some(mut gpu) = game.gpu.take() {
+            gpu.renderer.load_model(&VisualModel::default());
+            gpu.window.set_fullscreen(None);
+            gpu.window.set_title("Rustario64 — Select ROM");
+            let _ = gpu.window.request_inner_size(PhysicalSize::new(800, 720));
+            gpu.window.request_redraw();
+            self.gpu = Some(gpu);
+        }
+    }
+
     fn redraw(&mut self, event_loop: &ActiveEventLoop) {
+        self.controllers.poll(false, false);
         let Some(gpu) = self.gpu.as_mut() else { return };
         let frame = match gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
@@ -1246,68 +1306,14 @@ impl Desktop {
         let input = gpu.ui.input.take_egui_input(&gpu.window);
         let mut start = false;
         let output = gpu.ui.context.run_ui(input, |root| {
-            egui::CentralPanel::default().show(root, |_ui| {});
-            egui::Window::new("Rustario64 launcher")
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .title_bar(false)
-                .resizable(false)
-                .collapsible(false)
-                .default_width(540.0)
-                .show(root.ctx(), |ui| {
-                    ui.set_width(540.0);
-                    ui.heading(egui::RichText::new("Rustario64").size(42.0));
-                    ui.label("Bob-omb Battlefield · development build");
-                    ui.add_space(20.0);
-                    ui.label("Choose your Super Mario 64 ROM");
-                    ui.horizontal(|ui| {
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.path)
-                                .hint_text("Local .z64, .v64 or .n64 path")
-                                .desired_width(370.0),
-                        );
-                        if ui.button("Browse…").clicked()
-                            && let Some(path) = rfd::FileDialog::new()
-                                .add_filter("Nintendo 64 ROM", &["z64", "v64", "n64"])
-                                .pick_file()
-                        {
-                            self.path = path.to_string_lossy().into_owned();
-                            self.error = None;
-                        }
-                    });
-                    ui.checkbox(
-                        &mut self.remember,
-                        "Remember this ROM path on this computer",
-                    );
-                    ui.label("Original US v1.0 · ROM stays on your computer");
-                    ui.add_space(10.0);
-                    self.settings.controls(ui);
-                    egui::ComboBox::from_label("Window size")
-                        .selected_text(format!(
-                            "{} × {}",
-                            self.settings.size[0], self.settings.size[1]
-                        ))
-                        .show_ui(ui, |ui| {
-                            for size in [[960, 720], [1280, 960], [1920, 1080]] {
-                                ui.selectable_value(
-                                    &mut self.settings.size,
-                                    size,
-                                    format!("{} × {}", size[0], size[1]),
-                                );
-                            }
-                        });
-                    if let Some(error) = &self.error {
-                        ui.colored_label(egui::Color32::LIGHT_RED, error);
-                    }
-                    start = ui
-                        .add_enabled(
-                            !self.path.trim().is_empty(),
-                            egui::Button::new("Play Bob-omb Battlefield"),
-                        )
-                        .clicked();
-                    ui.small(
-                        "Early exploration: objects, stars, audio and saves are still being built.",
-                    );
-                });
+            start = launcher_form(
+                root,
+                &mut self.path,
+                &mut self.remember,
+                &mut self.settings,
+                &mut self.controllers,
+                &mut self.error,
+            );
         });
         let view = frame
             .texture
@@ -1332,7 +1338,7 @@ impl Desktop {
             // Validate identity and complete the import before replacing the
             // launcher; every error keeps a usable selection window.
             let path = PathBuf::from(self.path.trim());
-            let result = load(&path).and_then(|level| {
+            let result = load_selected(&path, &mut self.parked_level).and_then(|level| {
                 let mut options = parse(&[])?;
                 options.mario = true;
                 options.interpolation = self.settings.interpolation;
@@ -1347,6 +1353,8 @@ impl Desktop {
                     self.settings.rom_path = self.remember.then_some(path);
                     app.settings = self.settings.clone();
                     app.settings_error = self.settings.save().err();
+                    self.controllers.clear();
+                    app.controllers = std::mem::take(&mut self.controllers);
                     let mut gpu = self.gpu.take().unwrap();
                     let _ = gpu.window.request_inner_size(PhysicalSize::new(
                         self.settings.size[0],
@@ -1375,6 +1383,93 @@ impl Desktop {
     }
 }
 
+fn launcher_form(
+    root: &mut egui::Ui,
+    path: &mut String,
+    remember: &mut bool,
+    settings: &mut Settings,
+    controllers: &mut Controllers,
+    error: &mut Option<String>,
+) -> bool {
+    let width = (root.ctx().content_rect().width() - 48.0).clamp(260.0, 540.0);
+    let height = (root.ctx().content_rect().height() - 60.0).max(100.0);
+    let mut start = false;
+    egui::CentralPanel::default().show(root, |_ui| {});
+    egui::Window::new("Rustario64 launcher")
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .title_bar(false)
+        .resizable(false)
+        .collapsible(false)
+        .default_width(width)
+        .show(root.ctx(), |ui| {
+            ui.set_width(width);
+            egui::ScrollArea::vertical()
+                .max_height(height)
+                .show(ui, |ui| {
+                    ui.heading(egui::RichText::new("Rustario64").size(42.0));
+                    ui.label("Bob-omb Battlefield · development build");
+                    ui.add_space(20.0);
+                    ui.label("Choose your Super Mario 64 ROM");
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(path)
+                                .hint_text("Local .z64, .v64 or .n64 path")
+                                .desired_width(width - 110.0),
+                        );
+                        if ui.button("Browse…").clicked()
+                            && let Some(selected) = rfd::FileDialog::new()
+                                .add_filter("Nintendo 64 ROM", &["z64", "v64", "n64"])
+                                .pick_file()
+                        {
+                            *path = selected.to_string_lossy().into_owned();
+                            *error = None;
+                        }
+                    });
+                    ui.checkbox(remember, "Remember this ROM path on this computer");
+                    ui.label("Original US v1.0 · ROM stays on your computer");
+                    ui.add_space(10.0);
+                    settings.controls(ui);
+                    ui.separator();
+                    controllers.controls(ui);
+                    egui::ComboBox::from_label("Window size")
+                        .selected_text(format!("{} × {}", settings.size[0], settings.size[1]))
+                        .show_ui(ui, |ui| {
+                            for size in [[960, 720], [1280, 960], [1920, 1080]] {
+                                ui.selectable_value(
+                                    &mut settings.size,
+                                    size,
+                                    format!("{} × {}", size[0], size[1]),
+                                );
+                            }
+                        });
+                    if let Some(error) = error.as_ref() {
+                        ui.colored_label(egui::Color32::LIGHT_RED, error);
+                    }
+                    start = ui
+                        .add_enabled(
+                            !path.trim().is_empty(),
+                            egui::Button::new("Play Bob-omb Battlefield"),
+                        )
+                        .clicked();
+                    ui.small(
+                        "Early exploration: objects, stars, audio and saves are still being built.",
+                    );
+                });
+        });
+    start
+}
+
+fn load_selected(path: &Path, cached: &mut Option<Level>) -> AppResult<Level> {
+    if cached.is_some() {
+        // Revalidate each file even when the only supported identity is cached.
+        // Failures keep the imported level available for the next selection.
+        Rom::open(path)?;
+        Ok(cached.take().unwrap())
+    } else {
+        load(path)
+    }
+}
+
 impl ApplicationHandler for Desktop {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if let Some(game) = self.game.as_mut() {
@@ -1399,6 +1494,9 @@ impl ApplicationHandler for Desktop {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         if let Some(game) = self.game.as_mut() {
             game.window_event(event_loop, id, event);
+            if game.choose_rom {
+                self.return_to_launcher();
+            }
             return;
         }
         if let Some(gpu) = self.gpu.as_mut() {
@@ -1430,7 +1528,7 @@ impl ApplicationHandler for Desktop {
     }
 }
 
-fn launch() -> AppResult<()> {
+fn launch(rom_path: Option<&Path>) -> AppResult<()> {
     let (settings, error) = match Settings::load() {
         Ok(settings) => (settings, None),
         Err(error) => (
@@ -1438,9 +1536,8 @@ fn launch() -> AppResult<()> {
             Some(format!("{error}. Using default settings.")),
         ),
     };
-    let path = settings
-        .rom_path
-        .as_ref()
+    let path = rom_path
+        .or(settings.rom_path.as_deref())
         .map_or(String::new(), |p| p.to_string_lossy().into_owned());
     let mut desktop = Desktop {
         gpu: None,
@@ -1450,12 +1547,18 @@ fn launch() -> AppResult<()> {
         path,
         error,
         fatal: None,
+        controllers: Controllers::new(),
+        parked_level: None,
     };
-    EventLoop::new()?.run_app(&mut desktop)?;
+    run_desktop(&mut desktop)
+}
+
+fn run_desktop(desktop: &mut Desktop) -> AppResult<()> {
+    EventLoop::new()?.run_app(desktop)?;
     if let Some(game) = desktop.game.as_mut() {
         finish_app(game)?;
     }
-    if let Some(error) = desktop.fatal {
+    if let Some(error) = desktop.fatal.take() {
         return Err(error.into());
     }
     Ok(())
@@ -1463,8 +1566,9 @@ fn launch() -> AppResult<()> {
 
 fn run(args: &[String]) -> AppResult<()> {
     match args {
-        [] => launch(),
-        [cmd] if cmd == "launch" => launch(),
+        [] => launch(None),
+        [cmd] if cmd == "launch" => launch(None),
+        [cmd, rom] if cmd == "launch" => launch(Some(Path::new(rom))),
         [cmd, rom, rest @ ..] if cmd == "screenshot" => screenshot(Path::new(rom), &parse(rest)?),
         [cmd, rom, rest @ ..] if cmd == "view" => view(Path::new(rom), &parse(rest)?),
         _ => {
@@ -1483,5 +1587,101 @@ fn main() {
     if let Err(error) = run(&args) {
         eprintln!("error: {error}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn launcher_form_contains_rom_selection_and_controller_controls_on_small_windows() {
+        let context = egui::Context::default();
+        let mut desktop = Desktop::default();
+        for size in [[800.0, 720.0], [640.0, 480.0]] {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(size[0], size[1]),
+                )),
+                ..egui::RawInput::default()
+            };
+            let mut text = String::new();
+            // Anchored windows settle their position on the first UI frame.
+            for _ in 0..2 {
+                let mut start = false;
+                let mut output = context.run_ui(input.clone(), |root| {
+                    start = launcher_form(
+                        root,
+                        &mut desktop.path,
+                        &mut desktop.remember,
+                        &mut desktop.settings,
+                        &mut desktop.controllers,
+                        &mut desktop.error,
+                    );
+                });
+                assert!(!start);
+                output.textures_delta.clear();
+                let frame_text: String = output
+                    .shapes
+                    .into_iter()
+                    .filter_map(|shape| {
+                        if let egui::epaint::Shape::Text(t) = shape.shape {
+                            Some(t.galley.text().to_owned())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                text.push_str(&frame_text);
+            }
+            assert!(text.contains("Rustario64"));
+            assert!(text.contains("Choose your Super Mario 64 ROM"));
+            assert!(text.contains("Browse"));
+            assert!(text.contains("Keyboard only"));
+        }
+    }
+
+    #[test]
+    fn unreadable_rom_selection_is_a_recoverable_error() {
+        let mut cached = None;
+        assert!(load_selected(Path::new("missing-authored-fixture.z64"), &mut cached).is_err());
+        assert!(cached.is_none());
+    }
+
+    #[test]
+    #[ignore = "requires RUSTARIO64_ROM; local launcher import and return without a window"]
+    fn local_launcher_import_return_and_reselection_validate_without_reimporting() {
+        let path = PathBuf::from(std::env::var_os("RUSTARIO64_ROM").expect("set RUSTARIO64_ROM"));
+        let level = load_selected(&path, &mut None).unwrap();
+        let world = level.world as *const CollisionWorld;
+        let anims = level.anims as *const MarioAnimations;
+        let objects = level.objects as *const objects::LevelObjectContent;
+        let mut options = parse(&[]).unwrap();
+        options.mario = true;
+        let mut app = make_app(level, &options).unwrap();
+        assert!(app.play.active);
+        assert!(app.play.session.step(&Pad::default()));
+        let mut desktop = Desktop {
+            game: Some(app),
+            ..Desktop::default()
+        };
+        desktop.return_to_launcher();
+        assert!(desktop.game.is_none());
+        assert!(
+            load_selected(
+                Path::new("missing-authored-fixture.z64"),
+                &mut desktop.parked_level
+            )
+            .is_err()
+        );
+        assert!(desktop.parked_level.is_some());
+        let level = load_selected(&path, &mut desktop.parked_level).unwrap();
+        assert_eq!(level.world as *const CollisionWorld, world);
+        assert_eq!(level.anims as *const MarioAnimations, anims);
+        assert_eq!(level.objects as *const objects::LevelObjectContent, objects);
+        assert!(desktop.parked_level.is_none());
+        let app = make_app(level, &options).unwrap();
+        assert!(app.play.session.inputs().is_empty());
     }
 }

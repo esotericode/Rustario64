@@ -11,8 +11,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install pinned Rust
         run: rustup show active-toolchain # installs rust-toolchain.toml and its components
-      - name: Install software Vulkan for offscreen render tests
-        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+      - name: Install controller build dependencies and software Vulkan
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libudev-dev mesa-vulkan-drivers
       - name: Format
         run: cargo fmt --all --check
       - name: Camera record layout
@@ -46,8 +46,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install pinned Rust
         run: rustup show active-toolchain
+      - name: Install Linux controller build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libudev-dev
       - name: GPU-free runtime tests
         run: cargo test --locked -p rustario64 --all-targets
+      - name: Desktop input, launcher and settings tests
+        run: cargo test --locked -p rustario64-render --lib --bins
       - name: Build runtime binaries (no C oracle)
         run: cargo build --locked --release -p rustario64 -p rustario64-render --bins
       - name: Package runtime and notices (no ROM or assets)

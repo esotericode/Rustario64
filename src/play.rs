@@ -33,8 +33,8 @@ use std::{fmt, panic};
 /// `GameEntry::script_start` builds from BOB's import.
 pub const BOB_SCRIPT_START: &str = "bob-script-start";
 
-/// Held controls: a digital stick with a walk modifier, the A, B, Z and R
-/// buttons, and the four C buttons.
+/// Held controls: a digital stick with a walk modifier or raw analog bytes,
+/// the A, B, Z and R buttons, and the four C buttons.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Pad {
     pub up: bool,
@@ -43,6 +43,9 @@ pub struct Pad {
     pub right: bool,
     /// Partial deflection, for walking.
     pub walk: bool,
+    /// Desktop analog conversion, before the original controller dead zone.
+    /// Any held digital direction takes priority over this sample.
+    pub analog_stick: Option<[i8; 2]>,
     pub a: bool,
     pub b: bool,
     pub z: bool,
@@ -59,6 +62,9 @@ impl Pad {
     /// 64-unit clamp, so every direction gives the full magnitude; walking
     /// uses 40 (28 on diagonals), about half the magnitude.
     pub fn stick(&self) -> [i8; 2] {
+        if !(self.up || self.down || self.left || self.right) {
+            return self.analog_stick.unwrap_or([0, 0]);
+        }
         let x = i8::from(self.right) - i8::from(self.left);
         let y = i8::from(self.up) - i8::from(self.down);
         let reach = match (x != 0 && y != 0, self.walk) {
@@ -102,6 +108,40 @@ impl Pad {
             ..*self
         }
     }
+
+    /// Combine independent devices. Digital movement wins over analog movement;
+    /// buttons are ORed, so releasing one device cannot release the other.
+    pub fn combined(&self, other: &Pad) -> Pad {
+        Pad {
+            up: self.up || other.up,
+            down: self.down || other.down,
+            left: self.left || other.left,
+            right: self.right || other.right,
+            walk: self.walk || other.walk,
+            analog_stick: self.analog_stick.or(other.analog_stick),
+            ..self.with_taps(other)
+        }
+    }
+}
+
+/// Desktop input profile v1: finite host axes, positive Y up, circular unit
+/// clamp, then round to raw N64 bytes at radius 80. No host dead zone or
+/// acceleration: the reference controller applies its own dead zone and clamp.
+/// Replays store these bytes, not host events or device identity.
+pub fn analog_stick(x: f32, y: f32) -> [i8; 2] {
+    let finite = |v: f32| {
+        if v.is_finite() {
+            v.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
+    };
+    let (x, y) = (finite(x), finite(y));
+    let radius = (x * x + y * y).sqrt().max(1.0);
+    [
+        (x / radius * 80.0).round() as i8,
+        (y / radius * 80.0).round() as i8,
+    ]
 }
 
 /// Why a session stopped. The port panics on paths it does not implement
@@ -522,6 +562,38 @@ mod tests {
         };
         assert_eq!(held.with_taps(&taps).buttons(), A_BUTTON | L_CBUTTONS);
         assert!(held.with_taps(&taps).up);
+    }
+
+    #[test]
+    fn desktop_analog_profile_and_device_merge_preserve_raw_inputs() {
+        assert_eq!(analog_stick(1.0, 0.0), [80, 0]);
+        assert_eq!(analog_stick(-1.0, -1.0), [-57, -57]);
+        assert_eq!(analog_stick(0.1, 0.5), [8, 40]);
+        assert_eq!(analog_stick(f32::NAN, f32::INFINITY), [0, 0]);
+        let analog = Pad {
+            analog_stick: Some([12, 36]),
+            a: true,
+            z: true,
+            ..Pad::default()
+        };
+        let keyboard = Pad {
+            left: true,
+            b: true,
+            ..Pad::default()
+        };
+        assert_eq!(Pad::default().combined(&analog).stick(), [12, 36]);
+        let combined = keyboard.combined(&analog);
+        assert_eq!(combined.stick(), [-80, 0]);
+        assert_eq!(combined.buttons(), A_BUTTON | B_BUTTON | Z_TRIG);
+        assert!(analog.combined(&Pad::default()).a);
+        assert!(
+            Pad {
+                a: true,
+                ..Pad::default()
+            }
+            .combined(&Pad::default())
+            .a
+        );
     }
 
     #[test]

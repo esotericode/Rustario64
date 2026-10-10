@@ -198,3 +198,19 @@ The HUD counter reads the original values already translated from
 `hud.c` or its glyph assets. Pool lifetime tokens and interpolation/cache logic
 are authored presentation bookkeeping. Existing CC0/MIT notices apply; all ROM
 models, decoded pixels, test images and recordings remain private.
+
+
+### Controller input and desktop entry point — session 19
+
+The host adapter, analog input profile, desktop process launcher, ROM reselection
+and their tests are authored MIT code. No new decomp source or ROM content is
+copied. gilrs 0.11.2 and gilrs-core 0.6.8 are locked registry dependencies from
+upstream revision `07e286e24b046cf39e5c367daa2770b805a64692`, recorded by both
+published `.cargo_vcs_info.json` files. Their omitted root MIT notice is retained
+byte for byte from [the pinned upstream LICENSE-MIT](https://gitlab.com/gilrs-project/gilrs/-/blob/07e286e24b046cf39e5c367daa2770b805a64692/LICENSE-MIT)
+in `LICENSES/dependencies/gilrs-0.11.2-MIT.txt`. The published gilrs package's
+bundled SDL_GameControllerDB Zlib notice is also retained byte for byte as
+`gilrs-0.11.2-controller-db-ZLIB.txt`; these are open-source device mappings.
+Both notices are included in target-filtered desktop dependency notices.
+Other new registry dependencies retain their packaged notices. Linux dynamically
+uses the system libudev; no system library is copied into runtime bundles.
