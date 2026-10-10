@@ -17,19 +17,26 @@ use crate::{
     import::version::AREA_CAMERA_CALLBACKS,
     simulation::{
         TickInput,
-        camera::system::{self, CameraSystem, Frame, GeoCamera, Level, MarioView, Unsupported},
+        camera::{
+            cutscene::{FocusView, SecondFocusView},
+            system::{self, CameraSystem, Frame, GeoCamera, Level, MarioView, Unsupported},
+        },
         collision::CollisionWorld,
         hud::update_hud_values,
         mario::{
             Event, MarioState, PlayerCameraState, StepWorld,
-            constants::{ACTIVE_FLAG_MOVE_THROUGH_GRATE, MARIO_VANISH_CAP},
-            tick::{
-                LevelEntry, LevelObjects, RenderedFrame, enter_level_with, render_mario_object,
-                update_objects,
+            constants::{
+                ACTIVE_FLAG_MOVE_THROUGH_GRATE, MARIO_VANISH_CAP, O_HELD_STATE, O_POS_X, O_POS_Y,
+                O_POS_Z, SHAKE_SHOCK,
             },
+            render::{RenderView, render_mario},
+            tick::{LevelEntry, LevelObjects, RenderedFrame, enter_level_with, update_objects},
         },
         math::TrigTables,
-        object::{object, render::render_objects},
+        object::{
+            object,
+            render::{RenderedMatrices, camera_matrix, render_objects},
+        },
         rng::Rng,
     },
 };
@@ -97,6 +104,11 @@ pub struct Game<'a> {
     pub mario: MarioState,
     pub world: StepWorld<'a>,
     pub camera: CameraSystem,
+    /// The terrain matrices the last render pass placed objects with
+    /// (presentation only; the pass cleared them).
+    pub rendered_matrices: RenderedMatrices,
+    /// What the last render pass did with Mario's node (presentation).
+    pub rendered_mario: RenderedFrame,
 }
 
 impl<'a> Game<'a> {
@@ -134,6 +146,8 @@ impl<'a> Game<'a> {
             mario,
             world,
             camera,
+            rendered_matrices: RenderedMatrices::new(),
+            rendered_mario: RenderedFrame::default(),
         }
     }
 
@@ -154,15 +168,37 @@ impl<'a> Game<'a> {
         // area_update_objects.
         w.area_update_counter = w.area_update_counter.wrapping_add(1);
         let reported = m.camera_status;
+        // Mario updates before the boss's actor list. His mode requests must
+        // read the boss position from that point, even though the camera
+        // requests are dispatched after the remaining objects update.
+        let request_second_focus = second_focus_view(camera, m, w);
         update_objects(m, w);
+        camera.take_object_cutscene_state(&w.cutscene);
         camera.rig.movement = w.camera_movement_flags as u16;
-        // Mario's requests, in call order, each followed by what it produced.
+        // The objects' camera requests (Mario's and the environmental shakes
+        // of explosions), in call order, each followed by what it produced.
+        // Applying them after the update is equivalent while no request draws
+        // from the random sequence other objects share (see DECISIONS.md).
         let mario_events = std::mem::take(&mut w.events);
         for event in mario_events {
             w.events.push(event);
+            if let Event::EnvironmentalCameraShake(shake) = event {
+                camera.rig.environmental_shake(shake);
+                continue;
+            }
+            if let Event::PointCameraShake { shake, point } = event {
+                camera
+                    .rig
+                    .shake_from_point(shake, point.map(f32::from_bits), w.trig);
+                continue;
+            }
             if !matches!(event, Event::CameraMode { .. } | Event::CameraShake(_)) {
                 continue;
             }
+            assert!(
+                event != Event::CameraShake(SHAKE_SHOCK),
+                "a deferred shock shake would draw randomness after later objects' draws"
+            );
             let mut status = PlayerCameraState {
                 action: reported.action,
                 pos: reported.pos,
@@ -170,6 +206,8 @@ impl<'a> Game<'a> {
                 ..m.camera_status
             };
             let mario = view(m, w);
+            let focus = focus_view(camera, m, w);
+            let second_focus = request_second_focus;
             let mut frame = Frame {
                 world: w.collision,
                 trig: w.trig,
@@ -179,6 +217,10 @@ impl<'a> Game<'a> {
                 mario,
                 rng: &mut w.rng,
                 events: &mut w.events,
+                time_stop_state: &mut w.time_stop_state,
+                dialog: &mut w.dialog,
+                focus,
+                second_focus,
             };
             match event {
                 Event::CameraMode { mode, frames } => {
@@ -202,6 +244,8 @@ impl<'a> Game<'a> {
         update_hud_values(m, w);
         // update_camera.
         let mario = view(m, w);
+        let focus = focus_view(camera, m, w);
+        let second_focus = second_focus_view(camera, m, w);
         let result = camera.update(&mut Frame {
             world: w.collision,
             trig: w.trig,
@@ -211,12 +255,25 @@ impl<'a> Game<'a> {
             mario,
             rng: &mut w.rng,
             events: &mut w.events,
+            time_stop_state: &mut w.time_stop_state,
+            dialog: &mut w.dialog,
+            focus,
+            second_focus,
         });
         share(camera, w);
         // render_game: the camera nodes enclose the object nodes, Mario's first.
         camera.render(m.action, m.camera_status.pos, w.trig);
-        let rendered = render_mario_object(&mut m.obj, w);
-        render_objects(w, &camera.graph);
+        let view = RenderView {
+            camera: camera_matrix(w.trig, &camera.graph),
+            fov: camera.graph.fov,
+            camera_mode: w.camera.mode,
+        };
+        let rendered = render_mario(m, w, &view);
+        self.rendered_mario = rendered;
+        self.rendered_matrices = render_objects(w, &camera.graph);
+        // render_menus_and_dialogs, after the HUD and text labels, which
+        // only draw. gPlayer3Controller is a copy of player 1's.
+        w.dialog.render(w.dialogs, &w.controller, &mut w.events);
         // display_and_vsync.
         w.global_timer = w.global_timer.wrapping_add(1);
         (
@@ -246,6 +303,33 @@ fn view(m: &MarioState, w: &StepWorld<'_>) -> MarioView {
     }
 }
 
+/// gCutsceneFocus's position and hitbox height (the pool slot keeps its
+/// last values after an object unloads, as the original's memory does).
+fn focus_view(camera: &CameraSystem, m: &MarioState, w: &StepWorld<'_>) -> Option<FocusView> {
+    camera.cutscene_focus.map(|id| {
+        let o = object(&w.objects, &m.obj, id);
+        FocusView {
+            pos: [o.raw.f32(O_POS_X), o.raw.f32(O_POS_Y), o.raw.f32(O_POS_Z)],
+            hitbox_height: o.hitbox_height,
+        }
+    })
+}
+
+/// gSecondCameraFocus's position and held state.
+fn second_focus_view(
+    camera: &CameraSystem,
+    m: &MarioState,
+    w: &StepWorld<'_>,
+) -> Option<SecondFocusView> {
+    camera.second_camera_focus.map(|id| {
+        let o = object(&w.objects, &m.obj, id);
+        SecondFocusView {
+            pos: o.pos(),
+            held_state: o.raw.s32(O_HELD_STATE),
+        }
+    })
+}
+
 /// The camera globals Mario's code shares with the camera.
 fn share(camera: &CameraSystem, w: &mut StepWorld<'_>) {
     let c = &camera.rig.camera;
@@ -256,6 +340,7 @@ fn share(camera: &CameraSystem, w: &mut StepWorld<'_>) {
     w.camera.last_mode = camera.rig.last_mode;
     w.camera.level_area = camera.radial.area;
     w.camera_movement_flags = camera.rig.movement as i16;
+    w.cutscene = camera.object_cutscene_state();
 }
 
 /// The unsupported camera path, for messages.

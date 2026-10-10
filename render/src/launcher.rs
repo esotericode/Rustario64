@@ -38,6 +38,13 @@ fn run() -> Result<(), String> {
     if args.next().is_some() {
         return Err("Open Rustario64 without arguments, or with one local ROM path.".into());
     }
+    if rom_path
+        .as_deref()
+        .is_some_and(|arg| arg == "--version" || arg == "-V")
+    {
+        println!("{}", rustario64::APP_TITLE);
+        return Ok(());
+    }
     let output = viewer_command(&executable, rom_path.as_deref())
         .output()
         .map_err(|e| {
@@ -50,7 +57,8 @@ fn run() -> Result<(), String> {
     }
     let detail = String::from_utf8_lossy(&output.stderr);
     Err(format!(
-        "Rustario64 could not start or stopped unexpectedly ({}).\n{}",
+        "{} could not start or stopped unexpectedly ({}).\n{}",
+        rustario64::APP_TITLE,
         output.status,
         detail.trim()
     ))
@@ -59,7 +67,7 @@ fn run() -> Result<(), String> {
 fn main() {
     if let Err(error) = run() {
         rfd::MessageDialog::new()
-            .set_title("Rustario64 could not start")
+            .set_title(format!("{} could not start", rustario64::APP_TITLE))
             .set_description(&error)
             .set_level(rfd::MessageLevel::Error)
             .show();

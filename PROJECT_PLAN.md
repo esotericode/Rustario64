@@ -2,7 +2,11 @@
 
 Last updated: 2026-10-10
 
-Status: M0 complete. M1 imported level works: BOB's original terrain and textures import from the ROM and render through an optional wgpu viewer with collision/placement overlays. M2 in progress: Mario's complete tick (inputs, non-object actions, his object update and animation frame advance, with the ROM's animations) matches the natively compiled decomp per tick, and BOB's original camera (radial, R/close, C-Up, boss-fight modes, shakes, FOV and graph camera) runs with it in the original frame order, matching the decomp word for word per frame. The viewer's Mario mode drives that frame from keyboard or mapped gamepads and draws from the reference camera; recorded runs replay exactly against the decomp with its own camera. Mario's model and display lists import from the ROM and are posed from each tick as the original render pass does. D1 local ROM launcher and D2 development pause/settings are implemented, with a dedicated desktop entry point and ROM reselection; basic analog gamepad input is implemented; blink, LOD and animation/action switches preserve Mario's pose interpolation. Mario's original BOB shadow is implemented and interpolated independently. The original object system (pool, lists, the ROM's behavior scripts through a ported interpreter, object collision) runs in the frame with BOB's coins (yellow coins, every formation type, sparkles, collection), matching the decomp word for word per frame including every object; coins and sparkles are drawn from the ROM in viewer play with interpolated positions and a development overlay reading the original HUD coin count. The original enemy object_step movement component is now ported and compared, ready for Bob-omb integration. Every other object behavior, cutscenes, other areas' camera modes and triggers, cutscene/water actions, warps and missions remain missing.
+Current project version: **0.0.7** (shared change counter, introduced in session 27).
+
+Status: M0 complete. M1 imported level works: BOB's original terrain and textures import from the ROM and render through an optional wgpu viewer with collision/placement overlays. M2 in progress: Mario's complete tick (inputs, non-object actions, his object update and animation frame advance, with the ROM's animations) matches the natively compiled decomp per tick, and BOB's original camera (radial, R/close, C-Up, boss-fight modes, shakes, FOV and graph camera) runs with it in the original frame order, matching the decomp word for word per frame. The viewer's Mario mode drives that frame from keyboard or mapped gamepads and draws from the reference camera; recorded runs replay exactly against the decomp with its own camera. Mario's model and display lists import from the ROM and are posed from each tick as the original render pass does. D1 local ROM launcher and D2 development pause/settings are implemented, with a dedicated desktop entry point and ROM reselection; basic analog gamepad input is implemented; blink, LOD and animation/action switches preserve Mario's pose interpolation. Mario's original BOB shadow is implemented and interpolated independently. The original object system (pool, lists, the ROM's behavior scripts through a ported interpreter, object collision) runs in the frame with BOB's coins (yellow coins, every formation type, sparkles, collection), matching the decomp word for word per frame including every object; coins and sparkles are drawn from the ROM in viewer play with interpolated positions and a development overlay reading the original HUD coin count. BOB's twelve Bob-ombs now run from the ROM's scripts and animations (patrol, fuse, chase, explosion with its camera shake, coin loot, respawn, lava/death-plane deaths, Mario's damage knockback and kicks), matching the decomp word for word per frame, and are drawn with their skinned ROM models, fuse smoke, explosions and death smoke. Mario picks Bob-ombs up, carries, throws and drops them: his holding actions run with the hand position (HOLP) that his render pass now writes through his ROM model with the original matrix stack, compared word for word, and the held Bob-omb is drawn in his hands. BOB's two act-1 Bob-omb Buddies talk to Mario through the original NPC dialog actions, the camera's dialog cutscene, time stop and the dialog box with the ROM's text, matching the decomp word for word per frame, and the viewer draws them and the box. King Bob-omb now spawns in act 1 with complete-frame native comparisons (session 32); his defeat stops at the unsupported star spawn. Every other object behavior, other cutscenes, other areas' camera modes and triggers, other cutscene actions, water actions, warps and missions remain missing.
+Sessions 24–25 add King Bob-omb's standard movement and shared grab/release prerequisites, including heavy-object actions checked with the ROM's Mario animations; sessions 29–30 add Mario's NPC dialog actions, the dialog cutscene and the dialog box, which King Bob-omb's dialogs also need; session 31 translates King Bob-omb's behavior and everything it calls, but session 32 supplies those comparisons, corrects and implements his animated anchor callback, and enables his placement. Local Linux Intel GPU startup/drawing and recorded-run replay pass.
+
 Initial content target: Bob-omb Battlefield from a supported Super Mario 64 ROM.  
 Long-term intent: Support the complete original game through the same engine.
 
@@ -130,7 +134,8 @@ Start with a faithful profile. Keep presentation settings independent of gamepla
 | Render rate and interpolation | Reference-rate display or smooth higher-rate display, without changing simulation ticks. | Early |
 | Resolution and render scale | Adjustable window and internal resolution, fullscreen, frame cap, and VSync. | Early |
 | Aspect ratio | Original 4:3 baseline; optional widescreen with corrected projection and HUD placement. | Early |
-| Antialiasing and texture filtering | Optional cleaner edges and filtering; retain a profile that respects the original appearance. | After the level renders |
+| Antialiasing and texture filtering | Saved Off/4× MSAA in launcher and pause/settings (session 33); mipmaps and anisotropic filtering pending. Original quality remains the default. | MSAA done; filtering next |
+| Model detail | Optional high-detail Mario drawing (session 33); original simulated LOD traversal and hand anchors retained. Other models and expanded drawing visibility pending. | First option done |
 | Shadows | Original-style character shadow baseline; optional dynamic shadow maps and quality settings. | After movement is validated |
 | Lighting | Optional enhanced lighting and later ambient occlusion; keep original-style materials available. | Later |
 | Input mapping | Basic gamepad input is implemented. Gamepad and keyboard remapping, optional stick calibration, inversion and custom dead zones remain pending. | Basic support done; customization later |
@@ -215,6 +220,21 @@ Full-game completion is the direction of the architecture, not a promise attache
 
 Before each implementation session, read this file and the repository's actual state. Choose the smallest useful next increment, implement it, run relevant checks, and update the status below. Keep README build/run instructions and the provenance ledger consistent with reality.
 
+Develop and test locally on the owner's machine, then commit and push verified source and documentation increments to GitHub. Keep the ROM, extracted assets, local packages, screenshots and private test artifacts excluded from publication.
+
+Every committed change to project code, tests, dependencies or documentation
+requires a new project version. The versioning increment started at **0.0.1**;
+read the current checkpoint from the header above. Run `python3 tools/project_version.py bump`
+once per coherent change checkpoint; it updates the single workspace version
+and all three local Cargo.lock entries. Patch/minor are base-100 counters:
+**0.0.99 → 0.1.0**, then **0.99.99 → 1.0.0**. This counts project changes rather
+than promising semantic API compatibility. The title bar, launcher, pause/settings,
+CLI version output and packaged build metadata all derive from that same value.
+Keep the current status/version accurate, validate the bump before committing,
+and rebuild local runtime deliveries. CI checks committed version history,
+including documentation-only changes. Private ROM/assets, logs and repeated
+builds are not project-source changes.
+
 When a dependency choice, data representation, fidelity assumption, ROM mapping, or milestone boundary changes, record what changed and why. Replace stale decisions; do not append contradictory plans indefinitely. Use short decision records if explanations grow too long for this document. Ask the owner about material scope or fidelity changes; routine implementation choices are yours to make.
 
 For Rust changes, run formatting, relevant tests, and appropriate build/lint checks. Add tests that detect actual parser errors, movement divergence, or gameplay failures. Keep ROM-dependent checks distinct from ordinary CI. A screenshot supports visual review but cannot establish simulation fidelity. If no ROM, comparison build, or graphics device is available, continue useful independent work and state exactly which checks could not run.
@@ -225,15 +245,16 @@ Every handoff should report the working result, commands actually run, missing f
 
 | Item | Status |
 | --- | --- |
-| Implementation | Headless core (ROM inspection, BOB static + visual import/export, Mario's animation table, original collision loader and queries, math utilities, Mario's physics steps, inputs, core update, non-object actions and per-frame tick, the original RNG, the reference camera for areas without camera triggers and the game frame that runs both in the original order, the play session that drives it from held controls with input logs, Mario's model import and render-pass posing, the original object system with the ROM's behavior scripts and BOB's coin behaviors, synthetic diagnostics, exact trace comparison), an optional wgpu renderer crate (offscreen PNGs, windowed inspection viewer, collision/placement overlays, Mario mode drawn from the interpolated reference camera with his skinned model, local ROM launcher and development pause/settings), and a development-only native decomp oracle (collision, math, Mario components, complete Mario ticks, camera components, complete frames with the original camera linked and the object system, recorded-run replay) |
+| Implementation | Headless core (ROM inspection, BOB static + visual import/export, Mario's animation table, original collision loader and queries, math utilities, Mario's physics steps, inputs, core update, non-object actions and per-frame tick, the original RNG, the reference camera for areas without camera triggers and the game frame that runs both in the original order, the play session that drives it from held controls with input logs, Mario's model import and render-pass posing, the original object system with the ROM's behavior scripts and object animations, BOB's coin behaviors and Bob-ombs (explosions, loot coins, respawners, sound spawners, Mario's damage/kick interactions), holding (Mario's pick-up, hold and throw actions) and Mario's authoritative render pass (his model's traversal, callbacks and hand position), Bob-omb Buddies with Mario's text interaction and NPC dialog actions, the dialog cutscene, time stop and the dialog box's state with the ROM's dialog table, synthetic diagnostics, exact trace comparison), an optional wgpu renderer crate (offscreen PNGs, windowed inspection viewer, collision/placement overlays, Mario mode drawn from the interpolated reference camera with his skinned model and skinned ROM object models and a development dialog box, local ROM launcher and development pause/settings; offscreen screenshots include the overlays), and a development-only native decomp oracle (collision, math, Mario components, complete Mario ticks, camera components, complete frames with the original camera linked and the object system including Bob-ombs, recorded-run replay) |
 | Initial platform and Rust stack | Linux x86_64; Rust 1.99.0 / edition 2024; Cargo workspace: `rustario64` (GPU-free core; sha1 0.11.0, serde 1.0.229, serde_json 1.0.151), `rustario64-render` (wgpu 30.0.1, winit 0.30.13, pollster 1.0.1, png 0.18.1, egui/egui-winit/egui-wgpu 0.36.2, rfd 0.17.2), and `rustario64-oracle` (dev-only; cc 1.6.0 builds vendored CC0 C). Current stable direct dependencies, compatible SemVer requirements, committed Cargo.lock; CI reads the toolchain file |
 | Supported ROM revision | US v1.0, exactly 8 MiB, normalized SHA-1 `9bef1128717f958171a4afac3ed78ee2bb4e86ce`; Z64/V64/N64 normalization; supplied Z64 positive path passes |
-| Comparison implementation | Target: pinned unmodified US n64decomp/original ROM execution at `9921382a68bb0c865e5e45eb594d9c64db59b1af`; no original-execution per-tick exporter yet. Native oracle: the same decomp's collision, math_util, mario.c, mario_step.c and the five non-cutscene action files (whole files) plus verbatim excerpts, compiled natively; `oracle/c/tick.c` runs complete frames of the verbatim object system (spawn_object.c, object_collision.c, the interpreter, list processor and coin behaviors), optionally with camera.c's update path for areas without triggers linked (verbatim excerpts, aborting stubs for unreachable modes) |
-| Bob-omb Battlefield | Imported level: 1,101 visible area triangles (24 batches, 18 textures) from eight script-named dependent segments, plus the gate/seesaw/grate geo models; collision (570 vertices, 1,060 triangles), 17 specials, 30 script placements, 88 macros, seven warps. Every visible triangle and texture matches independent decomp-derived references. Renders in the viewer with collision and placement overlays. Collision loads into the ported original partition and answers queries identically to the decomp. Mario's complete ticks run identically to the decomp on it with the ROM's animations (64,158 compared ticks). Its camera runs from the area's camera node (validated callbacks) through BOB's surface rules, radial/close/C-Up/boss-fight modes and R/C-button controls identically to the decomp (77,112 compared frames). Mario can be moved around it in the viewer with his ROM model and animations, seen through the reference camera; recorded runs replay exactly. Original nine-vertex Mario shadow from the ROM, checked against native C. Act 1's 14 coin placements (five yellow coins, nine formations) spawn from the ROM's scripts, presets and models and run identically to the decomp (9,600 compared frames); the other 94 placements are recorded as unported. Coins and sparkles are drawn and collected in viewer play with a HUD coin counter; no skybox, other objects, cutscenes, warps or missions |
-| Fidelity coverage | Component checks against the natively compiled decomp, all bitwise-identical. Collision: loader and floor/ceiling/wall/water/gas queries (857k authored comparisons in CI; 4.08M on BOB). Math: ROM trig tables, sins/coss/atan2s/atan2f/approach (3.99M). Mario steps: ground/air/stationary steps, ledge grabs, gravity, wind, moving sand, bonk, velocity helpers from generated states (124k authored in CI; 1.18M on BOB with ROM tables). Exact trace comparator tested; 300 synthetic counter/input ticks identical at 30/60/120/144 Hz. Input stage: 196,608 controller/intent cases on authored and again on ROM tables; 10,009 authored and 20,000 BOB geometry cases; 1,200 chained ticks at multiple presentation rates. **Complete Mario ticks** (Mario's object only, against the native decomp): 28,158 authored ticks (69 actions) and 64,158 BOB ticks with ROM animations (60 actions), all identical, also at 15–144 Hz presentation. **Played sessions:** 3,600 CI ticks of held-control sessions replay identically in the decomp; two recorded BOB viewer runs (233 ticks) replay identically. Camera helpers/radial goals and persistent Lakitu/transition updates have exact authored and owner-ROM native comparisons. **Complete frames with the original camera** (Mario's object plus every camera.c word, the RNG seed and the graph camera, per frame): 19,512 authored frames (45 actions; radial, close, free-roam, C-Up and boss-fight modes) and 77,112 BOB frames with ROM data (62 actions; radial, close, C-Up, boss-fight), identical, also at 15–144 Hz presentation; 3,600 CI frames of played sessions with C buttons and R; a 1,800-frame built-in BOB camera program and two windowed reference-camera recordings (904 and 124 frames) replay identically. **Objects and coins** (every object word, the lists and the free list, per frame, with the camera linked): 5,400 authored frames (every formation type, respawns, sparkles, 12 coins) and 9,600 BOB frames with ROM scripts/models, identical; the BOB camera frames include act 1's coins. No other object behavior, cutscene, other-area camera mode, cutscene/submerged or original-N64 coverage |
-| Enemy movement foundation | Session 20: original obj_behaviors.c object_step and object_step_without_floor_orient, including wall reflection, no-floor/steep-floor turns, bounce/terminal speed, friction, underwater movement, floor matrix and ordered splash requests. 63,174 authored and 123,200 BOB calls match native C bit for bit. This component is not yet called by enabled behaviors; King Bob-omb uses a separate movement family. |
+| Comparison implementation | Target: pinned unmodified US n64decomp/original ROM execution at `9921382a68bb0c865e5e45eb594d9c64db59b1af`; no original-execution per-tick exporter yet. Native oracle: the same decomp's collision, math_util, mario.c, mario_step.c and the five non-cutscene action files (whole files) plus verbatim excerpts, compiled natively; `oracle/c/tick.c` runs complete frames of the verbatim object system (spawn_object.c, object_collision.c, the interpreter, list processor, coin behaviors, obj_behaviors.c's helpers and object_step, and the Bob-omb, explosion, loot-coin, sound-spawner, respawner and Bob-omb Buddy behaviors with Mario's damage/grab/text interaction handlers, the dialog box's state from ingame_menu.c with drawing discarded at a documented boundary, and the dialog cutscene through an authored partial play_cutscene; Mario's object node through the verbatim render traversal and his geo callbacks over a graph built with the verbatim constructors), optionally with camera.c's update path for areas without triggers linked (verbatim excerpts, aborting stubs for unreachable modes) |
+| Bob-omb Battlefield | Imported level: 1,101 visible area triangles (24 batches, 18 textures) from eight script-named dependent segments, plus the gate/seesaw/grate geo models; collision (570 vertices, 1,060 triangles), 17 specials, 30 script placements, 88 macros, seven warps. Every visible triangle and texture matches independent decomp-derived references. Renders in the viewer with collision and placement overlays. Collision loads into the ported original partition and answers queries identically to the decomp. Mario's complete ticks run identically to the decomp on it with the ROM's animations (64,158 compared ticks). Its camera runs from the area's camera node (validated callbacks) through BOB's surface rules, radial/close/C-Up/boss-fight modes and R/C-button controls identically to the decomp (77,112 compared frames). Mario can be moved around it in the viewer with his ROM model and animations, seen through the reference camera; recorded runs replay exactly. Original nine-vertex Mario shadow from the ROM, checked against native C. Act 1's 14 coin placements (five yellow coins, nine formations) spawn from the ROM's scripts, presets and models and run identically to the decomp (9,600 compared frames); its 12 Bob-ombs (one stationary) spawn with the ROM's animation table and run identically to the decomp, carried and thrown by Mario through the ROM's Mario model (30,511 compared frames with fuses, chases, explosions, respawns, knockbacks, 897 held frames, throws and drops); its two Bob-omb Buddies talk with the ROM's dialogs through the original dialog cutscene, time stop and dialog box (10,678 compared frames, 41 conversations); the other 80 placements are recorded as unported. Coins, sparkles, Bob-ombs (also in Mario's hands), fuse smoke, explosions, death smoke and Buddies are drawn in viewer play with a HUD coin counter and a development dialog box; no skybox, other enemies, other cutscenes, warps or missions |
+| Fidelity coverage | Component checks against the natively compiled decomp, all bitwise-identical. Collision: loader and floor/ceiling/wall/water/gas queries (857k authored comparisons in CI; 4.08M on BOB). Math: ROM trig tables, sins/coss/atan2s/atan2f/approach (3.99M). Mario steps: ground/air/stationary steps, ledge grabs, gravity, wind, moving sand, bonk, velocity helpers from generated states (124k authored in CI; 1.18M on BOB with ROM tables). Exact trace comparator tested; 300 synthetic counter/input ticks identical at 30/60/120/144 Hz. Input stage: 196,608 controller/intent cases on authored and again on ROM tables; 10,009 authored and 20,000 BOB geometry cases; 1,200 chained ticks at multiple presentation rates. **Complete Mario ticks** (Mario's object only, against the native decomp): 28,158 authored ticks (69 actions) and 64,158 BOB ticks with ROM animations (60 actions), all identical, also at 15–144 Hz presentation. **Played sessions:** 3,600 CI ticks of held-control sessions replay identically in the decomp; two recorded BOB viewer runs (233 ticks) replay identically. Camera helpers/radial goals and persistent Lakitu/transition updates have exact authored and owner-ROM native comparisons. **Complete frames with the original camera** (Mario's object plus every camera.c word, the RNG seed and the graph camera, per frame): 19,512 authored frames (45 actions; radial, close, free-roam, C-Up and boss-fight modes) and 77,112 BOB frames with ROM data (62 actions; radial, close, C-Up, boss-fight), identical, also at 15–144 Hz presentation; 3,600 CI frames of played sessions with C buttons and R; a 1,800-frame built-in BOB camera program and two windowed reference-camera recordings (904 and 124 frames) replay identically. **Objects and coins** (every object word, the lists and the free list, per frame, with the camera linked): 5,400 authored frames (every formation type, respawns, sparkles, 12 coins) and 9,600 BOB frames with ROM scripts/models, identical; the BOB camera frames include act 1's coins and Bob-ombs. **Bob-ombs** (every object word including animation frames and throw matrices, the environmental shake, the camera linked): 9,000 authored frames (fuse, chase, 37 explosions, 123 lava and 35 death-plane deaths, 170 respawns, loot collection, knockback), 3,203 authored kick and holding encounter frames (558 held frames, 4 throws, 3 drops, 10 holding actions, an authored Mario-shaped model) and 30,511 BOB frames with ROM scripts, animations and models and the ROM's Mario model (62 explosions, 47 respawns, 16 loot coins, 31 knockbacks, 897 held frames, 6 throws, 5 drops, 13 holding actions, 896 HOLP updates), identical. **Mario's render pass** (his model's traversal, levels of detail, callbacks' body-state writes, the HOLP) runs on both sides in every linked frame, so the camera, coin and Bob-omb suites above cover it. **NPC dialogs** (every word plus the dialog box's globals, the cutscene variables and the stored cutscene camera, per frame): 7,958 authored frames (three Buddies, an authored dialog table, time-stopped bystanders; 30 conversations, 60 page scrolls) and 10,678 BOB frames with the ROM's text, model and animations (41 conversations, 148 page scrolls), identical; ten seeded mutations rejected. **King Bob-omb**: 7,100 authored and 6,200 owner-ROM complete frames match, including all nine actions, the animated anchor, positional shakes and dialog/particle side effects (session 32). No other object behavior, other cutscene, other-area camera mode, other cutscene action, submerged or original-N64 coverage |
+| Enemy movement foundation | Session 20: original obj_behaviors.c object_step and object_step_without_floor_orient, including wall reflection, no-floor/steep-floor turns, bounce/terminal speed, friction, underwater movement, floor matrix and ordered splash requests. 63,174 authored and 123,200 BOB calls match native C bit for bit. Session 22: Bob-ombs call it through cur_object_step with the floor matrix placed by the render pass, compared in complete frames. Session 24 ports King Bob-omb's standard movement family (floor/walls, drag, slopes/edges, ground/air/water flags, return-home arc and moving release): 419,835 authored and 117,600 BOB component calls match native C exactly. Session 32 compares the boss behavior in complete frames and enables it. |
 | Optional enhancements | Graphics-only options: higher resolution, 4x MSAA, culling and fog toggles, interpolation toggle, free inspection camera. Mario's skinned model and the reference camera's view interpolate between ticks at any frame rate (the view snaps across cuts). Local launcher and pause/settings offer interpolation, fog, VSync and fullscreen; optional remembered path and window size. No enhanced lighting/shadows, no optional gameplay camera |
-| Immediate next task | Integrate the verified object_step component with Bob-omb animation/interaction, explosion, loot and respawn paths before enabling its ROM placements. Then King Bob-omb, star collection/completion and required camera cutscenes, each with native frame comparisons. D3 physical GPU/controller checks, remapping/calibration, controller menu navigation, coin shadows and original HUD glyphs remain follow-ups. Controller/desktop bundles passed Windows/Linux CI at e0365fd; check each newer run before downloading. |
+| Boss grabbing foundation | Session 25: enemies grabbing Mario, animated anchor placement, throw/escape release, strict escape-stick hysteresis and non-Bowser thrown/placed object dispatch. Heavy pickup, walking and the 13th-tick release are checked with authored and ROM Mario animations. 2,180 authored and 680 owner-ROM component calls match all existing native Mario/object snapshot words and returns; the boss placement now runs with session 32's complete-frame comparisons. |
+| Immediate next task | Implement King Bob-omb's star spawn, its cutscene and collection; compare complete frames, then verify a controller-driven three-hit act-1 mission. Session 32 enables the boss after 7,100 authored and 6,200 owner-ROM frame comparisons, including initial-state trajectories for damage, return and defeat and a heavy pickup/throw fixture. Human controller/Windows playtesting, object shadows, the original dialog font/rotating box and HUD glyphs, smoke/held-placement review and remapping/calibration remain follow-ups. |
 
 ### Implementation session 1 — 2026-10-08 (M0 and early M1)
 
@@ -927,23 +948,512 @@ Every handoff should report the working result, commands actually run, missing f
   need a human check. Continue Bob-omb animation, interaction and movement-output
   integration; first-mission and complete-course support remain pending.
 
+### Session 22 — Bob-ombs, explosions and object animations (2026-10-10)
+
+- **Starting point:** Continued session 21 (`f9438cf`) on the immediate next
+  task: integrate session 20's object_step with the Bob-omb's animation,
+  interaction, explosion, loot and respawn paths before enabling its ROM
+  placements. The owner's US ROM was available for testing (kept in the
+  ignored `private/` directory).
+- **Result:** BOB act 1's twelve Bob-ombs spawn from the ROM's macro presets,
+  scripts and animation table and run the original patrol, fuse, chase,
+  launched, explosion, lava/death-plane deaths and respawn behaviors. Ported:
+  object animations (the importer decodes every table a runnable script's
+  LOAD_ANIMATIONS names; LOAD_ANIMATIONS/ANIMATE interpreter commands;
+  geo_obj_init_animation; the render pass's frame advance for objects),
+  obj_behaviors.c's helpers (floor deaths, yellow-coin loot, flicker, home
+  return, facing tests) around object_step with its floor matrix placed by
+  the render pass, explosions (sound spawner, environmental camera shake
+  applied after the object update in call order, death smoke), moving yellow
+  coins, respawners and object sounds. Mario's interaction handlers for damage
+  and grabbable objects (attack, bounce-back, push-out, knockback, grab
+  request) are translated. Picking an object up needs Mario's hold actions
+  and the hand position (HOLP) from his render pass, which is not yet
+  authoritative, so play stops there with a message naming that system.
+- **Presentation:** The object drawer builds models with animated parts per
+  draw list and poses them per completed frame as the render pass does,
+  interpolated between frames; billboard parts face the displayed camera.
+  Bob-ombs, fuse smoke, explosions, death smoke and loot coins draw from the
+  ROM in the viewer. A development `--start X,Y,Z[,YAW]` option enters the
+  level with Mario elsewhere in the area for inspection.
+- **Oracle/provenance:** Seven new verbatim CC0 excerpt files (obj_behaviors.c,
+  moving_coin, bobomb, explosion, corkbox, spawn_sound, sound_spawner) plus
+  interaction.c and object_helpers.c additions; two unmodified headers
+  vendored (`obj_behaviors.h`, `spawn_sound.h`). The oracle's `-w` flag had
+  silenced GCC 13's implicit-declaration errors; that guard is active again
+  and two existing excerpts gained missing includes. Ten behavior scripts and
+  eleven natives were added to the version adapter, each checked against the
+  pinned build by `tools/check_behavior_reference.py`. No ROM data is
+  committed; the authored tests use an invented Bob-omb-shaped animation set.
+- **Checks:** Per-frame named-word comparisons against the native decomp
+  (every object word including animation state and throw matrices, events,
+  Mario and the camera): 9,000 authored Bob-omb frames, 1,284 authored
+  kick/launch encounter frames and 27,055 BOB frames with ROM data, all
+  identical; the existing coin (5,400 + 9,600), camera and Mario suites stay
+  identical with Bob-ombs present. A core play test chases, explodes, drops
+  loot and respawns a Bob-omb on BOB and checks every model it draws. Seeded
+  mutations of Bob-omb, interaction, explosion, animation and render-pass
+  details are rejected by the authored comparisons (docs/FIDELITY.md).
+  Formatting, warnings-denied Clippy and excerpt regeneration pass. Bob-omb
+  screenshots were inspected locally; smoke and explosion appearance still
+  needs a human comparison with the original.
+- **Limits/next:** Holding and throwing (Mario's picking-up/hold/throw
+  actions, HOLP, the held/thrown Bob-omb paths), underwater explosions and
+  water particles, object shadows and King Bob-omb are not implemented. This
+  is level exploration with original Bob-ombs, not mission completion. Next:
+  holding through an authoritative hand position, then King Bob-omb.
+
+### Session 23 — holding and Mario's render pass (2026-10-10)
+
+- **Starting point:** Continued session 22 (`52456cc`) on its immediate next
+  task: holding needs the held object's last position (HOLP), which the
+  original writes from Mario's hand while its render pass draws him.
+- **Result:** Mario's render pass is authoritative in linked frames
+  (`simulation::mario::render`): his object node and model traversal with the
+  original matrix arithmetic, levels of detail from the 16.16 fixed-point
+  matrix, his geo callbacks (switches, the torso and head resets, the punch
+  scale countdown) and the held-object node, which writes the HOLP and
+  processes the held object's model. Callback writes into graph nodes persist
+  per level as in the original nodes. Mario's pick-up (standing and dive),
+  hold idle/walking/decelerating/jumping/falling/landing/sliding, throwing,
+  air throw, placing down and heavy throw actions, mario_grab/drop/throw_held_object
+  and obj_set_held_state are translated, so BOB's Bob-ombs can be carried,
+  thrown, dropped, re-grabbed or held until their fuse runs out. The torso,
+  head and punch-state writes were previously skipped on both sides as
+  presentation-only; the torso reset is gameplay state (walking approaches
+  from it) and is now simulated.
+- **Presentation:** The held object is drawn in Mario's hands from the pass's
+  results (his object rows and the HOLP). Mario's drawer reads the simulated
+  punch state instead of counting it down itself. The viewer's
+  `screenshot --inputs RUN.inputs.json` replays a recorded run before capturing.
+- **Oracle/provenance:** Mario's node runs through the verbatim
+  rendering_graph_node.c traversal and his verbatim mario_misc.c callbacks over
+  a graph built with the verbatim graph_node.c constructors from the Rust
+  side's node list (the ROM's mario_geo, or an authored Mario-shaped model for
+  ROM-free tests); object models gained real child nodes for held objects;
+  `guMtxF2L` is an authored implementation of libultra's documented layout
+  (the level-of-detail node reads it); obj_set_held_state is verbatim. No ROM
+  data is committed; holding screenshots stay in `private/`.
+- **Checks:** Authored Bob-omb runs (9,000 frames), authored kick and holding
+  encounters (3,203 frames: 558 held, 4 throws, 3 drops, 10 holding actions)
+  and BOB with the owner's ROM (30,511 frames: 897 held, 6 throws, 5 drops, 13
+  holding actions, 896 HOLP updates) match the native decomp word for word;
+  the camera and coin suites stay identical with the render pass on both
+  sides. A ROM play test carries a Bob-omb for 101 frames, draws it in Mario's
+  hand at the HOLP and throws it. A held-slide test (756 frames) covers the
+  hold butt slide. 11 of 12 seeded holding and render-pass mutations are
+  rejected; the twelfth (the held object's own scale) is invisible to
+  simulated state. Formatting, warnings-denied Clippy and excerpt regeneration
+  pass.
+- **Limits/next:** King Bob-omb (heavy holds, being grabbed and thrown by
+  him), other holdable objects, the castle mirror's Mario, underwater
+  explosions and object shadows are not implemented. Camera-less harness
+  frames keep the earlier minimal Mario step. This is level exploration with
+  original Bob-ombs and holding, not mission completion. Next: King Bob-omb.
+
+### Session 24 — King Bob-omb movement prerequisites and local hardware checks (2026-10-10)
+
+- **Starting point:** Read AGENTS.md and the plan, cloned the repository locally
+  and inspected every remote branch. Main was `f9438cf`; the latest development
+  checkpoint was `05eefdc` on `claude/jolly-noether-2tta72` (sessions 22–23).
+  Continued that checkpoint on local `codex/local-development`.
+- **Result:** `simulation::object::standard_motion` translates the original
+  object_helpers.c standard movement family: floor/wall refresh, last-wall
+  selection after signed-halfword coordinate truncation, steep-floor detection,
+  quadratic drag, slope/edge avoidance, signed forward speed, landing/bounce and
+  ground/air/water transitions, deactivation partial updates and the bounded
+  return-home arc without terminal speed. Moving throw/drop release now runs
+  cur_obj_move_y instead of panicking. No new behavior placement is enabled.
+- **Representation/reference:** oFloor uses a stable surface index plus one in
+  its raw word (zero is NULL); oFloorType/oFloorRoom use original big-endian
+  halfwords. The native adapter canonicalizes host pointers and halfword layout
+  at transport only. Twenty-one original CC0 functions are generated verbatim
+  from the unchanged pinned reference; the old vertical-motion aborting stub is
+  removed. No dependency, ROM content or asset is added to tracked files.
+- **Checks:** Five optimized component tests pass: 327,680 angle differences,
+  4,475 boundaries, 80 releases, 87,600 authored generated/chained calls and
+  117,600 BOB generated/chained calls, comparing all 80 raw words, return values,
+  query flags and normalized floor identity bit for bit. Sustained trajectories
+  evolve independently. Inclusive landing, first-wall and inclusive cliff
+  mutations are rejected and restored. All 190 owner-ROM release workspace
+  tests, formatting, warnings-denied Clippy, excerpt regeneration and runtime
+  release build pass. CI includes optimized standard-motion checks.
+- **Local hardware:** Rust 1.99.0 is installed in the user's account. Missing
+  Linux development packages were downloaded/extracted under ignored private/
+  because sudo authentication was unavailable; the local build wrapper supplies
+  pkg-config/libudev paths. Sandbox rendering uses llvmpipe; the native window
+  and a private 1280×960 BOB screenshot use Intel Graphics (MTL), Vulkan, on
+  Ubuntu 26.04.1. The window exits cleanly after 120 draw frames/61 simulation
+  ticks; its recording replays exactly against native C. All six renderer
+  integration tests also pass with physical-GPU access. Mario/Bob-omb screenshots
+  are inspected. Automated keyboard injection could not retain focus; interactive
+  keyboard/controller checks remain open. Corrected stale viewer/replay
+  diagnostics about missing objects.
+- **Limits/next:** Movement component evidence is not a working boss or mission.
+  King Bob-omb's behavior/animation integration, heavy holds, Mario grab/throw,
+  dialogs, star/completion and camera cutscenes remain next. Roomed/dynamic
+  worlds, invalid float conversions, original-N64 traces and human controller/
+  Windows playtests remain outside this session's evidence. ROM, screenshots,
+  local packages and traces stay private; development and testing run locally.
+
+### Session 25 — Shared boss grab/release interactions (2026-10-10)
+
+- **Result:** Mario's grabbable interaction now runs the original enemy grab
+  check, including its inclusive facing range and OR with non-invulnerability,
+  dropping a held object, sound/camera requests and ACT_GRABBED. His grabbed
+  action reads the grabbing object's yaw and animated graphics position and
+  selects forward/backward thrown actions with the original argument.
+- **Shared helpers:** cur_obj_check_grabbed_mario, the Chuckya/King Bob-omb
+  anchor behavior, player_performed_grab_escape_action and non-Bowser
+  cur_obj_get_thrown_or_placed are translated. Stick escape uses strict 30/40
+  hysteresis with state that persists across attempts; a new A press also
+  counts once. Anchor state 1 positions Mario, states 2/3 release him on his
+  next action update; the anchor follows its parent's yaw and deactivation.
+- **Comparisons:** Six optimized tests match 2,860 component calls (2,180
+  authored, 680 using the owner's original Mario animations and trig) against
+  unmodified native functions. Every existing Mario/object snapshot word,
+  ordered event and return compares after each call. Native/Rust trajectories
+  evolve independently from initial fixtures. Heavy pickup, idle, walking and
+  throw all run; the heavy throw releases with HELD_DROPPED on tick 13, after
+  which the object's own release dispatcher supplies speeds. Three mutations
+  (grab OR changed to AND, inclusive stick reset, release one tick early) are
+  rejected and restored. The fixtures do not run an actor behavior or a complete
+  game frame. The escape helper's function-static state is checked through
+  persistent return sequences, not a native snapshot accessor.
+- **Boundary/provenance:** Six additional verbatim CC0 functions, including
+  the original anchor function, join the pinned oracle. Its authored fixture glue
+  only allocates objects and injects initial conditions/control operations;
+  it implements no action, movement or interaction. Bowser's special release
+  and ridden-object dismount remain outside supported runtime paths. No ROM
+  bytes/assets, new dependencies or enabled placements are added.
+- **Validation:** All 196 release workspace/all-target tests pass with the
+  private ROM tests enabled. Five authored grab tests also pass in debug; the
+  owner test stays ignored in ordinary CI. Formatting, warnings-denied Clippy,
+  pinned excerpt regeneration/check and the runtime build pass. Intel Graphics
+  (MTL)/Vulkan renders the inspected private 1280×960 screenshot. A 120-draw-frame
+  native window records 60 ticks; every replay word matches native C. Six
+  renderer integration tests pass with physical-GPU access. CI includes the
+  optimized grab suite. ROM-derived content is excluded from source publication.
+- **Next:** King Bob-omb's actor/ROM animation integration, authoritative
+  held-Mario render callback, dialog/time-stop/camera cutscenes, star and
+  completion. The Intel GPU is accessible on this laptop; use actual device
+  access for hardware checks. ROM, packages and test artifacts stay private.
+
+### Session 26 — Desktop UI resize crash fix (2026-10-10)
+
+- **Problem/result:** Selecting Play could draw a 1280×960 UI scissor into the
+  launcher's still-configured 800×720 surface. Window size and GPU resize events
+  can arrive at different times. UI projection and clipping now use the actual
+  acquired render target dimensions, shared by launcher, gameplay and pause.
+  The original validation panic caused a second swapchain-cleanup panic and
+  SIGABRT; this fixes its triggering size mismatch.
+- **Validation:** All 26 renderer/all-target tests pass with the private owner
+  check enabled and physical Intel GPU access. A new ROM-free GPU regression
+  executes real UI draws for larger/smaller pending sizes and 1×/1.25×/2× scales.
+  Restoring the old 1280×960 descriptor reproduces the reported validation error
+  and fails the test; the restored fix passes on Intel Graphics (MTL).
+  Formatting, warnings-denied renderer Clippy and the release runtime build pass.
+  The native X11 launcher opens on Intel/Vulkan; its private screenshot is
+  inspected. Native Wayland fullscreen startup from 800×720 closes cleanly
+  after 60 draw frames. Automated input did not exercise the Play/return buttons;
+  manual transition checks remain in the playtest checklist.
+- **Delivery/next:** Rebuild the local Linux ZIP from this source checkpoint.
+  ROMs, screenshots, test logs and local automation remain private. Gameplay
+  scope is unchanged; continue King Bob-omb's documented prerequisites.
+
+### Session 27 — Visible project version and required change counter (2026-10-10)
+
+- **Version/result:** **0.0.1**, the requested starting checkpoint. All three
+  workspace packages inherit one Cargo version. Launcher/game window titles,
+  the initial ROM-selection screen, pause/settings, startup error dialog and
+  each runtime's `--version` output show that value. UI title updates and return
+  to ROM selection preserve it.
+- **Required workflow:** Every committed project change, including docs, must
+  advance the counter. `tools/project_version.py bump` updates Cargo.toml,
+  the three local lockfile entries and this plan's current-version header.
+  Patch/minor roll over at 100 (0.0.99 → 0.1.0; 0.99.99 → 1.0.0). CI checks
+  workspace/lock/plan consistency and versioned commit history, including a
+  forgotten bump in a documentation-only commit. The initial migration from
+  old crate metadata is explicitly bootstrapped at 0.0.1.
+- **Delivery:** Runtime ZIP/folder names and BUILD_INFO.txt carry the project
+  version. Packaging queries each binary's `--version` and rejects a stale
+  build instead of labeling it with newer source metadata. The runtime remains
+  independent of the C oracle and private ROM assets.
+- **Validation:** Four counter tests (rollovers, invalid values, lockfile/plan
+  updates and missing documentation bumps) and four packaging tests pass.
+  All 26 renderer/all-target tests pass on Intel Graphics (MTL) with the private
+  owner test enabled. Formatting, workspace warnings-denied Clippy and the
+  release runtime build pass. All three binaries print `Rustario64 v0.0.1`.
+  Native Intel/Vulkan launcher and game titles are checked; private launcher
+  and pause/settings screenshots visibly show 0.0.1. The test windows close
+  cleanly. Gameplay scope and authoritative simulation are unchanged.
+- **Next:** The next committed project change is 0.0.2. Continue the documented
+  King Bob-omb integration, bump its checkpoint and rebuild local deliveries.
+
+### Session 28 — Windows CI and debug UI texture lifecycle fix (2026-10-10)
+
+- **Version/problem:** **0.0.2**. At 6c11dba, GitHub PR run 38070679953
+  failed both the Windows desktop job and the Linux headless job in the UI
+  resize regression. egui's debug assertion reported one unapplied texture delta.
+  The renderer uploaded updates and freed textures but left the commands in
+  FullOutput, whose texture delta asserts that it is empty when dropped.
+- **Result:** The shared UI painter now drains texture uploads before drawing
+  and drains releases after submission. The existing real GPU regression also
+  creates a texture and releases it on the following frame, checking that both
+  commands reach the painter. The acquired-target scissor fix remains covered.
+- **Local validation:** The old painter reproduces the identical CI panic in
+  the default debug profile on Intel Graphics (MTL). All 26 renderer/all-target
+  debug tests then pass with physical GPU access and the private owner-ROM test
+  enabled. Four version tests and four packaging tests pass; formatting and
+  workspace warnings-denied Clippy pass.
+  Prior optimized checks disabled the dependency assertion, so AGENTS.md and
+  README now require debug GPU checks for renderer changes. Check the published
+  Windows and Linux jobs before describing this new checkpoint as CI-verified.
+- **Delivery/next:** Push the source and documentation checkpoint and rebuild
+  the local Linux runtime. The next committed change is 0.0.3. Windows human
+  playtesting remains separate from hosted tests/build/package checks. Continue
+  King Bob-omb's documented integration; ROM/assets and test artifacts stay private.
+
+### Session 29 — Mario's NPC dialog entry (2026-10-10; completed and verified in session 30)
+
+- **Version/result:** **0.0.3**. Continued `a0f53d3`. Translated Mario's side
+  of NPC dialog from mario_actions_cutscene.c: mario_ready_to_speak,
+  set_mario_npc_dialog, act_reading_npc_dialog, act_waiting_for_dialog and the
+  cutscene dispatcher's check_for_instant_quicksand (`simulation::mario::cutscene`);
+  the cutscene group now dispatches these two actions, and every other cutscene
+  action is still a recorded Unsupported boundary. Object side:
+  lateral_dist_between_objects and cur_obj_can_mario_activate_textbox(_2)
+  (`simulation::object::dialog`). MARIO_DIALOG_* constants are generated from
+  the vendored mario_actions_cutscene.h (existing order kept, new names appended).
+- **Finding (corrected in session 32):** this session incorrectly concluded
+  that geo_update_held_mario_pos was a no-op. SPAWN_OBJ does set prevObj to
+  the anchor; its animated render callback is required and now implemented.
+- **Oracle:** New verbatim excerpt `mario_dialog.c` and three object_helpers.c
+  items; authored `dialog_unit.c` replaces the cutscene recording stub with a
+  partial dispatcher (verbatim quicksand check, the two actions, original tail).
+  Grab fixtures gained dialog operations.
+- **Checks:** `npc_dialog_entry_and_reading_actions_match` and the owner-ROM
+  variant each match 22,754 calls bit for bit (192 dialogs, 448 refused,
+  textbox true/false, endings in idle, hold idle and the recorded unported
+  ACT_PUTTING_ON_CAP). Baseline before changes: all 197 owner-ROM release
+  workspace tests passed. Excerpt check, formatting and core/oracle Clippy pass.
+  **Not rerun after the change:** the full workspace suite, renderer debug GPU
+  tests and mutation checks. Run them first next session.
+- **Next:** cur_obj_update_dialog_with_cutscene needs time stop, the camera's
+  CUTSCENE_DIALOG (cutscene_object_with_dialog) and the dialog box
+  (ingame_menu.c, whose page timing depends on ROM text). Then King Bob-omb's
+  behavior, star and completion. No placement is newly enabled.
+
+### Session 30 — Bob-omb Buddies, the dialog cutscene and the dialog box (2026-10-10)
+
+- **Version/start:** **0.0.4**. Continued `41b12c6` (0.0.3). First ran what
+  session 29 left unverified: all 199 owner-ROM release workspace/all-target
+  tests passed, and CI for 0.0.3 was green on Linux and Windows.
+- **Result:** BOB act 1's two Bob-omb Buddies spawn and talk. Ported: the
+  Buddy (`simulation::object::bobomb`: init, idle, turn-to-talk, talk, actions,
+  loop; the cannon role panics), Mario's text interaction (`interact_text`,
+  `check_npc_talk`, `check_read_sign`, `mario_can_talk`), time stop's flag
+  helpers, the camera's object cutscene requests (`start_object_cutscene`,
+  `cutscene_object_with_dialog`) and dialog cutscene (`play_cutscene`'s shot
+  timing, `sCutsceneDialog`'s three shots, `store_info_star`/`retrieve_info_star`,
+  cutscene variables) in `simulation::camera::cutscene`, and the dialog box's
+  state (`simulation::dialog`, from ingame_menu.c: creation, the open/scroll/
+  close state machine, page breaks from the text, yes/no scrolling, special
+  dialog music) advanced after the render pass as render_game does. The radial
+  camera's `get_dialog_id` check now reads the box. Other cutscenes remain
+  `Unsupported` stops.
+- **Import:** `import::dialog` reads seg2_dialog_table (170 entries) from the
+  ROM's segment 2 at a validated offset into `content::dialog`;
+  `tools/check_dialog_reference.py` runs the decomp's own text pipeline and
+  finds the unique matching table. `check_behavior_reference.py` verifies the
+  Buddy's script and natives. The constant generator now keeps its previous
+  order (new names appended) and mirrors dialog IDs, responses, flags, Buddy
+  constants and sequence IDs (vendored unmodified `include/seq_ids.h`).
+- **Presentation:** the viewer draws the Buddies with their ROM model and the
+  dialog box (`presentation::dialog`: the page's lines, opening/closing,
+  scrolling, next-page and choice markers) with development typography.
+  Offscreen screenshots now paint the window's egui overlays (coin counter,
+  dialog box) through a non-sRGB view; overlays no longer fade in.
+- **Oracle:** new verbatim `excerpts/ingame_menu.c` with an authored drawing
+  boundary (`c/ingame_menu_unit.c`, `c/ingame_menu_boundary.h`), camera.c's
+  dialog items, the Buddy, text interaction, `set_object_visibility` and the
+  time-stop helpers; an authored partial `play_cutscene` replaces its aborting
+  stub; audio requests are recorded events 15–20 on both sides; snapshots add
+  the dialog globals, cutscene variables and stored camera.
+- **Checks:** `--test dialogs`: 7,958 authored frames (30 conversations) and
+  10,678 owner-ROM BOB frames (41 conversations, both dialogs) match word for
+  word; ten seeded mutations are rejected and one equivalent one is explained
+  (docs/FIDELITY.md). All authored oracle suites still match with the new
+  words. A new debug-profile GPU test checks the offscreen dialog overlay and
+  rejects the fade-in bug. Formatting, warnings-denied workspace Clippy,
+  excerpt regeneration/check, the dialog and behavior reference checkers, the
+  renderer's debug GPU tests (27, Intel Graphics (MTL)/Vulkan) and all 204
+  owner-ROM release workspace/all-target tests pass. Private 1280×960 Intel/Vulkan screenshots of a Buddy
+  conversation (opened box, mid-scroll, page two) were inspected, and a native
+  window beside a Buddy closes cleanly after 120 frames.
+- **Limits/next:** signs (the read-message cutscene and ACT_READING_SIGN), yes/no
+  dialogs, the cannon Buddy, the original dialog font and rotating box, and
+  `cur_obj_update_dialog_with_cutscene` are not ported. This is level
+  exploration with talking NPCs, not mission completion. Next: King Bob-omb.
+
+### Session 31 — King Bob-omb translated, placement gated (2026-10-10, in progress at handoff)
+
+- **Version/start:** **0.0.5**. Continued `372d140` (0.0.4).
+- **Translated (Rust only, not yet compared):** King Bob-omb
+  (`simulation::object::king_bobomb`: all nine actions, the sound states,
+  king_bobomb_move, bhv_king_bobomb_loop and the anchor's loop); the object
+  helpers he calls (animation-with-sound/near-end/anim-frame/extend helpers,
+  cur_obj_rotate_yaw_toward, set_pos_to_home, angle_to_home, hide,
+  disable_rendering, rotate_face_angle_using_vel, arc_to_goal_pos,
+  cur_obj_move_using_vel_and_gravity, exec_anim_sound_state); object
+  dialogs (`cur_obj_update_dialog_with_cutscene`, US time-stop fix); particle
+  bursts (`simulation::object::particles`: cur_obj_spawn_particles, the mist,
+  bhv_white_puff_exploding_loop, spawn_triangle_break_particles and the
+  break-box triangle's natives); gObjectCounter/gPrevFrameObjectCount in the
+  processor (the original's surface-list `=` instead of `+=` kept); the camera's
+  set_camera_shake_from_point (reduce_by_dist_from_camera, applied after the
+  object update in call order as for explosions) and the boss-fight camera's
+  gSecondCameraFocus with its held offset; stop_background_music and
+  star-spawn events (the star is an `Unsupported::StarSpawn` stop).
+- **Import:** King Bob-omb's group-3 geo layout now decodes (the original
+  tolerates its extra GEO_CLOSE_NODE before GEO_END; any other command after a
+  close past the root is still an error). Two geo callbacks were incorrectly audited as
+  having no simulated effect: geo_update_held_mario_pos (incorrect audit,
+  corrected and implemented in session 32) and the
+  mist's geo_update_layer_transparency (its oAnimState write was missed here,
+  corrected in session 32). Adapter: four scripts,
+  five natives and two callbacks; `check_behavior_reference.py` checks all 53
+  behavior entries (the callback addresses still lack an independent checker).
+  Authored ROM-free fixtures gain the four scripts and a King-shaped animation
+  table.
+- **Gate:** `Native::awaits_comparison` makes the script check report
+  `Unported::AwaitingComparison`, so BOB act 1 still does not spawn King
+  Bob-omb and every existing comparison is unchanged. Nothing new runs in
+  play; this checkpoint is groundwork, not a working boss.
+- **Checks:** formatting, warnings-denied workspace Clippy, the behavior
+  reference checker and all 204 owner-ROM release workspace/all-target tests
+  pass (every existing native comparison unchanged; one geo test now expects
+  the original's tolerated extra close node). No native comparison covers the
+  new code yet.
+- **Next:** see the immediate next task above.
+
+### Session 32 — King Bob-omb compared and enabled (2026-10-10)
+
+- **Version/start:** **0.0.6**. Fast-forwarded the local branch from 0.0.2
+  through the three remote checkpoints to `b49cc9c` (0.0.5); read the updated
+  plan and continued its immediate next task.
+- **Working result:** act 1 now spawns King Bob-omb and his Mario anchor from
+  the ROM. Native complete-frame comparisons cover his nine actions, three
+  dialogs, animations, grabs/throws of Mario and escapes, Mario's heavy pickup
+  and throw of the boss, damage, the off-summit return jump, defeat, mist and
+  break particles, positional camera shakes, boss focus and music events.
+- **Correction:** sessions 28/31 incorrectly treated geo_update_held_mario_pos
+  as a no-op. The behavior interpreter's SPAWN_OBJ sets prevObj to the anchor.
+  The port now retains the full boss geo tree, shares the authoritative
+  animated-part math with Mario, and runs the callback through its matrix
+  stack. The native side builds his graph with verbatim constructors and runs
+  the verbatim traversal and callback. During a held subtree the callback
+  reads Mario's prevObj (NULL), as the original does. King billboards contain
+  display lists only; their matrices do not feed simulation writes.
+- **Additional corrections:** the mist transparency callback writes oAnimState
+  as well as environment alpha. The native harness now executes its verbatim
+  function and Rust mirrors the write; the drawer caches mist builds by
+  completed opacity. A 700-frame ROM defeat fixture builds and poses the boss,
+  fading mist and debris; a GPU test checks opaque, half-opacity and invisible
+  mist. The existing BOB camera fuzz replay exposed a deferred camera request
+  reading the boss after its actor update; requests now retain the focus seen
+  by Mario before that update. The original held-boss yaw-velocity focus
+  offset is also implemented.
+- **Oracle:** added generated, verbatim boss/mist/break-particle/arc excerpts
+  and the helpers they call; a second host animation table; positional shakes;
+  counters and second-focus snapshots; floor-pointer/packed-halfword host
+  canonicalization. Star spawning is a recorded unsupported boundary on both
+  sides. The cap-switch dialog remains an aborting unsupported path.
+- **Coverage:** 7,100 authored frames and 6,200 BOB frames with the private
+  validated ROM match every captured word. Both cover all nine actions,
+  DIALOG_017/116/128, heavy pickup/throw and escape. The damage/return/defeat
+  and heavy-grab trajectories seed numeric boss fields once after script
+  initialization, then the engines evolve independently; they are not a
+  controller-only three-hit fight. Escape controls react to Mario being
+  grabbed and send identical input samples to both engines. Mutating the walk
+  speed fails at frame 148 (boss forward velocity); shifting the anchor's
+  relative X fails at frame 2 (anchor graphics position).
+- **Reference:** an independent Python checker verifies all 117 boss geo
+  commands, six mist commands, the original registrations/BOB geo load and
+  all three object callback addresses against the pinned source. Excerpt
+  item hashes and the C boundary are recorded in oracle/README.md and
+  PROVENANCE.md. CI includes optimized boss comparisons without a ROM.
+- **Checks/delivery:** all **209** owner-ROM release workspace/all-target tests
+  pass, plus **28** default-debug renderer tests on the Intel Vulkan GPU and
+  the authored boss tests in debug. Formatting, warnings-denied workspace
+  Clippy, version-counter tests, package allowlist tests, Lakitu layout,
+  excerpt regeneration and the independent behavior/model checks pass.
+  A private 1280×960 boss/dialog screenshot is inspected; the rebuilt v0.0.6
+  native window exits cleanly after 120 draw frames/60 ticks. Source and docs
+  are prepared for the existing development branch and PR; ROMs, screenshots
+  and replay artifacts remain private. Hosted CI is checked after publication.
+- **Limits/next:** defeat stops at Unsupported::StarSpawn. Implement the star
+  behavior, its camera cutscene and collection before claiming act 1 complete;
+  add a controller-driven three-hit mission acceptance run. Native decomp
+  agreement is not original N64 execution evidence. Human controller feel,
+  Windows playtesting and presentation review remain.
+
+### Session 33 — Safe presentation quality choices (2026-10-10)
+
+- **Version/start:** **0.0.7**, continued `53465c9` (0.0.6); fetched GitHub
+  before development and confirmed no newer branch commits.
+- **Result:** launcher and pause/settings now save antialiasing (Off or
+  4× MSAA) and Always draw high-detail Mario. Existing settings migrate with
+  both options off. Direct view/screenshot entry points use these saved
+  choices; explicit CLI flags override them for repeatable captures.
+- **MSAA lifecycle:** sample-count changes rebuild cached pipelines for all
+  uploaded models and recreate depth/color targets after presenting the
+  acquired surface texture. Returning to selection resets the launcher to
+  one sample; Play reapplies the saved mode before uploading the level.
+  Unsupported target formats fall back to one sample with a pause notice.
+- **Fidelity boundary:** only the presentation Mario drawer uses distance
+  zero to choose the detailed mesh. Original simulated LOD/visibility
+  traversal, callbacks, hand position, physics, camera and object behavior
+  remain unchanged. Detail changes apply on the next tick after resuming;
+  switching settings does not advance a second punch animation pose. The
+  enhanced hand mesh may differ slightly from the original held-object anchor;
+  this option does not reposition authoritative carried objects.
+- **Checks at publication:** all **32** owner-ROM/default-debug renderer tests
+  pass on Intel Graphics (MTL)/Vulkan, including actual partially covered MSAA
+  edge pixels, Off→4×→Off pipeline changes with resized targets and unchanged
+  model IDs, old-settings migration and displayed LOD transitions. The new
+  oracle presentation test preserves every captured gameplay word over
+  **240** owner-ROM frames while selecting different LOD meshes. Formatting,
+  warnings-denied workspace Clippy, version-counter and package-allowlist
+  checks pass. A private enhanced 1280×720 screenshot is inspected. The native
+  launcher saves both choices; explicit and saved-choice game launches each
+  close cleanly after 120 frames (60 and 62 fixed ticks). The complete
+  owner-ROM release workspace suite runs separately; final regression and
+  hosted Windows/Linux CI results are recorded in the development PR before
+  treating this desktop checkpoint as verified. ROMs and captures stay local.
+- **Next:** mipmaps/anisotropic filtering and widescreen HUD polish are small
+  presentation follow-ups. Expanded drawing visibility requires a separate
+  audit of original callback effects. The gameplay milestone remains star
+  spawning, its cutscene and collection after King Bob-omb's defeat.
+
 ### Bob-omb Battlefield acceptance tracker
 
 | Capability / act | Actual state |
 | --- | --- |
 | M0 bounded ROM foundation | Complete: authored fixtures and positive owner-ROM integration pass |
 | M1 imported original visible level | Met for terrain: original terrain and textures import and render from the ROM (independently validated); collision inspectable in the viewer overlay and as OBJ; placements inspectable. Skybox and object models are presentation gaps |
-| M2 playable exploration | Mostly met: Mario's complete tick (inputs, non-object actions, object update, animations from the ROM) and BOB's reference camera match the native decomp per frame on BOB, and Mario runs, jumps and climbs through the original level in the viewer seen through the original camera (C buttons, R, C-Up); recorded runs replay exactly. Mario is drawn with his ROM model and animations, posed as the original render pass does. Mario's original shadow is implemented and checked against the native decomp. The object system runs with BOB's coins (drawn, collectable, compared per frame) and collection sparkles; the window shows the original HUD coin count with development typography. Not yet: other objects, cutscene/water actions, camera cutscenes |
-| Act 1 — King Bob-omb | Not implemented |
+| M2 playable exploration | Mostly met: Mario's complete tick (inputs, non-object actions, object update, animations from the ROM) and BOB's reference camera match the native decomp per frame on BOB, and Mario runs, jumps and climbs through the original level in the viewer seen through the original camera (C buttons, R, C-Up); recorded runs replay exactly. Mario is drawn with his ROM model and animations, posed as the original render pass does. Mario's original shadow is implemented and checked against the native decomp. The object system runs with BOB's coins (drawn, collectable, compared per frame) and collection sparkles, BOB's Bob-ombs (animated, exploding, dropping loot and respawning, carried and thrown by Mario, compared per frame) and its Bob-omb Buddies (talking through the original dialog cutscene and dialog box, compared per frame); the window shows the original HUD coin count and the dialog box with development typography. Not yet: other enemies, signs, other cutscene actions, water actions, other camera cutscenes |
+| Act 1 — King Bob-omb | Boss encounter enabled and frame-compared (session 32); mission completion stops at star spawning. Standard movement and shared grab/release prerequisites component-compared (sessions 24–25), including ROM Mario heavy actions; NPC dialog actions, the dialog cutscene, time stop and the dialog box frame-compared through the Buddies (sessions 29–30); his behavior, particles, positional shakes, boss camera focus and animated anchor now frame-compared, placement enabled (session 32) |
 | Act 2 — Koopa the Quick | Not implemented |
 | Act 3 — Shoot to the Island | Not implemented |
 | Act 4 — Eight Red Coins | Not implemented |
 | Act 5 — Mario Wings to the Sky | Not implemented; wing-cap campaign unlock also missing |
 | Act 6 — Chain Chomp gate | Not implemented |
-| 100-coin star, death/re-entry/save, audio | Coin collection and the coin count work for act 1's yellow and formation coins; red coins, enemy/box coins, the star spawn, death/re-entry/save and audio are not implemented |
+| 100-coin star, death/re-entry/save, audio | Coin collection and the coin count work for act 1's yellow and formation coins and Bob-omb loot coins; red coins, other enemy/box coins, the star spawn, death/re-entry/save and audio are not implemented |
 
 ### Session update template
 
+- Project version:
 - Date and change:
 - Milestone and actual working result:
 - References or decisions changed:
@@ -970,3 +1480,7 @@ Every handoff should report the working result, commands actually run, missing f
 - 2026-10-09: Mario's animations load from the ROM; the oracle compiles the real decomp headers and whole Mario sources; Mario's update, non-object actions and per-frame tick are translated with globals in `StepWorld`, outside calls as recorded events, and object paths panicking; the render pass's animation frame advance is a simulation stage. Complete ticks compare against the native decomp by named words. See [docs/DECISIONS.md](docs/DECISIONS.md).
 - 2026-10-09: The reference camera is a direct translation of camera.c's frame for areas without triggers, with camera.c's globals in one `CameraSystem` and the RNG seed owned by the game frame. Mario's camera requests apply after his update in call order (his own mode reads mirror them), unsupported modes/cutscenes/trigger levels end play after the frame, and the viewer draws from the authoritative camera instead of a follow camera. No cutscene, spline or trigger data is copied. See [docs/DECISIONS.md](docs/DECISIONS.md).
 - 2026-10-10: Objects use the original pool and lists with Mario's object held in `MarioState`; behavior scripts are the ROM's segment 0x13 bytes interpreted in place, with natives resolved through the version adapter; a level spawns only placements whose scripts are fully ported (the rest recorded, the oracle given the same subset); the render pass's `oAnimState` writes are a simulation stage. See [docs/DECISIONS.md](docs/DECISIONS.md).
+- 2026-10-10: Object animations stay segmented and are read in place; pointer-valued object fields share their raw words; throw matrices are object-owned until the render pass uses them; object camera requests are deferred to after the object update in call order; holding stops play until Mario's render pass is authoritative. See [docs/DECISIONS.md](docs/DECISIONS.md).
+- 2026-10-10: Mario's render pass is authoritative in linked frames (his model's traversal with the original matrix stack writes the HOLP and his callbacks' body-state resets); holding actions read the HOLP; the oracle runs that pass through the verbatim traversal over a graph built with the verbatim constructors. See [docs/DECISIONS.md](docs/DECISIONS.md).
+- 2026-10-10: The dialog box's state is simulation, advanced after the render pass, with the ROM's dialog table; objects' cutscene requests are mirrored into the object update and back to the camera; the dialog cutscene is the first ported camera cutscene. See [docs/DECISIONS.md](docs/DECISIONS.md).
+- 2026-10-10: A translated native can be withheld from level spawning until it has native frame comparisons (`Native::awaits_comparison`); King Bob-omb is the first. See [docs/DECISIONS.md](docs/DECISIONS.md).

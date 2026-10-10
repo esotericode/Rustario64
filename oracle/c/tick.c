@@ -63,7 +63,11 @@ void spawn_macro_objects(s16 areaIndex, s16 *macroObjList);
 void spawn_objects_from_info(s32 unused, struct SpawnInfo *spawnInfo);
 void clear_objects(void);
 void update_objects(s32 unused);
+#include "game/ingame_menu.h"
 void update_hud_values(void);
+void oracle_dialog_reset(void);
+void oracle_dialog_begin_frame(void);
+void oracle_dialog_snapshot(void (*put)(const char *name, u32 value));
 void oracle_set_rng_seed(u16 seed);
 u16 oracle_rng_seed(void);
 extern struct Object gObjectPool[];
@@ -85,6 +89,10 @@ extern struct Surface gWaterSurfacePseudoFloor;
 extern u32 gOracleSaveFlags;
 extern s32 gOracleCapPosValid;
 extern s32 gOracleTotalStars;
+void oracle_frame_arena_reset(void);
+const f32 *oracle_frame_matrix(const void *p);
+u32 oracle_object_animation_address(const void *p);
+u32 oracle_object_animation_table_address(const void *p);
 
 typedef struct {
     s32 startPos[3];
@@ -150,7 +158,7 @@ typedef struct {
 } OracleScript;
 s32 oracle_script_count(void);
 const OracleScript *oracle_script(s32 i);
-#define MAX_SCRIPTS 16
+#define MAX_SCRIPTS 32
 static u32 sScriptAddresses[MAX_SCRIPTS];
 
 void oracle_tick_set_scripts(const u32 *segmented, s32 count) {
@@ -207,6 +215,12 @@ s32 oracle_render_model_of(struct GraphNode *node);
 void oracle_render_load_models(void);
 void oracle_render_object(struct Object *obj, s8 rootAreaIndex);
 void oracle_render_begin(void);
+/* Mario's object node through the verbatim traversal (mario_render_unit.c). */
+s32 oracle_render_has_mario(void);
+void oracle_render_load_mario(void);
+void oracle_render_load_king(void);
+void oracle_render_prime_scaler(void);
+void oracle_render_mario(s8 rootAreaIndex);
 
 void oracle_tick_set_models(const OracleModel *models, s32 count) {
     oracle_render_set_models(models, count);
@@ -297,6 +311,7 @@ void oracle_tick_begin(const OracleTickSetup *s) {
     memset(sFloorAlignMatrix, 0, sizeof(Mat4) * 2);
     gMarioAnimsBuf.currentAddr = NULL;
     oracle_reset_interaction_state();
+    oracle_dialog_reset();
     gWaterSurfacePseudoFloor.originOffset = 0.0f;
     gCheckingSurfaceCollisionsForCamera = FALSE;
     gFindFloorIncludeSurfaceIntangible = FALSE;
@@ -308,6 +323,8 @@ void oracle_tick_begin(const OracleTickSetup *s) {
     gDebugLevelSelect = FALSE;
     gShowDebugText = FALSE;
     gTimeStopState = 0;
+    gObjectCounter = 0;
+    gPrevFrameObjectCount = 0;
     gMarioPlatform = NULL;
     gMarioObject = NULL;
     gCurrentObject = NULL;
@@ -349,6 +366,9 @@ void oracle_tick_begin(const OracleTickSetup *s) {
     init_graph_node_start(NULL, (struct GraphNodeStart *) &gObjParentGraphNode);
     clear_objects();
     oracle_render_load_models();
+    oracle_render_load_mario();
+    oracle_render_load_king();
+    oracle_render_prime_scaler();
 
     /* level_cmd_init_mario and level_cmd_set_mario_start_pos */
     memset(gMarioSpawnInfo, 0, sizeof(*gMarioSpawnInfo));
@@ -455,12 +475,22 @@ void oracle_tick_run(const OracleTickInput *in) {
         fail("oracle_tick_begin was not called");
     }
     oracle_clear_events();
+    /* select_gfx_pool: this frame's display-list allocations start over. */
+    oracle_frame_arena_reset();
     /* read_controller_inputs, connected controller */
     controller->rawStickX = (s16) in->stick[0];
     controller->rawStickY = (s16) in->stick[1];
     controller->buttonPressed = buttons & (buttons ^ controller->buttonDown);
     controller->buttonDown = buttons;
     adjust_analog_stick(controller);
+    /* read_controller_inputs copies player 1's inputs to player 3's port. */
+    gPlayer3Controller->rawStickX = gPlayer1Controller->rawStickX;
+    gPlayer3Controller->rawStickY = gPlayer1Controller->rawStickY;
+    gPlayer3Controller->stickX = gPlayer1Controller->stickX;
+    gPlayer3Controller->stickY = gPlayer1Controller->stickY;
+    gPlayer3Controller->stickMag = gPlayer1Controller->stickMag;
+    gPlayer3Controller->buttonPressed = gPlayer1Controller->buttonPressed;
+    gPlayer3Controller->buttonDown = gPlayer1Controller->buttonDown;
     if (!sCameraLinked) {
         /* The camera computed this yaw during the previous frame. */
         sTickCamera.yaw = (s16) in->cameraYaw;
@@ -476,8 +506,18 @@ void oracle_tick_run(const OracleTickInput *in) {
     if (sCameraLinked) {
         oracle_camera_render();
     }
-    tick_render_mario();
+    if (sCameraLinked && oracle_render_has_mario()) {
+        oracle_render_mario(sRootAreaIndex);
+    } else {
+        tick_render_mario();
+    }
     tick_render_objects();
+    /* render_game ends with render_menus_and_dialogs (after the HUD and the
+     * text labels, which only draw). */
+    if (sCameraLinked) {
+        oracle_dialog_begin_frame();
+        render_menus_and_dialogs();
+    }
     gGlobalTimer++;
 }
 
@@ -539,6 +579,10 @@ static s32 object_id(struct Object *o) {
         fail("an object reference outside the pool");
     }
     return (s32) (o - &gObjectPool[0]);
+}
+
+s32 oracle_object_slot(struct Object *o) {
+    return object_id(o);
 }
 
 /* A respawn record: the full-list index of the macro entry or spawn info,
@@ -639,21 +683,27 @@ static void put_object(const char *prefix, struct Object *o) {
     s32 throwMatrix;
     s32 model = -1;
 #define NAME(field) (snprintf(buf, sizeof(buf), "%s.%s", prefix, field), buf)
+    /* curAnim: 0 for NULL, 1 for Mario's DMA buffer, otherwise the
+     * animation's segmented address. */
     if (gfx->animInfo.curAnim == NULL) {
         curAnim = 0;
     } else if (o == gMarioObject && (void *) gfx->animInfo.curAnim == gMarioAnimsBuf.bufTarget) {
         curAnim = 1;
-    } else {
-        fail("curAnim points outside Mario's animation buffer");
+    } else if ((curAnim = (s32) oracle_object_animation_address(gfx->animInfo.curAnim)) == 0) {
+        fail("curAnim points outside the loaded animations");
     }
+    /* throwMatrix: -1 for NULL, a floor-align matrix's index, or 2 for a
+     * display-list matrix (obj_orient_graph's), whose words follow. */
     if (gfx->throwMatrix == NULL) {
         throwMatrix = -1;
     } else if (gfx->throwMatrix == &sFloorAlignMatrix[0]) {
         throwMatrix = 0;
     } else if (gfx->throwMatrix == &sFloorAlignMatrix[1]) {
         throwMatrix = 1;
+    } else if (oracle_frame_matrix(gfx->throwMatrix) != NULL) {
+        throwMatrix = 2;
     } else {
-        fail("throwMatrix points outside the floor-align matrices");
+        fail("throwMatrix points outside the floor-align matrices and the frame arena");
     }
     if (gfx->sharedChild != NULL) {
         model = oracle_render_model_of(gfx->sharedChild);
@@ -673,6 +723,14 @@ static void put_object(const char *prefix, struct Object *o) {
     put_i(NAME("gfx.anim.animFrameAccelAssist"), gfx->animInfo.animFrameAccelAssist);
     put_i(NAME("gfx.anim.animAccel"), gfx->animInfo.animAccel);
     put_i(NAME("gfx.throwMatrix"), throwMatrix);
+    if (throwMatrix == 2) {
+        const f32 *words = oracle_frame_matrix(gfx->throwMatrix);
+        for (i = 0; i < 16; i++) {
+            char field[32];
+            snprintf(field, sizeof(field), "gfx.throwMatrixWords[%d]", i);
+            put_f(NAME(field), words[i]);
+        }
+    }
     put(NAME("collidedObjInteractTypes"), o->collidedObjInteractTypes);
     put_i(NAME("activeFlags"), o->activeFlags);
     put_i(NAME("numCollidedObjs"), o->numCollidedObjs);
@@ -681,10 +739,32 @@ static void put_object(const char *prefix, struct Object *o) {
         snprintf(field, sizeof(field), "collidedObjs[%d]", i);
         put_i(NAME(field), i < o->numCollidedObjs ? object_id(o->collidedObjs[i]) : -1);
     }
+    /* The N64's pointer fields share the raw words; on the host they are
+     * ptrData. A pointer becomes the segmented address the Rust side stores:
+     * an animation table's or a behavior script's. */
     for (i = 0; i < 0x50; i++) {
         char field[32];
+        u32 word = o->rawData.asU32[i];
+        const void *pointer = o->ptrData.asVoidPtr[i];
+        if (i == 0x4E) {
+            /* Standard movement's floor pointer, canonical surface index+1. */
+            word = oracle_surface_index(o->oFloor) + 1;
+        } else if (i == 0x02 && o->behavior == bhvKingBobomb) {
+            word = ((u32) (u16) o->oDialogResponse << 16) | (u16) o->oDialogState;
+        } else if (i == 0x4C) {
+            /* The N64 halfword order, independent of host endianness. */
+            word = ((u32) (u16) o->oFloorType << 16) | (u16) o->oFloorRoom;
+        } else if (pointer != NULL) {
+            if (word != 0) {
+                fail("an object field used as both a pointer and a number");
+            }
+            word = oracle_object_animation_table_address(pointer);
+            if (word == 0) {
+                word = script_address((const BehaviorScript *) pointer);
+            }
+        }
         snprintf(field, sizeof(field), "raw[0x%02X]", i);
-        put(NAME(field), o->rawData.asU32[i]);
+        put(NAME(field), word);
     }
     put(NAME("unused1"), o->unused1);
     put(NAME("bhvStackIndex"), o->bhvStackIndex);
@@ -751,6 +831,9 @@ static void snapshot_objects(void) {
     put_i("world.marioObject", object_id(gMarioObject));
     put_i("world.currentObject", object_id(gCurrentObject));
     put("world.timeStopState", gTimeStopState);
+    put("world.objectCounter", gObjectCounter);
+    put_i("world.prevFrameObjectCount", gPrevFrameObjectCount);
+    oracle_dialog_snapshot(put);
     put_i("world.rngSeed", oracle_rng_seed());
     for (i = 0; i < sMacroCount; i++) {
         snprintf(buf, sizeof(buf), "area.macro[%d].params", sMacroOriginal[i]);
@@ -864,4 +947,26 @@ s32 oracle_tick_snapshot(const char *const **names, const u32 **words) {
     *names = sNamePtrs;
     *words = sWords;
     return sCount;
+}
+
+/* Development fixture input: initialize numeric boss fields once after its
+ * script's first frame. The two engines subsequently evolve independently.
+ * Pointer and packed-halfword fields are deliberately excluded. */
+void oracle_tick_seed_boss_field(s32 slot, s32 field, u32 word) {
+    if (slot < 0 || slot >= OBJECT_POOL_CAPACITY || gObjectPool[slot].behavior != bhvKingBobomb) {
+        fail("boss fixture slot");
+    }
+    switch (field) {
+        case 0x01: case 0x05: /* flags and intangible timer */
+        case 0x06: case 0x07: case 0x08: /* position */
+        case 0x09: case 0x0A: case 0x0B: /* velocity */
+        case 0x0C: /* forward velocity */
+        case 0x19: /* move flags */
+        case 0x31: case 0x32: case 0x33: /* action, sub-action, timer */
+        case 0x3F: /* health */
+        case 0x41: /* previous action */
+            gObjectPool[slot].rawData.asU32[field] = word;
+            return;
+        default: fail("non-numeric boss fixture field");
+    }
 }

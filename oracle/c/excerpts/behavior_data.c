@@ -354,3 +354,186 @@ const BehaviorScript bhvMario[] = {
 const BehaviorScript bhvSpinAirborneWarp[] = {
     BREAK(),
 };
+
+/* data/behavior_data.c: const BehaviorScript bhvSoundSpawner[] */
+const BehaviorScript bhvSoundSpawner[] = {
+    BEGIN(OBJ_LIST_UNIMPORTANT),
+    OR_INT(oFlags, OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE),
+    DELAY(3),
+    CALL_NATIVE(bhv_sound_spawner_init),
+    DELAY(30),
+    DEACTIVATE(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvMovingYellowCoin[] */
+const BehaviorScript bhvMovingYellowCoin[] = {
+    BEGIN(OBJ_LIST_LEVEL),
+    OR_INT(oFlags, OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE),
+    BILLBOARD(),
+    SET_HITBOX(/*Radius*/ 100, /*Height*/ 64),
+    SET_INT(oInteractType, INTERACT_COIN),
+    SET_INT(oIntangibleTimer, 0),
+    SET_INT(oAnimState, -1),
+    CALL_NATIVE(bhv_moving_yellow_coin_init),
+    BEGIN_LOOP(),
+        CALL_NATIVE(bhv_moving_yellow_coin_loop),
+        ADD_INT(oAnimState, 1),
+    END_LOOP(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvBobomb[] */
+const BehaviorScript bhvBobomb[] = {
+    BEGIN(OBJ_LIST_DESTRUCTIVE),
+    OR_INT(oFlags, (OBJ_FLAG_PERSISTENT_RESPAWN | OBJ_FLAG_COMPUTE_ANGLE_TO_MARIO | OBJ_FLAG_HOLDABLE | OBJ_FLAG_COMPUTE_DIST_TO_MARIO | OBJ_FLAG_SET_FACE_YAW_TO_MOVE_YAW | OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE)),
+    LOAD_ANIMATIONS(oAnimations, bobomb_seg8_anims_0802396C),
+    DROP_TO_FLOOR(),
+    ANIMATE(0),
+    SET_INT(oIntangibleTimer, 0),
+    SET_HOME(),
+    CALL_NATIVE(bhv_bobomb_init),
+    BEGIN_LOOP(),
+        CALL_NATIVE(bhv_bobomb_loop),
+    END_LOOP(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvBobombFuseSmoke[] */
+const BehaviorScript bhvBobombFuseSmoke[] = {
+    BEGIN(OBJ_LIST_DEFAULT),
+    OR_INT(oFlags, OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE),
+    BILLBOARD(),
+    SET_INT(oAnimState, -1),
+    CALL_NATIVE(bhv_bobomb_fuse_smoke_init),
+    DELAY(1),
+    BEGIN_LOOP(),
+        CALL_NATIVE(bhv_dust_smoke_loop),
+        ADD_INT(oAnimState, 1),
+    END_LOOP(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvCarrySomething3[] */
+const BehaviorScript bhvCarrySomething3[] = {
+    BEGIN(OBJ_LIST_DEFAULT),
+    BREAK(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvCarrySomething4[] */
+const BehaviorScript bhvCarrySomething4[] = {
+    BEGIN(OBJ_LIST_DEFAULT),
+    BREAK(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvCarrySomething5[] */
+const BehaviorScript bhvCarrySomething5[] = {
+    BEGIN(OBJ_LIST_DEFAULT),
+    BREAK(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvExplosion[] */
+const BehaviorScript bhvExplosion[] = {
+    BEGIN(OBJ_LIST_DESTRUCTIVE),
+    OR_INT(oFlags, (OBJ_FLAG_COMPUTE_DIST_TO_MARIO | OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE)),
+    BILLBOARD(),
+    SET_INTERACT_TYPE(INTERACT_DAMAGE),
+    SET_INT(oDamageOrCoinValue, 2),
+    SET_INT(oIntangibleTimer, 0),
+    SET_HITBOX_WITH_OFFSET(/*Radius*/ 150, /*Height*/ 150, /*Downwards offset*/ 150),
+    SET_INT(oAnimState, -1),
+    CALL_NATIVE(bhv_explosion_init),
+    BEGIN_LOOP(),
+        CALL_NATIVE(bhv_explosion_loop),
+        ADD_INT(oAnimState, 1),
+    END_LOOP(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvBobombBullyDeathSmoke[] */
+const BehaviorScript bhvBobombBullyDeathSmoke[] = {
+    BEGIN(OBJ_LIST_UNIMPORTANT),
+    OR_INT(oFlags, (OBJ_FLAG_MOVE_Y_WITH_TERMINAL_VEL | OBJ_FLAG_MOVE_XZ_USING_FVEL | OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE)),
+    BILLBOARD(),
+    SET_INT(oAnimState, -1),
+    CALL_NATIVE(bhv_bobomb_bully_death_smoke_init),
+    DELAY(1),
+    BEGIN_LOOP(),
+        CALL_NATIVE(bhv_dust_smoke_loop),
+        ADD_INT(oAnimState, 1),
+    END_LOOP(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvRespawner[] */
+const BehaviorScript bhvRespawner[] = {
+    BEGIN(OBJ_LIST_DEFAULT),
+    OR_INT(oFlags, OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE),
+    BEGIN_LOOP(),
+        CALL_NATIVE(bhv_respawner_loop),
+    END_LOOP(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvBobombBuddy[] */
+const BehaviorScript bhvBobombBuddy[] = {
+    BEGIN(OBJ_LIST_GENACTOR),
+    OR_INT(oFlags, (OBJ_FLAG_COMPUTE_ANGLE_TO_MARIO | OBJ_FLAG_HOLDABLE | OBJ_FLAG_COMPUTE_DIST_TO_MARIO | OBJ_FLAG_SET_FACE_YAW_TO_MOVE_YAW | OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE)),
+    LOAD_ANIMATIONS(oAnimations, bobomb_seg8_anims_0802396C),
+    SET_INTERACT_TYPE(INTERACT_TEXT),
+    DROP_TO_FLOOR(),
+    SET_HITBOX(/*Radius*/ 100, /*Height*/ 60),
+    ANIMATE(0),
+    SET_INT(oBobombBuddyRole, BOBOMB_BUDDY_ROLE_ADVICE),
+    SET_HOME(),
+    CALL_NATIVE(bhv_bobomb_buddy_init),
+    BEGIN_LOOP(),
+        SET_INT(oIntangibleTimer, 0),
+        CALL_NATIVE(bhv_bobomb_buddy_loop),
+    END_LOOP(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvKingBobomb[] */
+const BehaviorScript bhvKingBobomb[] = {
+    BEGIN(OBJ_LIST_GENACTOR),
+    OR_INT(oFlags, (OBJ_FLAG_COMPUTE_ANGLE_TO_MARIO | OBJ_FLAG_ACTIVE_FROM_AFAR | OBJ_FLAG_COMPUTE_DIST_TO_MARIO | OBJ_FLAG_SET_FACE_YAW_TO_MOVE_YAW | OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE)),
+    LOAD_ANIMATIONS(oAnimations, king_bobomb_seg5_anims_0500FE30),
+    SET_INT(oInteractType, INTERACT_GRABBABLE),
+    SET_HITBOX(/*Radius*/ 100, /*Height*/ 100),
+    SET_OBJ_PHYSICS(/*Wall hitbox radius*/ 30, /*Gravity*/ -400, /*Bounciness*/ -50, /*Drag strength*/ 1000, /*Friction*/ 1000, /*Buoyancy*/ 200, /*Unused*/ 0, 0),
+    SET_INT(oIntangibleTimer, 0),
+    DROP_TO_FLOOR(),
+    SET_HOME(),
+    SPAWN_OBJ(/*Model*/ MODEL_NONE, /*Behavior*/ bhvBobombAnchorMario),
+    SET_INT(oHealth, 3),
+    SET_INT(oDamageOrCoinValue, 1),
+    BEGIN_LOOP(),
+        CALL_NATIVE(bhv_king_bobomb_loop),
+    END_LOOP(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvBobombAnchorMario[] */
+const BehaviorScript bhvBobombAnchorMario[] = {
+    BEGIN(OBJ_LIST_GENACTOR),
+    OR_INT(oFlags, (OBJ_FLAG_SET_FACE_YAW_TO_MOVE_YAW | OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE)),
+    BILLBOARD(),
+    SET_FLOAT(oParentRelativePosX, 100),
+    SET_FLOAT(oParentRelativePosZ, 150),
+    BEGIN_LOOP(),
+        CALL_NATIVE(bhv_bobomb_anchor_mario_loop),
+    END_LOOP(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvWhitePuffExplosion[] */
+const BehaviorScript bhvWhitePuffExplosion[] = {
+    BEGIN(OBJ_LIST_UNIMPORTANT),
+    OR_INT(oFlags, OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE),
+    BILLBOARD(),
+    BEGIN_LOOP(),
+        CALL_NATIVE(bhv_white_puff_exploding_loop),
+    END_LOOP(),
+};
+
+/* data/behavior_data.c: const BehaviorScript bhvBreakBoxTriangle[] */
+const BehaviorScript bhvBreakBoxTriangle[] = {
+    BEGIN(OBJ_LIST_UNIMPORTANT),
+    OR_INT(oFlags, OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE),
+    BEGIN_REPEAT(18),
+        CALL_NATIVE(cur_obj_rotate_face_angle_using_vel),
+        CALL_NATIVE(cur_obj_move_using_fvel_and_gravity),
+    END_REPEAT(),
+    DEACTIVATE(),
+};

@@ -251,7 +251,11 @@ pub(crate) static MODELS: std::sync::LazyLock<
     rustario64::simulation::object::render::ObjectModels,
 > = std::sync::LazyLock::new(rustario64::simulation::object::render::authored_models);
 
-/// Mario alone, with the authored scripts and models.
+pub(crate) static ANIMATIONS: std::sync::LazyLock<
+    rustario64::content::animation::ObjectAnimations,
+> = std::sync::LazyLock::new(rustario64::simulation::object::animation::authored_object_animations);
+
+/// Mario alone, with the authored scripts, models and object animations.
 pub(crate) fn mario_only() -> rustario64::simulation::mario::tick::LevelObjects<'static> {
-    rustario64::simulation::mario::tick::LevelObjects::mario_only(&SCRIPTS, &MODELS)
+    rustario64::simulation::mario::tick::LevelObjects::mario_only(&SCRIPTS, &MODELS, &ANIMATIONS)
 }

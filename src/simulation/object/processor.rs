@@ -3,7 +3,8 @@
 //! sObjectListUpdateOrder, the time-stop variant, unloading deactivated
 //! objects with their respawn bits, and update_mario_platform's call site.
 //!
-//! Not modelled: the debug counters (gObjectCounter, gNumFindFloorMisses and
+//! gObjectCounter and gPrevFrameObjectCount are kept (particle bursts read
+//! the latter). Not modelled: the debug counters (gNumFindFloorMisses and
 //! friends, read only by debug pages) and the profiler clock. Object surfaces
 //! (clear_dynamic_surfaces, load_object_collision_model) and platform
 //! displacement need surface objects, which no ported behavior has.
@@ -18,7 +19,8 @@ fn update_objects_starting_at(
     w: &mut StepWorld<'_>,
     list: ObjectList,
     first: Node,
-) {
+) -> u32 {
+    let mut count = 0u32;
     let mut node = first;
     while node != Node::Head(list) {
         let Node::Slot(id) = node else {
@@ -28,7 +30,9 @@ fn update_objects_starting_at(
         object_mut(&mut w.objects, &mut m.obj, id).gfx.node_flags |= GRAPH_RENDER_HAS_ANIMATION;
         script::cur_obj_update(m, w, id);
         node = w.objects.next(node);
+        count += 1;
     }
+    count
 }
 
 /// update_objects_during_time_stop.
@@ -37,7 +41,8 @@ fn update_objects_during_time_stop(
     w: &mut StepWorld<'_>,
     list: ObjectList,
     first: Node,
-) {
+) -> u32 {
+    let mut count = 0u32;
     let mut node = first;
     while node != Node::Head(list) {
         let Node::Slot(id) = node else {
@@ -67,16 +72,18 @@ fn update_objects_during_time_stop(
                 !GRAPH_RENDER_HAS_ANIMATION;
         }
         node = w.objects.next(node);
+        count += 1;
     }
+    count
 }
 
 /// update_objects_in_list.
-fn update_objects_in_list(m: &mut MarioState, w: &mut StepWorld<'_>, list: ObjectList) {
+fn update_objects_in_list(m: &mut MarioState, w: &mut StepWorld<'_>, list: ObjectList) -> u32 {
     let first = w.objects.next(Node::Head(list));
     if w.time_stop_state & TIME_STOP_ACTIVE == 0 {
-        update_objects_starting_at(m, w, list, first);
+        update_objects_starting_at(m, w, list, first)
     } else {
-        update_objects_during_time_stop(m, w, list, first);
+        update_objects_during_time_stop(m, w, list, first)
     }
 }
 
@@ -116,8 +123,9 @@ pub fn update_objects(m: &mut MarioState, w: &mut StepWorld<'_>) {
     w.collision_flags.checking_for_camera = false;
     // clear_dynamic_surfaces: no object loads collision.
     // update_terrain_objects.
-    update_objects_in_list(m, w, ObjectList::Spawner);
-    update_objects_in_list(m, w, ObjectList::Surface);
+    w.object_counter = update_objects_in_list(m, w, ObjectList::Spawner);
+    // The original assigns instead of adding.
+    w.object_counter = update_objects_in_list(m, w, ObjectList::Surface);
     // apply_mario_platform_displacement.
     assert!(
         w.mario_platform.is_none(),
@@ -126,7 +134,9 @@ pub fn update_objects(m: &mut MarioState, w: &mut StepWorld<'_>) {
     collision::detect_object_collisions(m, w);
     // update_non_terrain_objects.
     for list in &UPDATE_ORDER[2..] {
-        update_objects_in_list(m, w, *list);
+        w.object_counter = w
+            .object_counter
+            .wrapping_add(update_objects_in_list(m, w, *list));
     }
     // unload_deactivated_objects.
     for list in UPDATE_ORDER {
@@ -139,6 +149,7 @@ pub fn update_objects(m: &mut MarioState, w: &mut StepWorld<'_>) {
     } else {
         w.time_stop_state &= !TIME_STOP_ACTIVE;
     }
+    w.prev_frame_object_count = w.object_counter as i16;
 }
 
 /// Every allocated object, list by list in update order, for snapshots and

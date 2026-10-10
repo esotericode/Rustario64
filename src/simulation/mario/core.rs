@@ -7,7 +7,7 @@
 //! f32 operation order, s16 wraparound and C promotions follow the original.
 //! Calls into sound, the camera and the level runtime are recorded as events.
 use super::{
-    Event, MarioState, StepWorld, SurfaceRef, Unsupported, airborne, automatic,
+    Event, MarioState, StepWorld, SurfaceRef, ThrowMatrix, Unsupported, airborne, automatic,
     constants::*,
     f32_to_s16, f32_to_s32, interaction, moving, object, stationary,
     step::{self, mario_set_forward_vel},
@@ -730,8 +730,14 @@ pub fn mario_reset_bodystate(m: &mut MarioState) {
 
 /// sink_mario_in_quicksand: lowers the drawn position only.
 pub fn sink_mario_in_quicksand(m: &mut MarioState, w: &mut StepWorld<'_>) {
-    if let Some(matrix) = m.obj.gfx.throw_matrix {
-        w.floor_align_matrix[matrix][3][1] -= m.quicksand_depth;
+    match m.obj.gfx.throw_matrix {
+        Some(ThrowMatrix::FloorAlign(matrix)) => {
+            w.floor_align_matrix[matrix][3][1] -= m.quicksand_depth;
+        }
+        Some(ThrowMatrix::Terrain(_)) => {
+            panic!("Mario's throw matrix is always a floor-align matrix")
+        }
+        None => {}
     }
     m.obj.gfx.pos[1] -= m.quicksand_depth;
 }
@@ -823,10 +829,7 @@ fn execute_group(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
             w.event(Event::Unsupported(Unsupported::SubmergedGroup(m.action)));
             0
         }
-        ACT_GROUP_CUTSCENE => {
-            w.event(Event::Unsupported(Unsupported::CutsceneGroup(m.action)));
-            0
-        }
+        ACT_GROUP_CUTSCENE => super::cutscene::mario_execute_cutscene_action(m, w),
         ACT_GROUP_AUTOMATIC => automatic::mario_execute_automatic_action(m, w),
         ACT_GROUP_OBJECT => object::mario_execute_object_action(m, w),
         // An unknown group leaves the loop variable unchanged (TRUE).
@@ -835,7 +838,7 @@ fn execute_group(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
 }
 
 /// execute_mario_action: one tick of Mario's behavior. Returns the particle
-/// flags. Groups that are not ported yet (cutscene, submerged) record an
+/// flags. The submerged group and unported cutscene actions record an
 /// `Unsupported` event and end the loop, like the oracle's boundary.
 pub fn execute_mario_action(m: &mut MarioState, w: &mut StepWorld<'_>) -> u32 {
     if m.action == 0 {

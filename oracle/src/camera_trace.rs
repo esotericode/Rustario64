@@ -231,8 +231,18 @@ pub fn capture_camera(camera: &CameraSystem, o: &mut Words) {
     o.i("camera.cutsceneTimer", i32::from(camera.cutscene_timer));
     o.put("camera.cutsceneObjSpawn", camera.cutscene_obj_spawn);
     o.i("camera.objCutsceneDone", camera.obj_cutscene_done);
-    o.i("camera.cutsceneFocusIsNull", 1);
-    o.i("camera.secondCameraFocusIsNull", 1);
+    o.i(
+        "camera.cutsceneFocusIsNull",
+        i32::from(camera.cutscene_focus.is_none()),
+    );
+    o.i(
+        "camera.secondCameraFocusIsNull",
+        i32::from(camera.second_camera_focus.is_none()),
+    );
+    o.i(
+        "camera.secondCameraFocus",
+        camera.second_camera_focus.map_or(-1, |id| id.0 as i32),
+    );
     o.put("camera.unused8032CFC8", camera.unused_8032cfc8);
     o.put("camera.unused8032CFCC", camera.unused_8032cfcc);
     o.i("camera.unused8033B316", i32::from(camera.unused_8033b316));
@@ -250,6 +260,41 @@ pub fn capture_camera(camera: &CameraSystem, o: &mut Words) {
     o.f32v(
         "camera.fixedModeBasePosition",
         &camera.fixed_mode_base_position,
+    );
+    o.f32v("camera.storeCutscene.pos", &camera.store_cutscene.pos);
+    o.f32v("camera.storeCutscene.focus", &camera.store_cutscene.focus);
+    o.f(
+        "camera.storeCutscene.panDist",
+        camera.store_cutscene.pan_dist,
+    );
+    o.f(
+        "camera.storeCutscene.cannonYOffset",
+        camera.store_cutscene.cannon_y_offset,
+    );
+    for (i, var) in camera.cutscene_vars.iter().enumerate() {
+        o.i(format!("camera.cutsceneVars[{i}].unused1"), var.unused1);
+        o.f32v(&format!("camera.cutsceneVars[{i}].point"), &var.point);
+        o.f32v(
+            &format!("camera.cutsceneVars[{i}].unusedPoint"),
+            &var.unused_point,
+        );
+        o.s16v(&format!("camera.cutsceneVars[{i}].angle"), &var.angle);
+        o.i(
+            format!("camera.cutsceneVars[{i}].unused2"),
+            i32::from(var.unused2),
+        );
+    }
+    o.i(
+        "camera.cutsceneDialogId",
+        i32::from(camera.cutscene_dialog_id),
+    );
+    o.i(
+        "camera.cutsceneDialogResponse",
+        i32::from(camera.cutscene_dialog_response),
+    );
+    o.i(
+        "camera.cutsceneFocus",
+        crate::object_trace::object_id(camera.cutscene_focus),
     );
     o.f32v("camera.storeCUp.pos", &camera.store_c_up.pos);
     o.f32v("camera.storeCUp.focus", &camera.store_c_up.focus);
@@ -466,7 +511,8 @@ pub fn game_trace(
             rom_sha1: rom_sha1.into(),
             reference_revision: version::REFERENCE_REVISION.into(),
             reference_configuration: "full-frame-camera-v1; native C IEEE/fwrapv/no-FMA/AVOID_UB; \
-                Mario's object and the area camera (update_camera, no triggers); level entry \
+                Mario, supported objects, authoritative render-pass writes and the area camera \
+                (update_camera, no triggers); level entry \
                 without warp from a fresh boot; camera yaw produced by the camera; sound, warp \
                 and particle calls recorded as events; debug pages off"
                 .into(),

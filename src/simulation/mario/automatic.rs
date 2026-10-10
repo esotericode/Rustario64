@@ -1,7 +1,7 @@
 //! Automatic actions, translated from pinned CC0
-//! src/game/mario_actions_automatic.c: hanging and ledge actions. Poles,
-//! cannons, tornadoes and being grabbed use an object and panic where the
-//! original reads it, until objects are simulated.
+//! src/game/mario_actions_automatic.c: hanging, ledge and grabbed actions.
+//! Poles, cannons and tornadoes remain unsupported. Being grabbed reads the
+//! simulated grabbing object and follows the original release action.
 use super::{
     MarioState, StepWorld, SurfaceRef,
     animation::{is_anim_at_end, is_anim_past_end, set_mario_animation},
@@ -337,7 +337,20 @@ fn act_ledge_climb_fast(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
 
 fn act_grabbed(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     if m.obj.raw.u32(O_INTERACT_STATUS) & INT_STATUS_MARIO_UNK2 != 0 {
-        panic!("being thrown reads the grabbing object; objects are not simulated yet");
+        let thrown = u32::from(m.obj.raw.u32(O_INTERACT_STATUS) & INT_STATUS_MARIO_UNK6 == 0);
+        let used = m.used_obj.expect("act_grabbed dereferences a NULL usedObj");
+        m.face_angle[1] = w.objects.slot(used).raw.s32(O_MOVE_ANGLE_YAW) as i16;
+        m.pos = m.obj.gfx.pos;
+        return set_mario_action(
+            m,
+            w,
+            if m.forward_vel >= 0.0 {
+                ACT_THROWN_FORWARD
+            } else {
+                ACT_THROWN_BACKWARD
+            },
+            thrown,
+        );
     }
     set_mario_animation(m, w, MARIO_ANIM_BEING_GRABBED);
     0

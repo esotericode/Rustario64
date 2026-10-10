@@ -25,6 +25,10 @@ pub fn cur_anim<'w>(anim: &AnimInfo, w: &'w StepWorld<'_>) -> &'w Animation {
                 .get(entry)
                 .expect("DMA buffer entry outside the animation table")
         }
+        Some(AnimRef::Object(address)) => w
+            .object_anims
+            .get(address)
+            .unwrap_or_else(|| panic!("curAnim 0x{address:08X} was not imported")),
         None => panic!("curAnim is NULL (the original dereferences it)"),
     }
 }

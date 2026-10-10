@@ -8,6 +8,7 @@
 #include "engine/graph_node.h"
 #include "engine/surface_collision.h"
 #include "game/area.h"
+#include "game/behavior_actions.h"
 #include "game/game_init.h"
 #include "game/mario.h"
 #include "game/memory.h"

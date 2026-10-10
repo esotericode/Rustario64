@@ -29,6 +29,13 @@ pub fn dist_between_objects(obj1: &Object, obj2: &Object) -> f32 {
     (dx * dx + dy * dy + dz * dz).sqrt()
 }
 
+/// lateral_dist_between_objects.
+pub fn lateral_dist_between_objects(obj1: &Object, obj2: &Object) -> f32 {
+    let dx = obj1.raw.f32(O_POS_X) - obj2.raw.f32(O_POS_X);
+    let dz = obj1.raw.f32(O_POS_Z) - obj2.raw.f32(O_POS_Z);
+    (dx * dx + dz * dz).sqrt()
+}
+
 /// obj_angle_to_object.
 pub fn obj_angle_to_object(trig: &TrigTables, obj1: &Object, obj2: &Object) -> i16 {
     let (z1, z2) = (obj1.raw.f32(O_POS_Z), obj2.raw.f32(O_POS_Z));
@@ -239,4 +246,190 @@ pub fn bit_shift_left(a0: i32) -> i32 {
 /// cur_obj_scale.
 pub fn cur_obj_scale(o: &mut Object, scale: f32) {
     obj_scale(o, scale);
+}
+
+/// approach_s16_symmetric: s16 arithmetic promoted to int, stored back
+/// truncated.
+pub fn approach_s16_symmetric(value: i16, target: i16, increment: i16) -> i16 {
+    let dist = i32::from(target.wrapping_sub(value));
+    let increment = i32::from(increment);
+    if dist >= 0 {
+        if dist > increment {
+            (i32::from(value) + increment) as i16
+        } else {
+            target
+        }
+    } else if dist < -increment {
+        (i32::from(value) - increment) as i16
+    } else {
+        target
+    }
+}
+
+/// obj_turn_toward_object with `obj` the current object (every ported
+/// caller passes `o`): the angle at raw index `angle_index` turns toward the
+/// target's position. The original writes gCurrentObject's word, reading it
+/// as s16 and storing the s16 result sign-extended.
+pub fn obj_turn_toward_object(
+    o: &mut Object,
+    trig: &TrigTables,
+    target: [f32; 3],
+    angle_index: usize,
+    turn_amount: i16,
+) -> i16 {
+    let target_angle = match angle_index {
+        O_MOVE_ANGLE_PITCH | O_FACE_ANGLE_PITCH => {
+            let a = target[0] - o.raw.f32(O_POS_X);
+            let c = target[2] - o.raw.f32(O_POS_Z);
+            let a = (a * a + c * c).sqrt();
+            let b = -o.raw.f32(O_POS_Y);
+            let d = -target[1];
+            trig.atan2s(a, d - b)
+        }
+        O_MOVE_ANGLE_YAW | O_FACE_ANGLE_YAW => {
+            let (a, c) = (o.raw.f32(O_POS_Z), target[2]);
+            let (b, d) = (o.raw.f32(O_POS_X), target[0]);
+            trig.atan2s(c - a, d - b)
+        }
+        other => {
+            panic!("obj_turn_toward_object index {other:#X} leaves the target angle uninitialized")
+        }
+    };
+    let start = o.raw.u32(angle_index) as i16;
+    o.raw.set_s32(
+        angle_index,
+        i32::from(approach_s16_symmetric(start, target_angle, turn_amount)),
+    );
+    target_angle
+}
+
+/// cur_obj_set_pos_relative: `dleft`/`dforward` along `other`'s move yaw.
+pub fn cur_obj_set_pos_relative(
+    o: &mut Object,
+    trig: &TrigTables,
+    other: &Object,
+    dleft: f32,
+    dy: f32,
+    dforward: f32,
+) {
+    let facing_z = trig.coss(other.raw.s32(O_MOVE_ANGLE_YAW));
+    let facing_x = trig.sins(other.raw.s32(O_MOVE_ANGLE_YAW));
+    let dz = dforward * facing_z - dleft * facing_x;
+    let dx = dforward * facing_x + dleft * facing_z;
+    o.raw
+        .set_s32(O_MOVE_ANGLE_YAW, other.raw.s32(O_MOVE_ANGLE_YAW));
+    o.raw.set_f32(O_POS_X, other.raw.f32(O_POS_X) + dx);
+    o.raw.set_f32(O_POS_Y, other.raw.f32(O_POS_Y) + dy);
+    o.raw.set_f32(O_POS_Z, other.raw.f32(O_POS_Z) + dz);
+}
+
+/// cur_obj_enable_rendering (and cur_obj_enable_rendering_2).
+pub fn cur_obj_enable_rendering(o: &mut Object) {
+    o.gfx.node_flags |= GRAPH_RENDER_ACTIVE;
+}
+
+/// obj_scale_xyz.
+pub fn obj_scale_xyz(o: &mut Object, x: f32, y: f32, z: f32) {
+    o.gfx.scale = [x, y, z];
+}
+
+/// bhv_dust_smoke_loop: drift by the velocity, gone after ten frames.
+pub fn bhv_dust_smoke_loop(o: &mut Object) {
+    o.raw
+        .set_f32(O_POS_X, o.raw.f32(O_POS_X) + o.raw.f32(O_VEL_X));
+    o.raw
+        .set_f32(O_POS_Y, o.raw.f32(O_POS_Y) + o.raw.f32(O_VEL_Y));
+    o.raw
+        .set_f32(O_POS_Z, o.raw.f32(O_POS_Z) + o.raw.f32(O_VEL_Z));
+    if o.raw.s32(O_SMOKE_TIMER) == 10 {
+        obj_mark_for_deletion(o);
+    }
+    o.raw
+        .set_s32(O_SMOKE_TIMER, o.raw.s32(O_SMOKE_TIMER).wrapping_add(1));
+}
+
+/// cur_obj_rotate_yaw_toward: turn the move yaw; oAngleVelYaw records the
+/// turn, and the result says whether the yaw was already there.
+pub fn cur_obj_rotate_yaw_toward(o: &mut Object, target: i16, increment: i16) -> bool {
+    let start_yaw = o.raw.s32(O_MOVE_ANGLE_YAW) as i16;
+    let yaw = approach_s16_symmetric(start_yaw, target, increment);
+    o.raw.set_s32(O_MOVE_ANGLE_YAW, i32::from(yaw));
+    let vel = (o.raw.s32(O_MOVE_ANGLE_YAW) as i16).wrapping_sub(start_yaw);
+    o.raw.set_s32(O_ANGLE_VEL_YAW, i32::from(vel));
+    vel == 0
+}
+
+/// cur_obj_set_pos_to_home.
+pub fn cur_obj_set_pos_to_home(o: &mut Object) {
+    for (pos, home) in [
+        (O_POS_X, O_HOME_X),
+        (O_POS_Y, O_HOME_Y),
+        (O_POS_Z, O_HOME_Z),
+    ] {
+        o.raw.set_u32(pos, o.raw.u32(home));
+    }
+}
+
+/// cur_obj_angle_to_home.
+pub fn cur_obj_angle_to_home(o: &Object, trig: &TrigTables) -> i16 {
+    let dx = o.raw.f32(O_HOME_X) - o.raw.f32(O_POS_X);
+    let dz = o.raw.f32(O_HOME_Z) - o.raw.f32(O_POS_Z);
+    trig.atan2s(dz, dx)
+}
+
+/// cur_obj_hide.
+pub fn cur_obj_hide(o: &mut Object) {
+    o.gfx.node_flags |= GRAPH_RENDER_INVISIBLE;
+}
+
+/// cur_obj_disable_rendering.
+pub fn cur_obj_disable_rendering(o: &mut Object) {
+    o.gfx.node_flags &= !GRAPH_RENDER_ACTIVE;
+}
+
+/// cur_obj_rotate_face_angle_using_vel.
+pub fn cur_obj_rotate_face_angle_using_vel(o: &mut Object) {
+    for (angle, vel) in [
+        (O_FACE_ANGLE_PITCH, O_ANGLE_VEL_PITCH),
+        (O_FACE_ANGLE_YAW, O_ANGLE_VEL_YAW),
+        (O_FACE_ANGLE_ROLL, O_ANGLE_VEL_ROLL),
+    ] {
+        o.raw
+            .set_s32(angle, o.raw.s32(angle).wrapping_add(o.raw.s32(vel)));
+    }
+}
+
+/// arc_to_goal_pos (grand_star.inc.c) with `goal` the object's home and the
+/// object's own position as the start: a jump of `y_vel` under `gravity`
+/// that lands on the goal; returns its frame count.
+pub fn arc_to_goal_pos(
+    o: &mut Object,
+    trig: &TrigTables,
+    goal: [f32; 3],
+    y_vel: f32,
+    gravity: f32,
+) -> i32 {
+    let dx = goal[0] - o.raw.f32(O_POS_X);
+    let dz = goal[2] - o.raw.f32(O_POS_Z);
+    let planar_dist = (dx * dx + dz * dz).sqrt();
+    o.raw
+        .set_s32(O_MOVE_ANGLE_YAW, i32::from(trig.atan2s(dz, dx)));
+    o.raw.set_f32(O_VEL_Y, y_vel);
+    o.raw.set_f32(O_GRAVITY, gravity);
+    let time = crate::simulation::mario::f32_to_s32(-2.0 / o.raw.f32(O_GRAVITY) * y_vel - 1.0);
+    o.raw.set_f32(O_FORWARD_VEL, planar_dist / time as f32);
+    time
+}
+
+/// cur_obj_shake_screen: set_camera_shake_from_point at the object, applied
+/// by the camera after the object update in call order.
+pub fn cur_obj_shake_screen(
+    o: &Object,
+    events: &mut Vec<crate::simulation::mario::Event>,
+    shake: i16,
+) {
+    events.push(crate::simulation::mario::Event::PointCameraShake {
+        shake,
+        point: o.pos().map(f32::to_bits),
+    });
 }

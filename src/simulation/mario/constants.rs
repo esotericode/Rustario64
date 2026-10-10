@@ -316,6 +316,7 @@ pub const MODEL_CANNON_BASE: i32 = 128;
 pub const O_SCUTTLEBUG_UNK_F8: usize = 0x1C;
 pub const O_SUB_ACTION: usize = 0x32;
 pub const SOUND_GENERAL_EXPLOSION6: u32 = 0x30310001;
+pub const BOBOMB_ACT_PATROL: i32 = 0;
 pub const MODEL_BITDW_FERRIS_WHEEL_AXLE: i32 = 57;
 pub const O_GOOMBA_BLINK_TIMER: usize = 0x1F;
 pub const SURFACE_WARP: i16 = 50;
@@ -393,6 +394,7 @@ pub const ACT_HOLD_METAL_WATER_FALL_LAND: u32 = 0x42F7;
 pub const OBJ_MOVE_UNDERWATER_OFF_GROUND: u32 = 0x20;
 pub const PARTICLE_SHALLOW_WATER_SPLASH: u32 = 0x1000;
 pub const SOUND_OBJ_WIGGLER_LOW_PITCH: u32 = 0x50712081;
+pub const ATTACK_KICK_OR_TRIP: u32 = 0x2;
 pub const SOUND_ACTION_METAL_STEP_WATER: u32 = 0x4529081;
 pub const SURFACE_PAINTING_WARP_D8: i16 = 216;
 pub const MARIO_SPAWN_AIRBORNE: u32 = 0x12;
@@ -401,6 +403,7 @@ pub const MODEL_FLYGUY: i32 = 220;
 pub const SOUND_MENU_HAND_APPEAR: u32 = 0x700A0081;
 pub const INPUT_OFF_FLOOR: u16 = 0x4;
 pub const ACT_FORWARD_AIR_KB: u32 = 0x10208B1;
+pub const ATTACK_FROM_ABOVE: u32 = 0x3;
 pub const SOUND_GENERAL_GRAND_STAR_JUMP: u32 = 0x30740081;
 pub const SOUND_GENERAL_SWITCH_DOOR_OPEN: u32 = 0x3067A081;
 pub const MODEL_VCUTM_SEESAW_PLATFORM: i32 = 54;
@@ -502,6 +505,7 @@ pub const ACT_WATER_IDLE: u32 = 0x380022C0;
 pub const O_MIPS_FORWARD_VELOCITY: usize = 0x49;
 pub const ACT_INTRO_CUTSCENE: u32 = 0x4001301;
 pub const MODEL_LEVEL_GEOMETRY_0A: i32 = 10;
+pub const OBJ_ACT_VERTICAL_KNOCKBACK: i32 = 101;
 pub const SAVE_FLAG_COLLECTED_MIPS_STAR_1: u32 = 0x8000000;
 pub const O_KOOPA_TURNING_AWAY_FROM_WALL: usize = 0x1F;
 pub const SOUND_GENERAL_EXPLOSION7: u32 = 0x30490001;
@@ -839,6 +843,7 @@ pub const O_PLATFORM_ON_TRACK_OFFSET_Y: usize = 0x22;
 pub const MODEL_CASTLE_STAR_DOOR_30_STARS: i32 = 208;
 pub const O_KLEPTO_START_POS_Z: usize = 0x21;
 pub const SOUND_MENU_CAMERA_ZOOM_OUT: u32 = 0x70070081;
+pub const ATTACK_FROM_BELOW: u32 = 0x6;
 pub const COIN_FORMATION_BP_FLAG_MASK: i32 = 7;
 pub const O_CHUCKYA_UNK100: usize = 0x1E;
 pub const O_HIDDEN_OBJECT_PURPLE_SWITCH: usize = 0x1B;
@@ -1022,7 +1027,9 @@ pub const SOUND_ACTION_TERRAIN_HEAVY_LANDING: u32 = 0x4608081;
 pub const O_T_T_C_TREADMILL_TARGET_SPEED: usize = 0x1E;
 pub const O_WATER_CANNON_UNK_F_C: usize = 0x1D;
 pub const O_DOOR_UNK88: usize = 0x0;
+pub const MOV_YCOIN_ACT_DEATH_PLANE_DEATH: i32 = 101;
 pub const MODEL_CAP_SWITCH_BASE: i32 = 86;
+pub const ATTACK_PUNCH: u32 = 0x1;
 pub const CUTSCENE_ENTER_CANNON: u8 = 0x85;
 pub const MARIO_SPAWN_UNKNOWN_02: u32 = 0x2;
 pub const MARIO_SPAWN_PAINTING_STAR_COLLECT: u32 = 0x20;
@@ -1058,6 +1065,7 @@ pub const ACT_HANG_MOVING: u32 = 0x20054A;
 pub const O_EYEROK_BOSS_UNK110: usize = 0x22;
 pub const O_FLAGS: usize = 0x1;
 pub const CAM_MOVE_PAUSE_SCREEN: u16 = 0x8000;
+pub const BOBOMB_ACT_EXPLODE: i32 = 3;
 pub const MODEL_HMC_METAL_PLATFORM: i32 = 54;
 pub const SOUND_MENU_MARIO_CASTLE_WARP2: u32 = 0x70222081;
 pub const SOUND_MARIO_HAHA_2: u32 = 0x2411F081;
@@ -1181,6 +1189,7 @@ pub const MODEL_BBH_MESH_ELEVATOR: i32 = 58;
 pub const AREA_CASTLE_BASEMENT: i32 = 99;
 pub const ACT_WAKING_UP: u32 = 0xC000204;
 pub const CAM_ANGLE_MARIO: i32 = 1;
+pub const ATTACK_FAST_ATTACK: u32 = 0x5;
 pub const O_BACK_AND_FORTH_PLATFORM_VEL: usize = 0x1E;
 pub const SURFACE_INSTANT_WARP_1D: i16 = 29;
 pub const CUTSCENE_END_WAVING: u8 = 0xB1;
@@ -1193,6 +1202,7 @@ pub const SOUND_OBJ_CANNON2: u32 = 0x500EF081;
 pub const SURFACE_MGR_MUSIC: i16 = 26;
 pub const SOUND_PEACH_POWER_OF_THE_STARS: u32 = 0x2439FF81;
 pub const ACT_CAUGHT_IN_WHIRLPOOL: u32 = 0x300222E3;
+pub const BOBOMB_ACT_CHASE_MARIO: i32 = 2;
 pub const SOUND_OBJ_BOWSER_LAUGH: u32 = 0x50388081;
 pub const CAM_FOV_SET_45: u8 = 0x1;
 pub const O_INTERACTION_SUBTYPE: usize = 0x42;
@@ -1242,6 +1252,7 @@ pub const ACT_PUSHING_DOOR: u32 = 0x1321;
 pub const SOUND_ENV_MERRY_GO_ROUND_CREAKING: u32 = 0x400F4001;
 pub const SOUND_GENERAL_CLAM_SHELL3: u32 = 0x30274081;
 pub const SOUND_OBJ_PIRANHA_PLANT_SHRINK: u32 = 0x50334081;
+pub const MOV_YCOIN_ACT_LAVA_DEATH: i32 = 100;
 pub const SOUND_MENU_POWER_METER: u32 = 0x700D0081;
 pub const MARIO_SPAWN_FLYING: u32 = 0x17;
 pub const SOUND_GENERAL_BIG_CLOCK: u32 = 0x30170081;
@@ -1390,6 +1401,7 @@ pub const MODEL_CASTLE_STAR_DOOR_70_STARS: i32 = 214;
 pub const SURFACE_PAINTING_WARP_E4: i16 = 228;
 pub const MODEL_VCUTM_WARP_PIPE: i32 = 22;
 pub const SURFACE_PAINTING_WARP_E6: i16 = 230;
+pub const OBJ_ACT_DEATH_PLANE_DEATH: i32 = 101;
 pub const O_B_BALL_SPAWNER_PERIOD_MINUS1: usize = 0x1D;
 pub const SOUND_MARIO_DOH: u32 = 0x24308081;
 pub const SURFACE_NOISE_VERY_SLIPPERY_74: i16 = 116;
@@ -1702,6 +1714,7 @@ pub const OBJ_MOVE_OUT_SCOPE: u32 = 0x100;
 pub const ACT_GROUP_AIRBORNE: u32 = 0x80;
 pub const O_WATER_CANNON_UNK_F8: usize = 0x1C;
 pub const MODEL_DL_WHIRLPOOL: i32 = 87;
+pub const BOBOMB_ACT_DEATH_PLANE_DEATH: i32 = 101;
 pub const MODEL_LLL_LARGE_FALLING_PLATFORM: i32 = 61;
 pub const ACT_HOLD_METAL_WATER_WALKING: u32 = 0x44F3;
 pub const O_T_T_C_MOVING_BAR_DELAY: usize = 0x1B;
@@ -1851,7 +1864,9 @@ pub const O_CHAIN_CHOMP_RESTRICTED_BY_CHAIN: usize = 0x20;
 pub const MODEL_TREASURE_CHEST_BASE: i32 = 101;
 pub const SOUND_ACTION_TERRAIN_STEP: u32 = 0x6108081;
 pub const O_BETA_TRAMPOLINE_MARIO_ON_TRAMPOLINE: usize = 0x22;
+pub const OBJ_ACT_SQUISHED: i32 = 102;
 pub const O_UP_VEL: usize = 0xE;
+pub const BOBOMB_BP_STYPE_GENERIC: i32 = 0;
 pub const MODEL_LLL_BOWSER_PIECE_1: i32 = 67;
 pub const MODEL_MARIOS_WINGED_METAL_CAP: i32 = 133;
 pub const SOUND_GENERAL_QUIET_POUND2: u32 = 0x30430081;
@@ -1876,6 +1891,7 @@ pub const ACT_GROUP_AUTOMATIC: u32 = 0x140;
 pub const SOUND_ACTION_UNKNOWN431: u32 = 0x4316081;
 pub const O_BOOKEND_UNK_F8: usize = 0x1C;
 pub const SOUND_MENU_YOSHI_GAIN_LIVES: u32 = 0x70150081;
+pub const BOBOMB_ACT_LAVA_DEATH: i32 = 100;
 pub const SURFACE_PAINTING_WARP_FC: i16 = 252;
 pub const MODEL_TTC_ROTATING_HEXAGON: i32 = 60;
 pub const O_PLATFORM_ON_TRACK_PITCH: usize = 0x20;
@@ -1889,6 +1905,7 @@ pub const MODEL_BITDW_STAIRCASE_FRAME3: i32 = 60;
 pub const MODEL_BITDW_STAIRCASE_FRAME4: i32 = 59;
 pub const O_SMALL_PENGUIN_UNK88: usize = 0x0;
 pub const MODEL_CASTLE_CASTLE_DOOR: i32 = 38;
+pub const ATTACK_GROUND_POUND_OR_TWIRL: u32 = 0x4;
 pub const O_J_R_B_SLIDING_BOX_UNK_F_C: usize = 0x1D;
 pub const O_BACK_AND_FORTH_PLATFORM_DISTANCE: usize = 0x1D;
 pub const O_CHAIN_CHOMP_NUM_LUNGES: usize = 0x22;
@@ -1965,6 +1982,7 @@ pub const MODEL_TRAJECTORY_MARKER_BALL: i32 = 225;
 pub const MODEL_MAIN_MENU_YELLOW_FILE_BUTTON: i32 = 6;
 pub const ACT_TWIRL_LAND: u32 = 0x18800238;
 pub const MARIO_CAPS: u32 = 0xF;
+pub const OBJ_ACT_HORIZONTAL_KNOCKBACK: i32 = 100;
 pub const SOUND_OBJ_DIVING_IN_WATER: u32 = 0x5029A081;
 pub const O_MOVE_ANGLE_ROLL: usize = 0x11;
 pub const ACT_METAL_WATER_FALLING: u32 = 0x42F4;
@@ -2013,6 +2031,7 @@ pub const WARP_OP_WARP_OBJECT: i32 = 4;
 pub const SOUND_GENERAL_CANNON_UP: u32 = 0x30478081;
 pub const ACT_ELECTROCUTION: u32 = 0x21313;
 pub const O_WATER_BOMB_STRETCH_SPEED: usize = 0x1D;
+pub const MOV_YCOIN_ACT_BLINKING: i32 = 1;
 pub const MODEL_EYEROK_RIGHT_HAND: i32 = 89;
 pub const O_KOOPA_DISTANCE_TO_MARIO: usize = 0x20;
 pub const O_SKEETER_UNK1_A_C: usize = 0x49;
@@ -2122,6 +2141,7 @@ pub const O_T_T_C_PENDULUM_ANGLE: usize = 0x1C;
 pub const TERRAIN_SNOW: u16 = 0x2;
 pub const O_CANNON_UNK10_C: usize = 0x21;
 pub const MODEL_LAKITU: i32 = 102;
+pub const OBJ_ACT_LAVA_DEATH: i32 = 100;
 pub const MODEL_BOWSER_KEY: i32 = 204;
 pub const MODEL_TTC_ROTATING_PRISM: i32 = 55;
 pub const MODEL_PEACH: i32 = 222;
@@ -2227,6 +2247,7 @@ pub const ACT_SPECIAL_EXIT_AIRBORNE: u32 = 0x192B;
 pub const SOUND_MOVING_LAVA_BURN: u32 = 0x14100001;
 pub const MODEL_WF_BREAKABLE_WALL_LEFT: i32 = 55;
 pub const SOUND_CONSTANT_FREQUENCY: u32 = 0x8000000;
+pub const BOBOMB_BP_STYPE_STATIONARY: i32 = 1;
 pub const CAM_FLAG_CHANGED_PARTRACK_INDEX: i16 = 8;
 pub const SOUND_ACTION_HIT: u32 = 0x444C081;
 pub const ACT_CROUCH_SLIDE: u32 = 0x4808459;
@@ -2344,6 +2365,7 @@ pub const WARP_OP_TRIGGERS_LEVEL_SELECT: i32 = 16;
 pub const MODEL_TREASURE_CHEST_LID: i32 = 102;
 pub const INT_STATUS_HIT_MINE: u32 = 0x200000;
 pub const ACT_TOP_OF_POLE: u32 = 0x100345;
+pub const MOV_YCOIN_ACT_IDLE: i32 = 0;
 pub const O_ACTIVATED_BACK_AND_FORTH_PLATFORM_OFFSET: usize = 0x1C;
 pub const O_CLAM_UNK_F4: usize = 0x1B;
 pub const MODEL_LEVEL_GEOMETRY_0D: i32 = 13;
@@ -2586,6 +2608,7 @@ pub const O_SNUFIT_BULLETS: usize = 0x21;
 pub const O_BOWSER_DIST_TO_CENTER: usize = 0x1D;
 pub const MARIO_SPAWN_DOOR_WARP: u32 = 0x1;
 pub const MODEL_LLL_SINKING_SQUARE_PLATFORMS: i32 = 64;
+pub const BOBOMB_ACT_LAUNCHED: i32 = 1;
 pub const O_YOSHI_CHOSEN_HOME: usize = 0x1D;
 pub const ACTIVE_FLAG_UNK10: i16 = 1024;
 pub const O_MR_BLIZZARD_CHANGE_IN_DIZZINESS: usize = 0x20;
@@ -2925,9 +2948,258 @@ pub const OBJ_LIST_SURFACE: i32 = 9;
 pub const OBJ_LIST_POLELIKE: i32 = 10;
 pub const OBJ_LIST_SPAWNER: i32 = 11;
 pub const OBJ_LIST_UNIMPORTANT: i32 = 12;
+pub const MARIO_DIALOG_LOOK_DOWN: u32 = 0x3;
+pub const MARIO_DIALOG_LOOK_UP: u32 = 0x2;
+pub const MARIO_DIALOG_LOOK_FRONT: u32 = 0x1;
+pub const MARIO_DIALOG_STOP: u32 = 0x0;
+pub const MARIO_DIALOG_STATUS_START: u32 = 0x1;
+pub const MARIO_DIALOG_STATUS_NONE: u32 = 0x0;
+pub const MARIO_DIALOG_STATUS_SPEAK: u32 = 0x2;
+pub const SEQ_PLAYER_SFX: u8 = 0x2;
+pub const BOBOMB_BUDDY_CANNON_OPENING: i32 = 1;
+pub const BOBOMB_BUDDY_CANNON_OPENED: i32 = 2;
+pub const DIALOG_FLAG_TIME_STOP_ENABLED: i32 = 16;
+pub const SEQ_MENU_GAME_OVER: u8 = 0x82;
+pub const DIALOG_STATUS_START_DIALOG: i32 = 2;
+pub const DIALOG_STATUS_ENABLE_TIME_STOP: i32 = 0;
+pub const DIALOG_FLAG_TEXT_RESPONSE: i32 = 4;
+pub const DIALOG_FLAG_TEXT_DEFAULT: i32 = 2;
+pub const BOBOMB_BUDDY_HAS_TALKED: i32 = 2;
+pub const DIALOG_STATUS_INTERRUPT: i32 = 1;
+pub const DIALOG_STATUS_STOP_DIALOG: i32 = 3;
+pub const BOBOMB_BUDDY_BP_STYPE_GENERIC: i32 = 0;
+pub const BOBOMB_BUDDY_BP_STYPE_BOB_GRASS_KBB: i32 = 1;
+pub const BOBOMB_BUDDY_CANNON_UNOPENED: i32 = 0;
+pub const SOUND_MODE_MONO: u32 = 0x3;
+pub const SEQ_PLAYER_LEVEL: u8 = 0x0;
+pub const SOUND_MODE_HEADSET: u32 = 0x1;
+pub const BOBOMB_BUDDY_ACT_TURN_TO_TALK: i32 = 2;
+pub const DIALOG_FLAG_NONE: i32 = 0;
+pub const SOUND_MODE_STEREO: u32 = 0x0;
+pub const BOBOMB_BUDDY_ROLE_CANNON: i32 = 1;
+pub const DIALOG_STATUS_DISABLE_TIME_STOP: i32 = 4;
+pub const SEQ_PLAYER_ENV: u8 = 0x1;
+pub const BOBOMB_BUDDY_BP_STYPE_BOB_GRASS: i32 = 3;
+pub const DIALOG_FLAG_UNK_CAPSWITCH: i32 = 8;
+pub const BOBOMB_BUDDY_BP_STYPE_BOB_CANNON_KBB: i32 = 2;
+pub const BOBOMB_BUDDY_HAS_NOT_TALKED: i32 = 0;
+pub const BOBOMB_BUDDY_ROLE_ADVICE: i32 = 0;
+pub const BOBOMB_BUDDY_ACT_IDLE: i32 = 0;
+pub const BOBOMB_BUDDY_CANNON_STOP_TALKING: i32 = 3;
+pub const BOBOMB_BUDDY_ACT_TALK: i32 = 3;
+pub const DIALOG_FLAG_TURN_TO_MARIO: i32 = 1;
+pub const DIALOG_000: i16 = 0;
+pub const DIALOG_001: i16 = 1;
+pub const DIALOG_002: i16 = 2;
+pub const DIALOG_003: i16 = 3;
+pub const DIALOG_004: i16 = 4;
+pub const DIALOG_005: i16 = 5;
+pub const DIALOG_006: i16 = 6;
+pub const DIALOG_007: i16 = 7;
+pub const DIALOG_008: i16 = 8;
+pub const DIALOG_009: i16 = 9;
+pub const DIALOG_010: i16 = 10;
+pub const DIALOG_011: i16 = 11;
+pub const DIALOG_012: i16 = 12;
+pub const DIALOG_013: i16 = 13;
+pub const DIALOG_014: i16 = 14;
+pub const DIALOG_015: i16 = 15;
+pub const DIALOG_016: i16 = 16;
+pub const DIALOG_017: i16 = 17;
+pub const DIALOG_018: i16 = 18;
+pub const DIALOG_019: i16 = 19;
+pub const DIALOG_020: i16 = 20;
+pub const DIALOG_021: i16 = 21;
+pub const DIALOG_022: i16 = 22;
+pub const DIALOG_023: i16 = 23;
+pub const DIALOG_024: i16 = 24;
+pub const DIALOG_025: i16 = 25;
+pub const DIALOG_026: i16 = 26;
+pub const DIALOG_027: i16 = 27;
+pub const DIALOG_028: i16 = 28;
+pub const DIALOG_029: i16 = 29;
+pub const DIALOG_030: i16 = 30;
+pub const DIALOG_031: i16 = 31;
+pub const DIALOG_032: i16 = 32;
+pub const DIALOG_033: i16 = 33;
+pub const DIALOG_034: i16 = 34;
+pub const DIALOG_035: i16 = 35;
+pub const DIALOG_036: i16 = 36;
+pub const DIALOG_037: i16 = 37;
+pub const DIALOG_038: i16 = 38;
+pub const DIALOG_039: i16 = 39;
+pub const DIALOG_040: i16 = 40;
+pub const DIALOG_041: i16 = 41;
+pub const DIALOG_042: i16 = 42;
+pub const DIALOG_043: i16 = 43;
+pub const DIALOG_044: i16 = 44;
+pub const DIALOG_045: i16 = 45;
+pub const DIALOG_046: i16 = 46;
+pub const DIALOG_047: i16 = 47;
+pub const DIALOG_048: i16 = 48;
+pub const DIALOG_049: i16 = 49;
+pub const DIALOG_050: i16 = 50;
+pub const DIALOG_051: i16 = 51;
+pub const DIALOG_052: i16 = 52;
+pub const DIALOG_053: i16 = 53;
+pub const DIALOG_054: i16 = 54;
+pub const DIALOG_055: i16 = 55;
+pub const DIALOG_056: i16 = 56;
+pub const DIALOG_057: i16 = 57;
+pub const DIALOG_058: i16 = 58;
+pub const DIALOG_059: i16 = 59;
+pub const DIALOG_060: i16 = 60;
+pub const DIALOG_061: i16 = 61;
+pub const DIALOG_062: i16 = 62;
+pub const DIALOG_063: i16 = 63;
+pub const DIALOG_064: i16 = 64;
+pub const DIALOG_065: i16 = 65;
+pub const DIALOG_066: i16 = 66;
+pub const DIALOG_067: i16 = 67;
+pub const DIALOG_068: i16 = 68;
+pub const DIALOG_069: i16 = 69;
+pub const DIALOG_070: i16 = 70;
+pub const DIALOG_071: i16 = 71;
+pub const DIALOG_072: i16 = 72;
+pub const DIALOG_073: i16 = 73;
+pub const DIALOG_074: i16 = 74;
+pub const DIALOG_075: i16 = 75;
+pub const DIALOG_076: i16 = 76;
+pub const DIALOG_077: i16 = 77;
+pub const DIALOG_078: i16 = 78;
+pub const DIALOG_079: i16 = 79;
+pub const DIALOG_080: i16 = 80;
+pub const DIALOG_081: i16 = 81;
+pub const DIALOG_082: i16 = 82;
+pub const DIALOG_083: i16 = 83;
+pub const DIALOG_084: i16 = 84;
+pub const DIALOG_085: i16 = 85;
+pub const DIALOG_086: i16 = 86;
+pub const DIALOG_087: i16 = 87;
+pub const DIALOG_088: i16 = 88;
+pub const DIALOG_089: i16 = 89;
+pub const DIALOG_090: i16 = 90;
+pub const DIALOG_091: i16 = 91;
+pub const DIALOG_092: i16 = 92;
+pub const DIALOG_093: i16 = 93;
+pub const DIALOG_094: i16 = 94;
+pub const DIALOG_095: i16 = 95;
+pub const DIALOG_096: i16 = 96;
+pub const DIALOG_097: i16 = 97;
+pub const DIALOG_098: i16 = 98;
+pub const DIALOG_099: i16 = 99;
+pub const DIALOG_100: i16 = 100;
+pub const DIALOG_101: i16 = 101;
+pub const DIALOG_102: i16 = 102;
+pub const DIALOG_103: i16 = 103;
+pub const DIALOG_104: i16 = 104;
+pub const DIALOG_105: i16 = 105;
+pub const DIALOG_106: i16 = 106;
+pub const DIALOG_107: i16 = 107;
+pub const DIALOG_108: i16 = 108;
+pub const DIALOG_109: i16 = 109;
+pub const DIALOG_110: i16 = 110;
+pub const DIALOG_111: i16 = 111;
+pub const DIALOG_112: i16 = 112;
+pub const DIALOG_113: i16 = 113;
+pub const DIALOG_114: i16 = 114;
+pub const DIALOG_115: i16 = 115;
+pub const DIALOG_116: i16 = 116;
+pub const DIALOG_117: i16 = 117;
+pub const DIALOG_118: i16 = 118;
+pub const DIALOG_119: i16 = 119;
+pub const DIALOG_120: i16 = 120;
+pub const DIALOG_121: i16 = 121;
+pub const DIALOG_122: i16 = 122;
+pub const DIALOG_123: i16 = 123;
+pub const DIALOG_124: i16 = 124;
+pub const DIALOG_125: i16 = 125;
+pub const DIALOG_126: i16 = 126;
+pub const DIALOG_127: i16 = 127;
+pub const DIALOG_128: i16 = 128;
+pub const DIALOG_129: i16 = 129;
+pub const DIALOG_130: i16 = 130;
+pub const DIALOG_131: i16 = 131;
+pub const DIALOG_132: i16 = 132;
+pub const DIALOG_133: i16 = 133;
+pub const DIALOG_134: i16 = 134;
+pub const DIALOG_135: i16 = 135;
+pub const DIALOG_136: i16 = 136;
+pub const DIALOG_137: i16 = 137;
+pub const DIALOG_138: i16 = 138;
+pub const DIALOG_139: i16 = 139;
+pub const DIALOG_140: i16 = 140;
+pub const DIALOG_141: i16 = 141;
+pub const DIALOG_142: i16 = 142;
+pub const DIALOG_143: i16 = 143;
+pub const DIALOG_144: i16 = 144;
+pub const DIALOG_145: i16 = 145;
+pub const DIALOG_146: i16 = 146;
+pub const DIALOG_147: i16 = 147;
+pub const DIALOG_148: i16 = 148;
+pub const DIALOG_149: i16 = 149;
+pub const DIALOG_150: i16 = 150;
+pub const DIALOG_151: i16 = 151;
+pub const DIALOG_152: i16 = 152;
+pub const DIALOG_153: i16 = 153;
+pub const DIALOG_154: i16 = 154;
+pub const DIALOG_155: i16 = 155;
+pub const DIALOG_156: i16 = 156;
+pub const DIALOG_157: i16 = 157;
+pub const DIALOG_158: i16 = 158;
+pub const DIALOG_159: i16 = 159;
+pub const DIALOG_160: i16 = 160;
+pub const DIALOG_161: i16 = 161;
+pub const DIALOG_162: i16 = 162;
+pub const DIALOG_163: i16 = 163;
+pub const DIALOG_164: i16 = 164;
+pub const DIALOG_165: i16 = 165;
+pub const DIALOG_166: i16 = 166;
+pub const DIALOG_167: i16 = 167;
+pub const DIALOG_168: i16 = 168;
+pub const DIALOG_169: i16 = 169;
+pub const DIALOG_RESPONSE_NONE: i32 = 0;
+pub const DIALOG_RESPONSE_YES: i32 = 1;
+pub const DIALOG_RESPONSE_NO: i32 = 2;
+pub const DIALOG_RESPONSE_NOT_DEFINED: i32 = 3;
+pub const SEQ_SOUND_PLAYER: u8 = 0x0;
+pub const SEQ_EVENT_CUTSCENE_COLLECT_STAR: u8 = 0x1;
+pub const SEQ_MENU_TITLE_SCREEN: u8 = 0x2;
+pub const SEQ_LEVEL_GRASS: u8 = 0x3;
+pub const SEQ_LEVEL_INSIDE_CASTLE: u8 = 0x4;
+pub const SEQ_LEVEL_WATER: u8 = 0x5;
+pub const SEQ_LEVEL_HOT: u8 = 0x6;
+pub const SEQ_LEVEL_BOSS_KOOPA: u8 = 0x7;
+pub const SEQ_LEVEL_SNOW: u8 = 0x8;
+pub const SEQ_LEVEL_SLIDE: u8 = 0x9;
+pub const SEQ_LEVEL_SPOOKY: u8 = 0xA;
+pub const SEQ_EVENT_PIRANHA_PLANT: u8 = 0xB;
+pub const SEQ_LEVEL_UNDERGROUND: u8 = 0xC;
+pub const SEQ_MENU_STAR_SELECT: u8 = 0xD;
+pub const SEQ_EVENT_POWERUP: u8 = 0xE;
+pub const SEQ_EVENT_METAL_CAP: u8 = 0xF;
+pub const SEQ_EVENT_KOOPA_MESSAGE: u8 = 0x10;
+pub const SEQ_LEVEL_KOOPA_ROAD: u8 = 0x11;
+pub const SEQ_EVENT_HIGH_SCORE: u8 = 0x12;
+pub const SEQ_EVENT_MERRY_GO_ROUND: u8 = 0x13;
+pub const SEQ_EVENT_RACE: u8 = 0x14;
+pub const SEQ_EVENT_CUTSCENE_STAR_SPAWN: u8 = 0x15;
+pub const SEQ_EVENT_BOSS: u8 = 0x16;
+pub const SEQ_EVENT_CUTSCENE_COLLECT_KEY: u8 = 0x17;
+pub const SEQ_EVENT_ENDLESS_STAIRS: u8 = 0x18;
+pub const SEQ_LEVEL_BOSS_KOOPA_FINAL: u8 = 0x19;
+pub const SEQ_EVENT_CUTSCENE_CREDITS: u8 = 0x1A;
+pub const SEQ_EVENT_SOLVE_PUZZLE: u8 = 0x1B;
+pub const SEQ_EVENT_TOAD_MESSAGE: u8 = 0x1C;
+pub const SEQ_EVENT_PEACH_MESSAGE: u8 = 0x1D;
+pub const SEQ_EVENT_CUTSCENE_INTRO: u8 = 0x1E;
+pub const SEQ_EVENT_CUTSCENE_VICTORY: u8 = 0x1F;
+pub const SEQ_EVENT_CUTSCENE_ENDING: u8 = 0x20;
+pub const SEQ_MENU_FILE_SELECT: u8 = 0x21;
+pub const SEQ_EVENT_CUTSCENE_LAKITU: u8 = 0x22;
 
 /// Every generated constant by original name, for the oracle consistency test.
-pub static ALL: [(&str, i64); 2921] = [
+pub static ALL: [(&str, i64); 3193] = [
     ("oBowserKeyScale", O_BOWSER_KEY_SCALE as i64),
     ("SOUND_BANK_MOVING", SOUND_BANK_MOVING as i64),
     ("ACTIVE_PARTICLE_H_STAR", ACTIVE_PARTICLE_H_STAR as i64),
@@ -3510,6 +3782,7 @@ pub static ALL: [(&str, i64); 2921] = [
     ("oScuttlebugUnkF8", O_SCUTTLEBUG_UNK_F8 as i64),
     ("oSubAction", O_SUB_ACTION as i64),
     ("SOUND_GENERAL_EXPLOSION6", SOUND_GENERAL_EXPLOSION6 as i64),
+    ("BOBOMB_ACT_PATROL", BOBOMB_ACT_PATROL as i64),
     (
         "MODEL_BITDW_FERRIS_WHEEL_AXLE",
         MODEL_BITDW_FERRIS_WHEEL_AXLE as i64,
@@ -3647,6 +3920,7 @@ pub static ALL: [(&str, i64); 2921] = [
         "SOUND_OBJ_WIGGLER_LOW_PITCH",
         SOUND_OBJ_WIGGLER_LOW_PITCH as i64,
     ),
+    ("ATTACK_KICK_OR_TRIP", ATTACK_KICK_OR_TRIP as i64),
     (
         "SOUND_ACTION_METAL_STEP_WATER",
         SOUND_ACTION_METAL_STEP_WATER as i64,
@@ -3658,6 +3932,7 @@ pub static ALL: [(&str, i64); 2921] = [
     ("SOUND_MENU_HAND_APPEAR", SOUND_MENU_HAND_APPEAR as i64),
     ("INPUT_OFF_FLOOR", INPUT_OFF_FLOOR as i64),
     ("ACT_FORWARD_AIR_KB", ACT_FORWARD_AIR_KB as i64),
+    ("ATTACK_FROM_ABOVE", ATTACK_FROM_ABOVE as i64),
     (
         "SOUND_GENERAL_GRAND_STAR_JUMP",
         SOUND_GENERAL_GRAND_STAR_JUMP as i64,
@@ -3846,6 +4121,10 @@ pub static ALL: [(&str, i64); 2921] = [
     ("oMipsForwardVelocity", O_MIPS_FORWARD_VELOCITY as i64),
     ("ACT_INTRO_CUTSCENE", ACT_INTRO_CUTSCENE as i64),
     ("MODEL_LEVEL_GEOMETRY_0A", MODEL_LEVEL_GEOMETRY_0A as i64),
+    (
+        "OBJ_ACT_VERTICAL_KNOCKBACK",
+        OBJ_ACT_VERTICAL_KNOCKBACK as i64,
+    ),
     (
         "SAVE_FLAG_COLLECTED_MIPS_STAR_1",
         SAVE_FLAG_COLLECTED_MIPS_STAR_1 as i64,
@@ -4558,6 +4837,7 @@ pub static ALL: [(&str, i64); 2921] = [
         "SOUND_MENU_CAMERA_ZOOM_OUT",
         SOUND_MENU_CAMERA_ZOOM_OUT as i64,
     ),
+    ("ATTACK_FROM_BELOW", ATTACK_FROM_BELOW as i64),
     (
         "COIN_FORMATION_BP_FLAG_MASK",
         COIN_FORMATION_BP_FLAG_MASK as i64,
@@ -4888,7 +5168,12 @@ pub static ALL: [(&str, i64); 2921] = [
     ),
     ("oWaterCannonUnkFC", O_WATER_CANNON_UNK_F_C as i64),
     ("oDoorUnk88", O_DOOR_UNK88 as i64),
+    (
+        "MOV_YCOIN_ACT_DEATH_PLANE_DEATH",
+        MOV_YCOIN_ACT_DEATH_PLANE_DEATH as i64,
+    ),
     ("MODEL_CAP_SWITCH_BASE", MODEL_CAP_SWITCH_BASE as i64),
+    ("ATTACK_PUNCH", ATTACK_PUNCH as i64),
     ("CUTSCENE_ENTER_CANNON", CUTSCENE_ENTER_CANNON as i64),
     ("MARIO_SPAWN_UNKNOWN_02", MARIO_SPAWN_UNKNOWN_02 as i64),
     (
@@ -4966,6 +5251,7 @@ pub static ALL: [(&str, i64); 2921] = [
     ("oEyerokBossUnk110", O_EYEROK_BOSS_UNK110 as i64),
     ("oFlags", O_FLAGS as i64),
     ("CAM_MOVE_PAUSE_SCREEN", CAM_MOVE_PAUSE_SCREEN as i64),
+    ("BOBOMB_ACT_EXPLODE", BOBOMB_ACT_EXPLODE as i64),
     ("MODEL_HMC_METAL_PLATFORM", MODEL_HMC_METAL_PLATFORM as i64),
     (
         "SOUND_MENU_MARIO_CASTLE_WARP2",
@@ -5203,6 +5489,7 @@ pub static ALL: [(&str, i64); 2921] = [
     ("AREA_CASTLE_BASEMENT", AREA_CASTLE_BASEMENT as i64),
     ("ACT_WAKING_UP", ACT_WAKING_UP as i64),
     ("CAM_ANGLE_MARIO", CAM_ANGLE_MARIO as i64),
+    ("ATTACK_FAST_ATTACK", ATTACK_FAST_ATTACK as i64),
     (
         "oBackAndForthPlatformVel",
         O_BACK_AND_FORTH_PLATFORM_VEL as i64,
@@ -5233,6 +5520,7 @@ pub static ALL: [(&str, i64); 2921] = [
         SOUND_PEACH_POWER_OF_THE_STARS as i64,
     ),
     ("ACT_CAUGHT_IN_WHIRLPOOL", ACT_CAUGHT_IN_WHIRLPOOL as i64),
+    ("BOBOMB_ACT_CHASE_MARIO", BOBOMB_ACT_CHASE_MARIO as i64),
     ("SOUND_OBJ_BOWSER_LAUGH", SOUND_OBJ_BOWSER_LAUGH as i64),
     ("CAM_FOV_SET_45", CAM_FOV_SET_45 as i64),
     ("oInteractionSubtype", O_INTERACTION_SUBTYPE as i64),
@@ -5327,6 +5615,7 @@ pub static ALL: [(&str, i64); 2921] = [
         "SOUND_OBJ_PIRANHA_PLANT_SHRINK",
         SOUND_OBJ_PIRANHA_PLANT_SHRINK as i64,
     ),
+    ("MOV_YCOIN_ACT_LAVA_DEATH", MOV_YCOIN_ACT_LAVA_DEATH as i64),
     ("SOUND_MENU_POWER_METER", SOUND_MENU_POWER_METER as i64),
     ("MARIO_SPAWN_FLYING", MARIO_SPAWN_FLYING as i64),
     ("SOUND_GENERAL_BIG_CLOCK", SOUND_GENERAL_BIG_CLOCK as i64),
@@ -5613,6 +5902,10 @@ pub static ALL: [(&str, i64); 2921] = [
     ("SURFACE_PAINTING_WARP_E4", SURFACE_PAINTING_WARP_E4 as i64),
     ("MODEL_VCUTM_WARP_PIPE", MODEL_VCUTM_WARP_PIPE as i64),
     ("SURFACE_PAINTING_WARP_E6", SURFACE_PAINTING_WARP_E6 as i64),
+    (
+        "OBJ_ACT_DEATH_PLANE_DEATH",
+        OBJ_ACT_DEATH_PLANE_DEATH as i64,
+    ),
     (
         "oBBallSpawnerPeriodMinus1",
         O_B_BALL_SPAWNER_PERIOD_MINUS1 as i64,
@@ -6214,6 +6507,10 @@ pub static ALL: [(&str, i64); 2921] = [
     ("oWaterCannonUnkF8", O_WATER_CANNON_UNK_F8 as i64),
     ("MODEL_DL_WHIRLPOOL", MODEL_DL_WHIRLPOOL as i64),
     (
+        "BOBOMB_ACT_DEATH_PLANE_DEATH",
+        BOBOMB_ACT_DEATH_PLANE_DEATH as i64,
+    ),
+    (
         "MODEL_LLL_LARGE_FALLING_PLATFORM",
         MODEL_LLL_LARGE_FALLING_PLATFORM as i64,
     ),
@@ -6497,7 +6794,9 @@ pub static ALL: [(&str, i64); 2921] = [
         "oBetaTrampolineMarioOnTrampoline",
         O_BETA_TRAMPOLINE_MARIO_ON_TRAMPOLINE as i64,
     ),
+    ("OBJ_ACT_SQUISHED", OBJ_ACT_SQUISHED as i64),
     ("oUpVel", O_UP_VEL as i64),
+    ("BOBOMB_BP_STYPE_GENERIC", BOBOMB_BP_STYPE_GENERIC as i64),
     ("MODEL_LLL_BOWSER_PIECE_1", MODEL_LLL_BOWSER_PIECE_1 as i64),
     (
         "MODEL_MARIOS_WINGED_METAL_CAP",
@@ -6537,6 +6836,7 @@ pub static ALL: [(&str, i64); 2921] = [
         "SOUND_MENU_YOSHI_GAIN_LIVES",
         SOUND_MENU_YOSHI_GAIN_LIVES as i64,
     ),
+    ("BOBOMB_ACT_LAVA_DEATH", BOBOMB_ACT_LAVA_DEATH as i64),
     ("SURFACE_PAINTING_WARP_FC", SURFACE_PAINTING_WARP_FC as i64),
     (
         "MODEL_TTC_ROTATING_HEXAGON",
@@ -6568,6 +6868,10 @@ pub static ALL: [(&str, i64); 2921] = [
     ),
     ("oSmallPenguinUnk88", O_SMALL_PENGUIN_UNK88 as i64),
     ("MODEL_CASTLE_CASTLE_DOOR", MODEL_CASTLE_CASTLE_DOOR as i64),
+    (
+        "ATTACK_GROUND_POUND_OR_TWIRL",
+        ATTACK_GROUND_POUND_OR_TWIRL as i64,
+    ),
     ("oJRBSlidingBoxUnkFC", O_J_R_B_SLIDING_BOX_UNK_F_C as i64),
     (
         "oBackAndForthPlatformDistance",
@@ -6714,6 +7018,10 @@ pub static ALL: [(&str, i64); 2921] = [
     ("ACT_TWIRL_LAND", ACT_TWIRL_LAND as i64),
     ("MARIO_CAPS", MARIO_CAPS as i64),
     (
+        "OBJ_ACT_HORIZONTAL_KNOCKBACK",
+        OBJ_ACT_HORIZONTAL_KNOCKBACK as i64,
+    ),
+    (
         "SOUND_OBJ_DIVING_IN_WATER",
         SOUND_OBJ_DIVING_IN_WATER as i64,
     ),
@@ -6794,6 +7102,7 @@ pub static ALL: [(&str, i64); 2921] = [
     ("SOUND_GENERAL_CANNON_UP", SOUND_GENERAL_CANNON_UP as i64),
     ("ACT_ELECTROCUTION", ACT_ELECTROCUTION as i64),
     ("oWaterBombStretchSpeed", O_WATER_BOMB_STRETCH_SPEED as i64),
+    ("MOV_YCOIN_ACT_BLINKING", MOV_YCOIN_ACT_BLINKING as i64),
     ("MODEL_EYEROK_RIGHT_HAND", MODEL_EYEROK_RIGHT_HAND as i64),
     ("oKoopaDistanceToMario", O_KOOPA_DISTANCE_TO_MARIO as i64),
     ("oSkeeterUnk1AC", O_SKEETER_UNK1_A_C as i64),
@@ -7002,6 +7311,7 @@ pub static ALL: [(&str, i64); 2921] = [
     ("TERRAIN_SNOW", TERRAIN_SNOW as i64),
     ("oCannonUnk10C", O_CANNON_UNK10_C as i64),
     ("MODEL_LAKITU", MODEL_LAKITU as i64),
+    ("OBJ_ACT_LAVA_DEATH", OBJ_ACT_LAVA_DEATH as i64),
     ("MODEL_BOWSER_KEY", MODEL_BOWSER_KEY as i64),
     ("MODEL_TTC_ROTATING_PRISM", MODEL_TTC_ROTATING_PRISM as i64),
     ("MODEL_PEACH", MODEL_PEACH as i64),
@@ -7231,6 +7541,10 @@ pub static ALL: [(&str, i64); 2921] = [
     ),
     ("SOUND_CONSTANT_FREQUENCY", SOUND_CONSTANT_FREQUENCY as i64),
     (
+        "BOBOMB_BP_STYPE_STATIONARY",
+        BOBOMB_BP_STYPE_STATIONARY as i64,
+    ),
+    (
         "CAM_FLAG_CHANGED_PARTRACK_INDEX",
         CAM_FLAG_CHANGED_PARTRACK_INDEX as i64,
     ),
@@ -7458,6 +7772,7 @@ pub static ALL: [(&str, i64); 2921] = [
     ("MODEL_TREASURE_CHEST_LID", MODEL_TREASURE_CHEST_LID as i64),
     ("INT_STATUS_HIT_MINE", INT_STATUS_HIT_MINE as i64),
     ("ACT_TOP_OF_POLE", ACT_TOP_OF_POLE as i64),
+    ("MOV_YCOIN_ACT_IDLE", MOV_YCOIN_ACT_IDLE as i64),
     (
         "oActivatedBackAndForthPlatformOffset",
         O_ACTIVATED_BACK_AND_FORTH_PLATFORM_OFFSET as i64,
@@ -7925,6 +8240,7 @@ pub static ALL: [(&str, i64); 2921] = [
         "MODEL_LLL_SINKING_SQUARE_PLATFORMS",
         MODEL_LLL_SINKING_SQUARE_PLATFORMS as i64,
     ),
+    ("BOBOMB_ACT_LAUNCHED", BOBOMB_ACT_LAUNCHED as i64),
     ("oYoshiChosenHome", O_YOSHI_CHOSEN_HOME as i64),
     ("ACTIVE_FLAG_UNK10", ACTIVE_FLAG_UNK10 as i64),
     (
@@ -8702,4 +9018,340 @@ pub static ALL: [(&str, i64); 2921] = [
     ("OBJ_LIST_POLELIKE", OBJ_LIST_POLELIKE as i64),
     ("OBJ_LIST_SPAWNER", OBJ_LIST_SPAWNER as i64),
     ("OBJ_LIST_UNIMPORTANT", OBJ_LIST_UNIMPORTANT as i64),
+    ("MARIO_DIALOG_LOOK_DOWN", MARIO_DIALOG_LOOK_DOWN as i64),
+    ("MARIO_DIALOG_LOOK_UP", MARIO_DIALOG_LOOK_UP as i64),
+    ("MARIO_DIALOG_LOOK_FRONT", MARIO_DIALOG_LOOK_FRONT as i64),
+    ("MARIO_DIALOG_STOP", MARIO_DIALOG_STOP as i64),
+    (
+        "MARIO_DIALOG_STATUS_START",
+        MARIO_DIALOG_STATUS_START as i64,
+    ),
+    ("MARIO_DIALOG_STATUS_NONE", MARIO_DIALOG_STATUS_NONE as i64),
+    (
+        "MARIO_DIALOG_STATUS_SPEAK",
+        MARIO_DIALOG_STATUS_SPEAK as i64,
+    ),
+    ("SEQ_PLAYER_SFX", SEQ_PLAYER_SFX as i64),
+    (
+        "BOBOMB_BUDDY_CANNON_OPENING",
+        BOBOMB_BUDDY_CANNON_OPENING as i64,
+    ),
+    (
+        "BOBOMB_BUDDY_CANNON_OPENED",
+        BOBOMB_BUDDY_CANNON_OPENED as i64,
+    ),
+    (
+        "DIALOG_FLAG_TIME_STOP_ENABLED",
+        DIALOG_FLAG_TIME_STOP_ENABLED as i64,
+    ),
+    ("SEQ_MENU_GAME_OVER", SEQ_MENU_GAME_OVER as i64),
+    (
+        "DIALOG_STATUS_START_DIALOG",
+        DIALOG_STATUS_START_DIALOG as i64,
+    ),
+    (
+        "DIALOG_STATUS_ENABLE_TIME_STOP",
+        DIALOG_STATUS_ENABLE_TIME_STOP as i64,
+    ),
+    (
+        "DIALOG_FLAG_TEXT_RESPONSE",
+        DIALOG_FLAG_TEXT_RESPONSE as i64,
+    ),
+    ("DIALOG_FLAG_TEXT_DEFAULT", DIALOG_FLAG_TEXT_DEFAULT as i64),
+    ("BOBOMB_BUDDY_HAS_TALKED", BOBOMB_BUDDY_HAS_TALKED as i64),
+    ("DIALOG_STATUS_INTERRUPT", DIALOG_STATUS_INTERRUPT as i64),
+    (
+        "DIALOG_STATUS_STOP_DIALOG",
+        DIALOG_STATUS_STOP_DIALOG as i64,
+    ),
+    (
+        "BOBOMB_BUDDY_BP_STYPE_GENERIC",
+        BOBOMB_BUDDY_BP_STYPE_GENERIC as i64,
+    ),
+    (
+        "BOBOMB_BUDDY_BP_STYPE_BOB_GRASS_KBB",
+        BOBOMB_BUDDY_BP_STYPE_BOB_GRASS_KBB as i64,
+    ),
+    (
+        "BOBOMB_BUDDY_CANNON_UNOPENED",
+        BOBOMB_BUDDY_CANNON_UNOPENED as i64,
+    ),
+    ("SOUND_MODE_MONO", SOUND_MODE_MONO as i64),
+    ("SEQ_PLAYER_LEVEL", SEQ_PLAYER_LEVEL as i64),
+    ("SOUND_MODE_HEADSET", SOUND_MODE_HEADSET as i64),
+    (
+        "BOBOMB_BUDDY_ACT_TURN_TO_TALK",
+        BOBOMB_BUDDY_ACT_TURN_TO_TALK as i64,
+    ),
+    ("DIALOG_FLAG_NONE", DIALOG_FLAG_NONE as i64),
+    ("SOUND_MODE_STEREO", SOUND_MODE_STEREO as i64),
+    ("BOBOMB_BUDDY_ROLE_CANNON", BOBOMB_BUDDY_ROLE_CANNON as i64),
+    (
+        "DIALOG_STATUS_DISABLE_TIME_STOP",
+        DIALOG_STATUS_DISABLE_TIME_STOP as i64,
+    ),
+    ("SEQ_PLAYER_ENV", SEQ_PLAYER_ENV as i64),
+    (
+        "BOBOMB_BUDDY_BP_STYPE_BOB_GRASS",
+        BOBOMB_BUDDY_BP_STYPE_BOB_GRASS as i64,
+    ),
+    (
+        "DIALOG_FLAG_UNK_CAPSWITCH",
+        DIALOG_FLAG_UNK_CAPSWITCH as i64,
+    ),
+    (
+        "BOBOMB_BUDDY_BP_STYPE_BOB_CANNON_KBB",
+        BOBOMB_BUDDY_BP_STYPE_BOB_CANNON_KBB as i64,
+    ),
+    (
+        "BOBOMB_BUDDY_HAS_NOT_TALKED",
+        BOBOMB_BUDDY_HAS_NOT_TALKED as i64,
+    ),
+    ("BOBOMB_BUDDY_ROLE_ADVICE", BOBOMB_BUDDY_ROLE_ADVICE as i64),
+    ("BOBOMB_BUDDY_ACT_IDLE", BOBOMB_BUDDY_ACT_IDLE as i64),
+    (
+        "BOBOMB_BUDDY_CANNON_STOP_TALKING",
+        BOBOMB_BUDDY_CANNON_STOP_TALKING as i64,
+    ),
+    ("BOBOMB_BUDDY_ACT_TALK", BOBOMB_BUDDY_ACT_TALK as i64),
+    (
+        "DIALOG_FLAG_TURN_TO_MARIO",
+        DIALOG_FLAG_TURN_TO_MARIO as i64,
+    ),
+    ("DIALOG_000", DIALOG_000 as i64),
+    ("DIALOG_001", DIALOG_001 as i64),
+    ("DIALOG_002", DIALOG_002 as i64),
+    ("DIALOG_003", DIALOG_003 as i64),
+    ("DIALOG_004", DIALOG_004 as i64),
+    ("DIALOG_005", DIALOG_005 as i64),
+    ("DIALOG_006", DIALOG_006 as i64),
+    ("DIALOG_007", DIALOG_007 as i64),
+    ("DIALOG_008", DIALOG_008 as i64),
+    ("DIALOG_009", DIALOG_009 as i64),
+    ("DIALOG_010", DIALOG_010 as i64),
+    ("DIALOG_011", DIALOG_011 as i64),
+    ("DIALOG_012", DIALOG_012 as i64),
+    ("DIALOG_013", DIALOG_013 as i64),
+    ("DIALOG_014", DIALOG_014 as i64),
+    ("DIALOG_015", DIALOG_015 as i64),
+    ("DIALOG_016", DIALOG_016 as i64),
+    ("DIALOG_017", DIALOG_017 as i64),
+    ("DIALOG_018", DIALOG_018 as i64),
+    ("DIALOG_019", DIALOG_019 as i64),
+    ("DIALOG_020", DIALOG_020 as i64),
+    ("DIALOG_021", DIALOG_021 as i64),
+    ("DIALOG_022", DIALOG_022 as i64),
+    ("DIALOG_023", DIALOG_023 as i64),
+    ("DIALOG_024", DIALOG_024 as i64),
+    ("DIALOG_025", DIALOG_025 as i64),
+    ("DIALOG_026", DIALOG_026 as i64),
+    ("DIALOG_027", DIALOG_027 as i64),
+    ("DIALOG_028", DIALOG_028 as i64),
+    ("DIALOG_029", DIALOG_029 as i64),
+    ("DIALOG_030", DIALOG_030 as i64),
+    ("DIALOG_031", DIALOG_031 as i64),
+    ("DIALOG_032", DIALOG_032 as i64),
+    ("DIALOG_033", DIALOG_033 as i64),
+    ("DIALOG_034", DIALOG_034 as i64),
+    ("DIALOG_035", DIALOG_035 as i64),
+    ("DIALOG_036", DIALOG_036 as i64),
+    ("DIALOG_037", DIALOG_037 as i64),
+    ("DIALOG_038", DIALOG_038 as i64),
+    ("DIALOG_039", DIALOG_039 as i64),
+    ("DIALOG_040", DIALOG_040 as i64),
+    ("DIALOG_041", DIALOG_041 as i64),
+    ("DIALOG_042", DIALOG_042 as i64),
+    ("DIALOG_043", DIALOG_043 as i64),
+    ("DIALOG_044", DIALOG_044 as i64),
+    ("DIALOG_045", DIALOG_045 as i64),
+    ("DIALOG_046", DIALOG_046 as i64),
+    ("DIALOG_047", DIALOG_047 as i64),
+    ("DIALOG_048", DIALOG_048 as i64),
+    ("DIALOG_049", DIALOG_049 as i64),
+    ("DIALOG_050", DIALOG_050 as i64),
+    ("DIALOG_051", DIALOG_051 as i64),
+    ("DIALOG_052", DIALOG_052 as i64),
+    ("DIALOG_053", DIALOG_053 as i64),
+    ("DIALOG_054", DIALOG_054 as i64),
+    ("DIALOG_055", DIALOG_055 as i64),
+    ("DIALOG_056", DIALOG_056 as i64),
+    ("DIALOG_057", DIALOG_057 as i64),
+    ("DIALOG_058", DIALOG_058 as i64),
+    ("DIALOG_059", DIALOG_059 as i64),
+    ("DIALOG_060", DIALOG_060 as i64),
+    ("DIALOG_061", DIALOG_061 as i64),
+    ("DIALOG_062", DIALOG_062 as i64),
+    ("DIALOG_063", DIALOG_063 as i64),
+    ("DIALOG_064", DIALOG_064 as i64),
+    ("DIALOG_065", DIALOG_065 as i64),
+    ("DIALOG_066", DIALOG_066 as i64),
+    ("DIALOG_067", DIALOG_067 as i64),
+    ("DIALOG_068", DIALOG_068 as i64),
+    ("DIALOG_069", DIALOG_069 as i64),
+    ("DIALOG_070", DIALOG_070 as i64),
+    ("DIALOG_071", DIALOG_071 as i64),
+    ("DIALOG_072", DIALOG_072 as i64),
+    ("DIALOG_073", DIALOG_073 as i64),
+    ("DIALOG_074", DIALOG_074 as i64),
+    ("DIALOG_075", DIALOG_075 as i64),
+    ("DIALOG_076", DIALOG_076 as i64),
+    ("DIALOG_077", DIALOG_077 as i64),
+    ("DIALOG_078", DIALOG_078 as i64),
+    ("DIALOG_079", DIALOG_079 as i64),
+    ("DIALOG_080", DIALOG_080 as i64),
+    ("DIALOG_081", DIALOG_081 as i64),
+    ("DIALOG_082", DIALOG_082 as i64),
+    ("DIALOG_083", DIALOG_083 as i64),
+    ("DIALOG_084", DIALOG_084 as i64),
+    ("DIALOG_085", DIALOG_085 as i64),
+    ("DIALOG_086", DIALOG_086 as i64),
+    ("DIALOG_087", DIALOG_087 as i64),
+    ("DIALOG_088", DIALOG_088 as i64),
+    ("DIALOG_089", DIALOG_089 as i64),
+    ("DIALOG_090", DIALOG_090 as i64),
+    ("DIALOG_091", DIALOG_091 as i64),
+    ("DIALOG_092", DIALOG_092 as i64),
+    ("DIALOG_093", DIALOG_093 as i64),
+    ("DIALOG_094", DIALOG_094 as i64),
+    ("DIALOG_095", DIALOG_095 as i64),
+    ("DIALOG_096", DIALOG_096 as i64),
+    ("DIALOG_097", DIALOG_097 as i64),
+    ("DIALOG_098", DIALOG_098 as i64),
+    ("DIALOG_099", DIALOG_099 as i64),
+    ("DIALOG_100", DIALOG_100 as i64),
+    ("DIALOG_101", DIALOG_101 as i64),
+    ("DIALOG_102", DIALOG_102 as i64),
+    ("DIALOG_103", DIALOG_103 as i64),
+    ("DIALOG_104", DIALOG_104 as i64),
+    ("DIALOG_105", DIALOG_105 as i64),
+    ("DIALOG_106", DIALOG_106 as i64),
+    ("DIALOG_107", DIALOG_107 as i64),
+    ("DIALOG_108", DIALOG_108 as i64),
+    ("DIALOG_109", DIALOG_109 as i64),
+    ("DIALOG_110", DIALOG_110 as i64),
+    ("DIALOG_111", DIALOG_111 as i64),
+    ("DIALOG_112", DIALOG_112 as i64),
+    ("DIALOG_113", DIALOG_113 as i64),
+    ("DIALOG_114", DIALOG_114 as i64),
+    ("DIALOG_115", DIALOG_115 as i64),
+    ("DIALOG_116", DIALOG_116 as i64),
+    ("DIALOG_117", DIALOG_117 as i64),
+    ("DIALOG_118", DIALOG_118 as i64),
+    ("DIALOG_119", DIALOG_119 as i64),
+    ("DIALOG_120", DIALOG_120 as i64),
+    ("DIALOG_121", DIALOG_121 as i64),
+    ("DIALOG_122", DIALOG_122 as i64),
+    ("DIALOG_123", DIALOG_123 as i64),
+    ("DIALOG_124", DIALOG_124 as i64),
+    ("DIALOG_125", DIALOG_125 as i64),
+    ("DIALOG_126", DIALOG_126 as i64),
+    ("DIALOG_127", DIALOG_127 as i64),
+    ("DIALOG_128", DIALOG_128 as i64),
+    ("DIALOG_129", DIALOG_129 as i64),
+    ("DIALOG_130", DIALOG_130 as i64),
+    ("DIALOG_131", DIALOG_131 as i64),
+    ("DIALOG_132", DIALOG_132 as i64),
+    ("DIALOG_133", DIALOG_133 as i64),
+    ("DIALOG_134", DIALOG_134 as i64),
+    ("DIALOG_135", DIALOG_135 as i64),
+    ("DIALOG_136", DIALOG_136 as i64),
+    ("DIALOG_137", DIALOG_137 as i64),
+    ("DIALOG_138", DIALOG_138 as i64),
+    ("DIALOG_139", DIALOG_139 as i64),
+    ("DIALOG_140", DIALOG_140 as i64),
+    ("DIALOG_141", DIALOG_141 as i64),
+    ("DIALOG_142", DIALOG_142 as i64),
+    ("DIALOG_143", DIALOG_143 as i64),
+    ("DIALOG_144", DIALOG_144 as i64),
+    ("DIALOG_145", DIALOG_145 as i64),
+    ("DIALOG_146", DIALOG_146 as i64),
+    ("DIALOG_147", DIALOG_147 as i64),
+    ("DIALOG_148", DIALOG_148 as i64),
+    ("DIALOG_149", DIALOG_149 as i64),
+    ("DIALOG_150", DIALOG_150 as i64),
+    ("DIALOG_151", DIALOG_151 as i64),
+    ("DIALOG_152", DIALOG_152 as i64),
+    ("DIALOG_153", DIALOG_153 as i64),
+    ("DIALOG_154", DIALOG_154 as i64),
+    ("DIALOG_155", DIALOG_155 as i64),
+    ("DIALOG_156", DIALOG_156 as i64),
+    ("DIALOG_157", DIALOG_157 as i64),
+    ("DIALOG_158", DIALOG_158 as i64),
+    ("DIALOG_159", DIALOG_159 as i64),
+    ("DIALOG_160", DIALOG_160 as i64),
+    ("DIALOG_161", DIALOG_161 as i64),
+    ("DIALOG_162", DIALOG_162 as i64),
+    ("DIALOG_163", DIALOG_163 as i64),
+    ("DIALOG_164", DIALOG_164 as i64),
+    ("DIALOG_165", DIALOG_165 as i64),
+    ("DIALOG_166", DIALOG_166 as i64),
+    ("DIALOG_167", DIALOG_167 as i64),
+    ("DIALOG_168", DIALOG_168 as i64),
+    ("DIALOG_169", DIALOG_169 as i64),
+    ("DIALOG_RESPONSE_NONE", DIALOG_RESPONSE_NONE as i64),
+    ("DIALOG_RESPONSE_YES", DIALOG_RESPONSE_YES as i64),
+    ("DIALOG_RESPONSE_NO", DIALOG_RESPONSE_NO as i64),
+    (
+        "DIALOG_RESPONSE_NOT_DEFINED",
+        DIALOG_RESPONSE_NOT_DEFINED as i64,
+    ),
+    ("SEQ_SOUND_PLAYER", SEQ_SOUND_PLAYER as i64),
+    (
+        "SEQ_EVENT_CUTSCENE_COLLECT_STAR",
+        SEQ_EVENT_CUTSCENE_COLLECT_STAR as i64,
+    ),
+    ("SEQ_MENU_TITLE_SCREEN", SEQ_MENU_TITLE_SCREEN as i64),
+    ("SEQ_LEVEL_GRASS", SEQ_LEVEL_GRASS as i64),
+    ("SEQ_LEVEL_INSIDE_CASTLE", SEQ_LEVEL_INSIDE_CASTLE as i64),
+    ("SEQ_LEVEL_WATER", SEQ_LEVEL_WATER as i64),
+    ("SEQ_LEVEL_HOT", SEQ_LEVEL_HOT as i64),
+    ("SEQ_LEVEL_BOSS_KOOPA", SEQ_LEVEL_BOSS_KOOPA as i64),
+    ("SEQ_LEVEL_SNOW", SEQ_LEVEL_SNOW as i64),
+    ("SEQ_LEVEL_SLIDE", SEQ_LEVEL_SLIDE as i64),
+    ("SEQ_LEVEL_SPOOKY", SEQ_LEVEL_SPOOKY as i64),
+    ("SEQ_EVENT_PIRANHA_PLANT", SEQ_EVENT_PIRANHA_PLANT as i64),
+    ("SEQ_LEVEL_UNDERGROUND", SEQ_LEVEL_UNDERGROUND as i64),
+    ("SEQ_MENU_STAR_SELECT", SEQ_MENU_STAR_SELECT as i64),
+    ("SEQ_EVENT_POWERUP", SEQ_EVENT_POWERUP as i64),
+    ("SEQ_EVENT_METAL_CAP", SEQ_EVENT_METAL_CAP as i64),
+    ("SEQ_EVENT_KOOPA_MESSAGE", SEQ_EVENT_KOOPA_MESSAGE as i64),
+    ("SEQ_LEVEL_KOOPA_ROAD", SEQ_LEVEL_KOOPA_ROAD as i64),
+    ("SEQ_EVENT_HIGH_SCORE", SEQ_EVENT_HIGH_SCORE as i64),
+    ("SEQ_EVENT_MERRY_GO_ROUND", SEQ_EVENT_MERRY_GO_ROUND as i64),
+    ("SEQ_EVENT_RACE", SEQ_EVENT_RACE as i64),
+    (
+        "SEQ_EVENT_CUTSCENE_STAR_SPAWN",
+        SEQ_EVENT_CUTSCENE_STAR_SPAWN as i64,
+    ),
+    ("SEQ_EVENT_BOSS", SEQ_EVENT_BOSS as i64),
+    (
+        "SEQ_EVENT_CUTSCENE_COLLECT_KEY",
+        SEQ_EVENT_CUTSCENE_COLLECT_KEY as i64,
+    ),
+    ("SEQ_EVENT_ENDLESS_STAIRS", SEQ_EVENT_ENDLESS_STAIRS as i64),
+    (
+        "SEQ_LEVEL_BOSS_KOOPA_FINAL",
+        SEQ_LEVEL_BOSS_KOOPA_FINAL as i64,
+    ),
+    (
+        "SEQ_EVENT_CUTSCENE_CREDITS",
+        SEQ_EVENT_CUTSCENE_CREDITS as i64,
+    ),
+    ("SEQ_EVENT_SOLVE_PUZZLE", SEQ_EVENT_SOLVE_PUZZLE as i64),
+    ("SEQ_EVENT_TOAD_MESSAGE", SEQ_EVENT_TOAD_MESSAGE as i64),
+    ("SEQ_EVENT_PEACH_MESSAGE", SEQ_EVENT_PEACH_MESSAGE as i64),
+    ("SEQ_EVENT_CUTSCENE_INTRO", SEQ_EVENT_CUTSCENE_INTRO as i64),
+    (
+        "SEQ_EVENT_CUTSCENE_VICTORY",
+        SEQ_EVENT_CUTSCENE_VICTORY as i64,
+    ),
+    (
+        "SEQ_EVENT_CUTSCENE_ENDING",
+        SEQ_EVENT_CUTSCENE_ENDING as i64,
+    ),
+    ("SEQ_MENU_FILE_SELECT", SEQ_MENU_FILE_SELECT as i64),
+    (
+        "SEQ_EVENT_CUTSCENE_LAKITU",
+        SEQ_EVENT_CUTSCENE_LAKITU as i64,
+    ),
 ];

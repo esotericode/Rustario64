@@ -13,6 +13,7 @@
 //! All of this runs once per 30 Hz tick; presentation reads `graph`.
 #![allow(clippy::too_many_arguments)]
 use super::{
+    cutscene::{CutsceneVariable, FocusView, SecondFocusView},
     lakitu::{Rig, get_dist_angle},
     obstruction::{is_range_behind_surface, rotate_camera_around_walls},
     radial::RadialMovement,
@@ -21,7 +22,9 @@ use super::{
 use crate::simulation::{
     collision::SurfaceIndex,
     controller::{A_BUTTON, B_BUTTON, Controller, R_TRIG},
+    dialog::DialogBox,
     mario::{Event, PlayerCameraState, f32_to_s16},
+    object::ObjectId,
     rng::Rng,
 };
 
@@ -212,6 +215,15 @@ pub struct Frame<'a, 'w> {
     pub rng: &'a mut Rng,
     /// Sounds, in call order.
     pub events: &'a mut Vec<Event>,
+    /// gTimeStopState, which the dialog cutscene sets and clears.
+    pub time_stop_state: &'a mut u32,
+    /// The dialog box the dialog cutscene opens and reads.
+    pub dialog: &'a mut DialogBox,
+    /// gCutsceneFocus's position and hitbox, read when the camera starts
+    /// a cutscene about it (None while it is NULL).
+    pub focus: Option<FocusView>,
+    /// gSecondCameraFocus's position and held state (None while NULL).
+    pub second_focus: Option<SecondFocusView>,
 }
 
 /// One area's camera and every camera.c global it uses.
@@ -268,6 +280,17 @@ pub struct CameraSystem {
     pub castle_entrance_offset: [f32; 3],
     pub fixed_mode_base_position: [f32; 3],
     pub store_c_up: StoredInfo,
+    /// sCameraStoreCutscene.
+    pub store_cutscene: StoredInfo,
+    /// sCutsceneVars.
+    pub cutscene_vars: [CutsceneVariable; 10],
+    /// gCutsceneFocus.
+    pub cutscene_focus: Option<ObjectId>,
+    /// gSecondCameraFocus.
+    pub second_camera_focus: Option<ObjectId>,
+    /// sCutsceneDialogID and sCutsceneDialogResponse.
+    pub cutscene_dialog_id: i16,
+    pub cutscene_dialog_response: u8,
     /// sCurCreditsSplinePos/Focus indices (init_camera resets them).
     pub credits_spline_pos_index: [i8; 32],
     pub credits_spline_focus_index: [i8; 32],
@@ -345,6 +368,12 @@ impl CameraSystem {
             castle_entrance_offset: [0.0; 3],
             fixed_mode_base_position: [646.0, 143.0, -1513.0],
             store_c_up: StoredInfo::default(),
+            store_cutscene: StoredInfo::default(),
+            cutscene_vars: [CutsceneVariable::default(); 10],
+            cutscene_focus: None,
+            second_camera_focus: None,
+            cutscene_dialog_id: 0,
+            cutscene_dialog_response: c::DIALOG_RESPONSE_NONE as u8,
             credits_spline_pos_index: [0; 32],
             credits_spline_focus_index: [0; 32],
             hud_status: 0,
@@ -389,6 +418,8 @@ impl CameraSystem {
         self.cutscene_shot = 0;
         self.cutscene_obj_spawn = 0;
         self.obj_cutscene_done = 0;
+        self.cutscene_focus = None;
+        self.second_camera_focus = None;
         self.unused_8032cfc8 = 0;
         self.unused_8032cfcc = 0;
         self.c_buttons_pressed = 0;
@@ -585,8 +616,11 @@ impl CameraSystem {
         );
         if self.rig.camera.cutscene != 0 {
             self.rig.yaw_speed = 0;
-            // play_cutscene: no cutscene is ported.
-            self.unsupported(Unsupported::Cutscene(self.rig.camera.cutscene));
+            if Self::cutscene_is_ported(self.rig.camera.cutscene) {
+                self.play_cutscene(f);
+            } else {
+                self.unsupported(Unsupported::Cutscene(self.rig.camera.cutscene));
+            }
             self.frames_since_cutscene_ended = 0;
         } else if self.recent_cutscene != 0 && self.frames_since_cutscene_ended < 8 {
             self.frames_since_cutscene_ended += 1;
@@ -634,7 +668,7 @@ impl CameraSystem {
         }
         let cutscene = self.get_cutscene_from_mario_status(f.mario_cam);
         self.start_cutscene(cutscene);
-        if self.rig.camera.cutscene != 0 {
+        if self.rig.camera.cutscene != 0 && !Self::cutscene_is_ported(self.rig.camera.cutscene) {
             self.unsupported(Unsupported::Cutscene(self.rig.camera.cutscene));
         }
         f.flags.checking_for_camera = false;
@@ -1577,8 +1611,7 @@ impl CameraSystem {
             if close_to_mario & 1 != 0 && avoid_status != 0 {
                 yaw_vel = 0;
             }
-            // get_dialog_id() == DIALOG_NONE: no dialog system runs.
-            if yaw_vel != 0 {
+            if yaw_vel != 0 && f.dialog.id() == c::DIALOG_NONE {
                 camera_approach_s16_symmetric_bool(&mut yaw, yaw_goal, yaw_vel);
             }
         }
@@ -1777,7 +1810,7 @@ impl CameraSystem {
         }
     }
 
-    /// update_boss_fight_camera without a boss: it circles the area center.
+    /// update_boss_fight_camera: the boss focus, or the area's center.
     fn update_boss_fight_camera(
         &mut self,
         f: &mut Frame<'_, '_>,
@@ -1796,14 +1829,21 @@ impl CameraSystem {
             f.mario_cam.camera_event = 0;
         }
         let yaw = self.rig.mode_offset_yaw.wrapping_add(degrees(45));
-        // gSecondCameraFocus is the boss object; none is simulated.
-        let second_focus = [self.radial.center[0], m[1], self.radial.center[1]];
+        // The boss, or the area's center when there is none.
+        let (mut second_focus, held_state) = match f.second_focus {
+            Some(boss) => (boss.pos, boss.held_state),
+            None => ([self.radial.center[0], m[1], self.radial.center[1]], 0),
+        };
         let mut focus_distance = calc_abs_dist(m, second_focus) * 1.6;
         if focus_distance < 800.0 {
             focus_distance = 800.0;
         }
         if focus_distance > 5000.0 {
             focus_distance = 5000.0;
+        }
+        // Holding the boss pulls the focus to spin with Mario.
+        if held_state == 1 {
+            second_focus = offset_rotated(m, [0.0, -150.0, -125.0], f.mario_cam.face_angle, trig);
         }
         focus[0] = (m[0] + second_focus[0]) / 2.0;
         focus[1] = (m[1] + second_focus[1]) / 2.0 + 125.0;
@@ -1848,6 +1888,10 @@ impl CameraSystem {
             }
         }
         focus[1] = (m[1] + second_focus[1]) / 2.0 + 100.0;
+        if held_state == 1 {
+            let yaw_velocity = i32::from(f.mario.angle_vel_yaw);
+            focus[1] += 300.0 * trig.sins(yaw_velocity.abs());
+        }
         if focus_distance < 400.0 {
             focus_distance = 400.0;
         }
@@ -2160,11 +2204,12 @@ impl CameraSystem {
         cutscene
     }
 
-    /// start_cutscene. The cutscene variables it clears are not modelled
-    /// (no cutscene runs); starting one is reported as unsupported.
+    /// start_cutscene. Starting a cutscene that is not ported is reported
+    /// as unsupported by the caller.
     fn start_cutscene(&mut self, cutscene: u8) {
         if self.rig.camera.cutscene != cutscene {
             self.rig.camera.cutscene = cutscene;
+            self.clear_cutscene_vars();
         }
     }
 

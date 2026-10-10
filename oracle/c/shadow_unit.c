@@ -1,7 +1,10 @@
 /* Development-only authored transport (MIT). Original routines compute all
  * vertex positions/alphas. The wrapper supplies a Mario animation and runs
  * the BOB player branch without allocating or emitting an N64 display list.
- * Other levels' lava and flying-carpet adjustments are outside this boundary. */
+ * Other levels' lava and flying-carpet adjustments are outside this boundary.
+ * The real node traversal lives in mario_render_unit.c; here the shadow
+ * node's children are a stub under its own name. */
+#define geo_process_node_and_siblings oracle_shadow_process_children
 #include "excerpts/geo_misc.c"
 #include "excerpts/shadow.c"
 #include <stdlib.h>
@@ -26,7 +29,7 @@ Gfx *create_shadow_below_xyz(f32 x, f32 y, f32 z, s16 scale, u8 alpha, s8 type) 
 }
 void geo_append_display_list(void *list, s16 layer) { abort(); }
 void *alloc_display_list(u32 size) { abort(); }
-void geo_process_node_and_siblings(struct GraphNode *node) { }
+void oracle_shadow_process_children(struct GraphNode *node) { }
 #include "excerpts/shadow_geo.c"
 
 void oracle_shadow_origin(const f32 *position, s16 yaw, s16 flags, s16 frame,

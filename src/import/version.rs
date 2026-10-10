@@ -43,6 +43,11 @@ pub const GROUP0_SEGMENT: u8 = 0x04;
 /// the 16x16 IA8 quarter-circle at decoded offset 0x120B8.
 pub const SEGMENT2_MIO0: Range<usize> = 0x108A40..0x114750;
 pub const SHADOW_CIRCLE_TEXTURE: usize = 0x120B8;
+/// seg2_dialog_table's decoded offset in that segment and its entry count
+/// (pinned text/us/dialogs.h defines 170 dialogs before the NULL);
+/// tools/check_dialog_reference.py locates and checks it.
+pub const DIALOG_TABLE: usize = 0x10A68;
+pub const DIALOG_COUNT: usize = 170;
 pub const GROUP0_GEO: Range<usize> = 0x1279B0..0x12A7E0;
 pub const GROUP0_GEO_SEGMENT: u8 = 0x17;
 /// MODEL_MARIO in the pinned include/model_ids.h.
@@ -87,23 +92,44 @@ pub const BEHAVIOR_SEGMENT: u8 = 0x13;
 
 /// The segmented addresses of the behavior scripts the port names, from the
 /// same layout (the checker verifies each entry).
-pub const BEHAVIOR_SCRIPTS: [(&str, u32); 10] = [
+pub const BEHAVIOR_SCRIPTS: [(&str, u32); 25] = [
+    ("bhvKingBobomb", 0x130001F4),
+    ("bhvBobombAnchorMario", 0x13000254),
+    ("bhvWhitePuffExplosion", 0x130007DC),
     ("bhvCoinFormationSpawn", 0x130008D0),
     ("bhvCoinFormation", 0x130008EC),
     ("bhvYellowCoin", 0x1300091C),
     ("bhvCoinSparkles", 0x130009E0),
     ("bhvGoldenCoinSparkles", 0x13000A14),
+    ("bhvBreakBoxTriangle", 0x13000DB4),
+    ("bhvSoundSpawner", 0x1300229C),
     ("bhvMario", 0x13002EC0),
     ("bhvSpinAirborneWarp", 0x13002F74),
+    ("bhvMovingYellowCoin", 0x13003068),
+    ("bhvBobomb", 0x13003174),
+    ("bhvBobombFuseSmoke", 0x130031AC),
+    ("bhvBobombBuddy", 0x130031DC),
     ("bhvMessagePanel", 0x130032E0),
+    ("bhvCarrySomething3", 0x13003464),
+    ("bhvCarrySomething4", 0x1300346C),
+    ("bhvCarrySomething5", 0x13003474),
+    ("bhvExplosion", 0x13003510),
+    ("bhvBobombBullyDeathSmoke", 0x13003558),
+    ("bhvRespawner", 0x13003614),
     ("bhvHauntedChair", 0x13004FD4),
     ("bhvMadPiano", 0x13005024),
 ];
 
 /// The CALL_NATIVE targets the port translates, by decomp name and address
 /// in this revision: the words that follow CALL_NATIVE in the layout above.
-pub const BEHAVIOR_NATIVES: [(&str, u32); 10] = [
+pub const BEHAVIOR_NATIVES: [(&str, u32); 28] = [
     ("bhv_mario_update", 0x8029CA58),
+    ("cur_obj_move_using_fvel_and_gravity", 0x802A2644),
+    ("cur_obj_rotate_face_angle_using_vel", 0x802A2BC4),
+    ("bhv_dust_smoke_loop", 0x802A399C),
+    ("bhv_bobomb_anchor_mario_loop", 0x802A7230),
+    ("bhv_king_bobomb_loop", 0x802A8064),
+    ("bhv_white_puff_exploding_loop", 0x802AAC48),
     ("bhv_yellow_coin_init", 0x802AB650),
     ("bhv_yellow_coin_loop", 0x802AB70C),
     ("bhv_coin_formation_spawn_loop", 0x802ABA40),
@@ -111,8 +137,20 @@ pub const BEHAVIOR_NATIVES: [(&str, u32); 10] = [
     ("bhv_coin_formation_loop", 0x802ABF0C),
     ("bhv_coin_sparkles_loop", 0x802AC2C0),
     ("bhv_golden_coin_sparkles_loop", 0x802AC2EC),
+    ("bhv_sound_spawner_init", 0x802C19FC),
     ("try_print_debug_mario_level_info", 0x802CB1C0),
     ("try_do_mario_debug_object_spawn", 0x802CB264),
+    ("bhv_moving_yellow_coin_init", 0x802E5EE8),
+    ("bhv_moving_yellow_coin_loop", 0x802E5F64),
+    ("bhv_bobomb_init", 0x802E6A2C),
+    ("bhv_bobomb_loop", 0x802E742C),
+    ("bhv_bobomb_fuse_smoke_init", 0x802E75A0),
+    ("bhv_bobomb_buddy_init", 0x802E76AC),
+    ("bhv_bobomb_buddy_loop", 0x802E7C4C),
+    ("bhv_explosion_init", 0x802EAA8C),
+    ("bhv_explosion_loop", 0x802EAAD0),
+    ("bhv_bobomb_bully_death_smoke_init", 0x802EABF0),
+    ("bhv_respawner_loop", 0x802EAEF8),
 ];
 
 /// sMacroObjectPresets (pinned include/macro_presets.inc.c): 366 entries of
@@ -121,10 +159,14 @@ pub const BEHAVIOR_NATIVES: [(&str, u32); 10] = [
 pub const MACRO_PRESET_TABLE: Range<usize> = 0xEC7E0..0xED350;
 
 /// Object-model geo callbacks the simulation's render pass runs, by decomp
-/// name and address. tools/check_object_model_reference.py walks the coin
-/// and sparkle layouts the main scripts register alongside the pinned
-/// actors/coin and actors/sparkle geo sources.
-pub const OBJECT_GEO_CALLBACKS: [(&str, u32); 1] = [("geo_switch_anim_state", 0x8029DB48)];
+/// name and address. tools/check_object_model_reference.py walks the coin,
+/// sparkle and mist layouts the main scripts register and BOB's King
+/// Bob-omb layout alongside the pinned actor geo sources.
+pub const OBJECT_GEO_CALLBACKS: [(&str, u32); 3] = [
+    ("geo_switch_anim_state", 0x8029DB48),
+    ("geo_update_layer_transparency", 0x8029D924),
+    ("geo_update_held_mario_pos", 0x802A719C),
+];
 
 /// level_main_scripts_entry's loads (segment, ROM range, MIO0). group0 is
 /// Mario's (above); common1 holds the coin models (sm64tools

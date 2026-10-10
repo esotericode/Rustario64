@@ -6,9 +6,19 @@ first person) have native decomp comparison coverage. BOB's act-1 coins
 (yellow coins and coin formations) are drawn from the ROM and can be collected.
 Collection sparkles animate, and the upper-right development counter reads the
 original HUD value (which counts up every other tick). Coin positions interpolate;
-texture animation stays at 30 Hz. Coin shadows and original HUD typography are
-pending. Missions, every other object (including the cannon lid), camera
-cutscenes, original pause behavior, water/cutscene actions, warps, saves,
+texture animation stays at 30 Hz. BOB's twelve act-1 Bob-ombs walk, light their
+fuses and chase Mario, explode (shaking the camera and knocking Mario back),
+drop a coin the first time they explode, and respawn once Mario is far away;
+they are drawn with their animated ROM model, fuse smoke, explosions and smoke.
+Punching or diving into a Bob-omb picks it up: Mario carries it (walking,
+jumping and landing), throws it with B (also in the air), drops it with Z, or
+holds it until its fuse runs out. Object shadows and original HUD typography are
+pending. The two Bob-omb Buddies talk using the ROM's dialog text. King
+Bob-omb now spawns on the act-1 summit: the encounter, animated anchor,
+grabs/escapes, heavy pickup/throw, damage, return jump and defeat dialog have
+native frame comparisons. Defeat stops at star spawning; missions and other
+objects (including the cannon lid), other camera cutscenes, original pause
+behavior, water/other cutscene actions, warps, saves,
 audio are missing. Basic controller input is available; remapping, calibration,
 rumble and controller-driven menu navigation are pending. Play stops on
 unsupported paths; R re-enters.
@@ -17,16 +27,19 @@ unsupported paths; R re-enters.
 
 Windows and Linux ZIP builds are attached to successful runs of the
 [Rust foundation workflow](https://github.com/esotericode/Rustario64/actions/workflows/rust.yml).
-Choose the latest successful run for the branch under test (the latest enemy
-physics foundation is on `codex/object-step-physics`, stacked on the controller
-and desktop launcher), then
+Choose the latest successful run for the branch under test (the current
+development checkpoint is on `codex/local-development`, including Bob-ombs,
+holding, NPC dialogs, King Bob-omb and the desktop UI resize fix), then
 download `rustario64-windows-x86_64` or `rustario64-linux-x86_64` under Artifacts.
-GitHub's artifact ZIP contains the runtime ZIP; extract both layers. The build
-identifier is in the runtime folder's BUILD_INFO.txt.
+GitHub's artifact ZIP contains the runtime ZIP; extract both layers. The project
+version is in the runtime ZIP/folder name and BUILD_INFO.txt, and is visible in
+the title bar, ROM launcher and pause/settings. Include that version when
+reporting a bug; all runtime binaries also accept `--version`.
 
-The enemy physics increment has component comparisons but does not enable
-additional actors in play. The launcher, controller and coin exploration flow
-remains the current manual test target.
+The Bob-omb and holding increments enable BOB's Bob-ombs in play, including
+carrying and throwing them, with per-frame decomp comparisons. The launcher,
+controller, coin, Bob-omb, NPC-dialog and boss encounter flows are the current
+manual test targets. The star and mission completion are pending.
 
 Extract the whole ZIP. Keep your own ROM outside this folder. Only the original
 8 MiB US v1.0 ROM is supported, identified after byte-order normalization by
@@ -39,10 +52,20 @@ The viewer and desktop launcher must stay in the same extracted folder.
 Choose Browse, enter a local path, or drag the ROM into the launcher, then select
 Play. Unsupported or unreadable ROMs show an error and allow another selection.
 Remembering the path is opt-in and happens after successful validation/import.
-The launcher offers interpolation, fog, VSync, fullscreen, window-size choices
+The launcher offers interpolation, antialiasing, high-detail Mario, fog, VSync, fullscreen, window-size choices
 and controller selection. It scrolls to fit smaller windows. Pause/settings has
 Choose another ROM, which returns to selection in the same window. Every selected
 file is validated even when the supported ROM's imported data is reused.
+For cleaner edges, select **4× MSAA** under Antialiasing. Enable **Always draw
+high-detail Mario** to keep his detailed mesh at a distance. Both options are
+off by default and saved when playing or changing pause/settings. Direct viewer
+launches use those saved quality choices too; `--msaa 1|4` and
+`--high-detail-mario` / `--no-high-detail-mario` override them. Mario detail
+updates on the next tick after resuming. Unsupported MSAA target formats use
+Off and show a notice in pause/settings. These options leave the original
+simulation, including its LOD-dependent hand-position calculation, unchanged.
+Check carried objects for visual hand alignment when comparing the two detail
+choices; a displayed higher-detail hand may differ from the original anchor.
 Settings are stored separately from content in `%APPDATA%/rustario64/settings.json`
 or `$XDG_CONFIG_HOME/rustario64/settings.json` (default `~/.config` on Linux).
 Invalid settings fall back to defaults with an error. Linux Browse needs a desktop
@@ -68,6 +91,15 @@ Linux needs libudev, a compatible system Vulkan or GL driver and X11/Wayland lib
 (for example libxkbcommon-x11-0 for X11). Windows needs a compatible GPU driver.
 The current CI uses Ubuntu 24.04 and Windows Server 2025 x86_64; older desktop
 OS versions and physical GPU/controller combinations need human testing.
+
+The session-26 build fixes the UI scissor crash during pending window resizes.
+Earlier builds could abort when the launcher changed from 800×720 to the game
+window size. The UI now clips against the acquired GPU target. During manual
+playtesting, repeat Play → pause → Choose another ROM → Play, resize the window,
+and toggle fullscreen; check for crashes and correct layout on scaled displays.
+Also switch MSAA Off → 4× → Off, resize in each mode, and repeat Choose another
+ROM → Play with 4× selected. Toggle Mario detail and resume; check his animation,
+blink, cap and carried-object alignment, and confirm the choices survive restart.
 
 ## Controls and options
 
@@ -145,6 +177,32 @@ resume, change focus, toggle M and restart: objects must not streak from old
 positions or reappear after collection. Missing actors are listed by the
 importer; this remains exploration, not a completed mission.
 
+## Bob-omb checks
+
+From the start, walk toward the Bob-ombs on the path ahead (or launch with
+`--start X,Y,Z[,YAW]` near one in development builds). Check that a Bob-omb
+walks with a smooth animation, blinks, turns to face Mario, lights its fuse
+(smoke puffs) and chases at a faster walk, then explodes after about five
+seconds: a bright expanding explosion, the camera shake, a puff of dark smoke
+and, when Mario is close, a knockback with health loss. The first explosion
+drops a yellow coin that can be collected. Jump-kick a Bob-omb (A, then B in
+the air): it flies off and explodes when it lands. Walk away and return:
+it respawns at its home. Compare the explosion and smoke look with the original
+game at 30, 60 and 144 Hz with interpolation on and off; report any part that
+pops, faces the wrong way or flickers.
+
+## Holding checks
+
+Punch a Bob-omb (B while standing next to it, facing it) or dive into it
+(B while running). Mario lifts it over his hands; check that it stays in his
+hands while he stands, walks, runs, turns, jumps and lands, with no lag or
+jitter at high frame rates. Press B to throw it (it flies forward and explodes
+where it lands), B in the air to throw it from a jump, Z to set it down (it
+walks off again), or hold it until the fuse runs out (it explodes beside him
+and knocks him back). Report where the Bob-omb sits relative to his hands
+compared with the original game, especially while running far from the
+camera (Mario's lower-detail body is used there).
+
 ## Controller and launcher checks
 
 Open the desktop launcher by double-click, browse to your local ROM, and play.
@@ -158,3 +216,58 @@ across a focus change; release/center before resuming. Try two controllers and
 Keyboard only. Choose another ROM, test
 an unreadable/unsupported file, then select the valid ROM again. Report controller
 model, USB/Bluetooth, mapping and OS alongside the normal build/GPU details.
+
+## Session 24 local hardware evidence
+
+Ubuntu 26.04.1, Intel Graphics (MTL), Vulkan: the native window starts from the
+owner ROM, runs 120 draw frames/61 simulation ticks and closes cleanly. Its
+recorded inputs replay exactly in the native oracle. Six renderer integration
+checks pass with GPU access, and a 1280×960 screenshot showing Mario, a Bob-omb
+and fuse smoke is inspected. Automated keyboard injection could not retain
+window focus, so interactive keyboard/controller and Windows checks remain open.
+At this historical checkpoint King Bob-omb was disabled; session 32 enables
+his encounter. Session 24 added his standard movement
+prerequisites, not an encounter that a human can play yet.
+
+
+## Session 25 hardware regression
+
+The rebuilt runtime is checked on the laptop's Intel Graphics (MTL), Vulkan.
+A native window closes cleanly after 120 draw frames/60 simulation ticks; all
+60 recorded ticks replay exactly in native C. Six offscreen renderer checks
+pass with physical device access. A private 1280×960 Mario/Bob-omb screenshot
+is visually inspected. The new boss grabbing helpers have component coverage;
+King Bob-omb's encounter was pending at this checkpoint; session 32 enables
+it. Human input-feel checks remain pending.
+
+## Bob-omb Buddy checks (session 30)
+
+Act 1 has two pink Bob-omb Buddies near the start (by the first fence and
+further along the path). Walk up to one, face it and press B or A (J or Space
+on the keyboard): it turns to Mario, the camera swings over his shoulder and
+the dialog box opens with the ROM's text. A or B turns each page; after the
+last page the box closes, the camera returns and play resumes. Other objects
+(coins, Bob-ombs) freeze while the box is open. Check that the text matches
+the original, that pages advance once per press, and that talking again works.
+The box uses development typography; the original font and rotating box are
+pending. Signs are not spawned yet.
+
+
+## King Bob-omb checkpoint (0.0.6)
+
+Climb to the summit in act 1 and finish his introduction with A/B page presses.
+Let him grab and throw Mario, then try escaping with repeated A presses and
+stick changes. Approach from behind to pick him up, walk with him and throw
+with B. Landing on the summit damages him; throwing him off it makes him
+return and complain. Defeat plays his last dialog and particles, then stops
+at the unimplemented star spawn. R re-enters; a stop here is expected in this
+checkpoint. A controller-driven three-hit fight and visual/input-feel review
+remain acceptance checks; the native tests include explicit initial-state
+fixtures for damage/return/defeat and heavy pickup.
+
+The v0.0.6 Linux boss-introduction window runs 120 draw frames/60 simulation
+ticks and exits cleanly on Intel Graphics (MTL), Vulkan. The private screenshot
+shows the animated ROM boss and his introduction text. A 700-frame initial-state
+defeat drawing fixture also builds fading mist and debris. Default debug and
+release GPU checks verify mist fading at opacity 255/128/0. This is automated
+hardware evidence; human controller and Windows playtesting remain open.

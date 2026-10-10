@@ -877,3 +877,312 @@ the application keeps running with keyboard input. Reconnection does not change
 pause state. Start, focus-loss and existing menu/neutral boundaries retain their
 behavior. Final tick inputs remain recorded in schema-2 logs, so existing logs
 and reference comparisons require no migration. No simulation rule is changed.
+
+## Bob-ombs, explosions and object animations — 2026-10-10 (session 22)
+
+**Object animations are segmented data read in place.** LOAD_ANIMATIONS
+keeps the script's segmented table address in oAnimations (the original
+stores the same word and converts it on use); `curAnim` names the struct
+Animation by its segmented address (`AnimRef::Object`). The importer decodes
+every table a runnable behavior's LOAD_ANIMATIONS reaches from the segments
+that hold it (the main scripts' or the level's), bounding each animation's
+index by its part count and its values by the furthest frame the index
+names. The frame advance stays the render pass's (`geo_set_animation_globals`,
+run before the view test for every active object in the area), exactly where
+the original runs it. The oracle builds host copies of the same tables
+(`object_anims_unit.c`) from the Rust decode.
+
+**Pointer-valued object fields share the raw words.** On the N64 a pointer
+field aliases its raw word; the 64-bit oracle keeps pointers in a separate
+`ptrData`. Rust stores the segmented address in the raw word, and the oracle's
+snapshot maps a `ptrData` pointer to the same word (an animation table's or a
+behavior script's segmented address), failing if a field were used as both a
+pointer and a number.
+
+**Object throw matrices are object-owned.** obj_orient_graph builds a terrain
+matrix in display-list memory each object_step; `ThrowMatrix::Terrain` holds
+it until the render pass places the object with it (it feeds `obj_is_in_view`)
+and clears it, as the original does. Mario's floor-align matrices remain
+indices. The oracle allocates these from a per-frame arena reset where the
+game selects a new display-list pool. Presentation reads the matrices the pass
+used from `Game::rendered_matrices`, never from the objects.
+
+**Deferred camera requests.** Explosions call set_environmental_camera_shake
+during the object update. It is recorded as `Event::EnvironmentalCameraShake`
+and applied to the camera after the object update in call order with Mario's
+requests, as Mario's already were. This is equivalent because no request
+draws randomness and nothing in the object update reads the shake state. A
+shock shake (`SHAKE_SHOCK`, which draws twice from the shared random sequence)
+would be reordered after later objects' draws; the frame asserts it never
+arrives deferred (no ported object causes one). The oracle records the same
+event and runs the verbatim function at the call.
+
+**Runtime-conditional unported branches.** A behavior is spawnable when every
+command, native and statically spawned script it can reach is ported. Three
+branches spawn water particles that are not ported and are unreachable in
+BOB: obj_splash's waves and bubbles and an underwater explosion's bubbles.
+They are not listed as spawns; reaching one panics with its name, so play
+stops and comparisons end at the previous frame. bhv_respawner_loop spawns the
+behavior its creator stored; `create_respawner`'s callers list it themselves.
+
+**Holding is the next boundary.** Punching or diving into a Bob-omb reaches
+the grab request (`mario_check_object_grab`) and then picking up. Holding
+needs Mario's hold actions and the held object's last position (HOLP), which
+the render pass writes from Mario's animated hand matrix
+(`geo_switch_mario_hand_grab_pos`). That pass is not yet authoritative in the
+simulation, so the port stops at `mario_grab_used_object`/the picking-up
+actions with a message naming the missing system rather than approximating a
+hand position. Kicks, jump kicks and trips launch Bob-ombs as in the original.
+
+**Oracle build flags.** `cc::Build::warnings(false)` passes `-w`, which with
+GCC 13 also silenced `-Werror=implicit-function-declaration`, so the
+documented guard against implicitly declared functions was inactive. The
+oracle now keeps compiler warnings out of cargo's output without `-w`; the
+guard is active and two existing excerpts gained the includes they lacked
+(both calls had integer arguments, so no value had been corrupted).
+
+**Presentation of animated objects.** Models with GEO_ANIMATED_PART nodes are
+built once per draw list with each vertex's bone and posed per completed frame
+as geo_process_animated_part does (the object's placement, its animation's
+translation mode and values, scale nodes), then interpolated between the last
+two frames. A GEO_BILLBOARD part keeps only its transformed position, as
+mtxf_billboard does, and faces the displayed camera. Models without animated
+parts keep the baked per-switch-case path. Unsupported model nodes (levels of
+detail, generated or held-object callbacks) are drawing errors, not guesses.
+Object shadows remain undrawn.
+
+**Development start point.** The viewer's `--start X,Y,Z[,YAW]` enters the
+level with Mario spawned elsewhere in the area through the same entry; it is
+a development inspection aid like the free camera, not an original warp.
+
+## Holding and Mario's render pass — 2026-10-10 (session 23)
+
+**Mario's render pass is authoritative.** Dropping and throwing put the held
+object at the held object's last position (HOLP), which
+geo_switch_mario_hand_grab_pos writes while the render pass draws Mario's
+hand, from the camera-space matrix stack. `simulation::mario::render` now runs
+geo_process_object for Mario's node and his model's traversal each linked
+frame with the original matrix arithmetic: placement (or the floor-align
+matrix), scale, the animated parts read from his animation as
+geo_process_animated_part reads them, rotation and scale nodes, switches and
+levels of detail. Levels of detail read the integer part of the 16.16
+fixed-point stack top (mtxf_to_mtx), so the stand/run switch and the camera
+distance choose the body, and therefore the hand, as the original does. The
+pass also makes the callbacks' other writes, which earlier sessions left
+undone on both sides as presentation-only: geo_mario_tilt_torso resets the
+torso angles outside walking and butt-sliding (tilt_body_walking approaches
+from them, so this is gameplay state), geo_mario_head_rotation resets the
+head angles, and geo_mario_hand_foot_scaler counts the punch state down. What
+the callbacks write into graph nodes (rotation and scale nodes, a held-object
+node's offset, the wings' active flags) persists in `MarioGraphState`, as in
+the original nodes, rebuilt at each level entry; the scaler's function-local
+counter keeps its boot value.
+
+The pass needs the camera: frames without the linked camera (the Mario-only
+harness) keep the earlier minimal step (his animation only) on both sides,
+and holding is only reachable in linked frames, which every scenario with
+objects uses. Mario's model is MODEL_MARIO's decoded `mario_geo` (the same
+decode presentation uses) with its callback roles; ROM-free tests use an
+authored model with mario_geo's hierarchy and callbacks and invented
+lengths. The shadow node is processed for its children only: its writes are
+drawing state and its animation reads leave the attribute cursor unchanged.
+The castle mirror's callbacks act only in the mirror room and are not ported.
+
+**Holding.** Mario's object, hold, pick-up, placing-down, throwing and heavy
+throw actions, the dive pick-up and the hold landings, slides and air throws
+are translated, with mario_grab/drop/throw_held_object and obj_set_held_state.
+The Bob-omb's held, dropped and thrown loops (ported in session 22) now run.
+The held object's own model is processed inside Mario's hand
+(geo_process_held_object: its animation's once-per-frame advance and its
+switches). Checks against held behaviors the port never spawns (the jumping
+box, the underwater shell, Bowser) are exact as written: such an object cannot
+be held, and Bowser's swing actions panic.
+
+**Oracle.** Mario's node runs through the verbatim traversal
+(rendering_graph_node.c's node processors, geo_process_held_object and the
+node walk), his verbatim callbacks, and a graph built with the verbatim
+graph_node.c constructors from the Rust side's node list, replacing an
+authored mirror. Object models gained real child nodes so a held object's
+model goes through the same traversal. `guMtxF2L` is an authored
+implementation of libultra's documented fixed-point layout (the SDK source
+stays unvendored), and the scaler's static counter is primed through the
+verbatim function at each entry.
+
+**Presentation.** Mario's drawer reads the completed tick's body state (the
+pass's own punch countdown and resets) instead of re-deriving them. The held
+object is drawn with geo_process_held_object's matrix in world coordinates:
+Mario's object rows with the HOLP the pass just wrote as translation, which is
+exactly the camera-space matrix with the camera removed, then the held
+object's own scale. The viewer's `screenshot --inputs RUN.inputs.json`
+replays a recorded run before capturing, for inspecting any moment of play.
+
+## Standard object movement — 2026-10-10 (session 24)
+
+King Bob-omb uses object_helpers.c's standard movement and a return-home arc,
+which are separate from ordinary Bob-ombs' object_step. Port and verify these
+prerequisites before enabling the boss; do not approximate his movement with
+object_step. The implementation lives in object/standard_motion.rs and keeps
+the original floor/wall query order, signed-halfword position casts, last-wall
+selection, integer degree conversion, quadratic drag, negative speed sign,
+strict landing/edge tests, water flags and deactivation partial updates.
+
+The object field union gains explicit big-endian halfword access. oFloor uses
+zero for NULL and surface index + 1 for a typed stable surface handle in its
+original raw slot; the floor type and room share their original high/low halves.
+No host address enters Rust simulation. The native component adapter maps real
+C surface pointers to that handle and canonicalizes the host halfword layout.
+This changes transport, not native movement. Frame-level pointer snapshot
+support must be extended when a behavior first uses oFloor in linked frames.
+
+Moving throw/drop release accepts the current object and Mario explicitly;
+it keeps the original out-of-bounds failsafe and runs vertical motion only
+when forward speed is nonzero. Stationary releases preserve the previous
+behavior. King Bob-omb's actual thrown/placed dispatcher is still pending.
+
+The oracle compiles 21 verbatim pinned CC0 functions and replaces the former
+cur_obj_move_y aborting boundary. Five tests compare every raw word/return/query
+flag on authored and ROM terrain, including independently evolving sustained
+trajectories and three rejected mutations. The runtime remains Rust and no new
+actor is enabled. Roomed/dynamic worlds and original-execution traces remain
+outside the checked compatibility target.
+
+
+## Shared boss grabbing — 2026-10-10 (session 25)
+
+Implement the original grab/release chain before adding King Bob-omb's actor.
+The shared grabbable handler retains the source's inclusive facing interval
+and its OR with !sInvulnerable. It drops a held object and records the original
+sound/camera requests before changing Mario to ACT_GRABBED. Mario's release
+reads usedObj's yaw, copies his animated graphics position and chooses the
+forward/backward thrown action from the sign of forwardVel (including -0).
+
+common_anchor_mario_behavior belongs to chuckya.inc.c and is also used by King
+Bob-omb. It positions Mario's graphics before copying the parent's yaw into
+the anchor, preserves addition vs OR in its two release paths, and deletes the
+anchor only when its parent has exactly ACTIVE_FLAG_DEACTIVATED. Boss render
+traversal must still position this anchor through the real held-Mario callback.
+
+The escape helper's function-static grabReleaseState is explicit StepWorld
+state: zero at fresh boot, persistent between attempts, reset by a stick
+magnitude strictly below 30. A magnitude strictly above 40 or a new A press
+returns one escape action. The native fixture retains the original local
+static; its return sequence verifies hysteresis without rewriting the source.
+It has no snapshot accessor for that variable. Existing world snapshots cover
+all their previous fields and the objects/actions/events changed by this work.
+
+The release dispatcher handles the supported non-Bowser actors. Bowser's
+special parent-relative throw offset and ridden-object dismount remain future
+work. Heavy throw uses HELD_DROPPED at timer 13; the actor's release dispatcher
+supplies its own forward/vertical speeds afterward. The new oracle fixture
+allocates ordinary objects as test carriers, injects initial state once, and
+calls unmodified native functions. It never executes a King Bob-omb script,
+skips dialogs or substitutes a completed mission.
+
+## NPC dialogs — 2026-10-10 (session 30)
+
+The dialog box's state is simulation: objects and the camera wait on its
+response and on when it closes, and its timing depends on the text's line
+breaks. `simulation::dialog::DialogBox` holds ingame_menu.c's dialog globals
+in `StepWorld`, and the game frame advances it once per frame after the render
+pass, where render_game calls render_menus_and_dialogs. The page breaks read
+the ROM's text (`content::dialog`, imported from segment 2's table at a
+validated offset). Drawing is presentation: `presentation::dialog` reads the
+box after a frame for the viewer's development overlay, which never writes
+back.
+
+Objects request cutscenes through camera.c globals (sObjectCutscene,
+gRecentCutscene, gCutsceneFocus, sCutsceneDialogID/Response) while the camera
+does not run. The game frame copies them into `StepWorld::cutscene` before the
+object update and back into the camera after it, which is exact because the
+camera code never runs between those points; objects only read
+gCamera->cutscene. The camera reaches the focus object's position and hitbox,
+the time-stop state and the dialog box through `Frame`. `play_cutscene` runs
+the ported cutscenes (the dialog cutscene); others remain an `Unsupported`
+stop. Sound and music requests are recorded events (kinds 15–20 on both
+sides), not audio.
+
+## Translated but awaiting comparison — 2026-10-10 (session 31)
+
+A behavior can be translated before its native frame comparison exists, but
+it must not change play or the existing comparisons until it has one.
+`Native::awaits_comparison` lists such natives; `BehaviorScripts::check`
+reports scripts that reach them as `Unported::AwaitingComparison`, so their
+placements are recorded as unported exactly like untranslated ones. King
+Bob-omb is the first: his behavior and helpers are in place, and the gate is
+lifted in the session that adds his comparisons.
+
+## Boss animation callback and comparison gate — 2026-10-10 (session 32)
+
+The earlier no-op audit missed bhv_cmd_spawn_obj: SPAWN_OBJ sets the parent's
+prevObj to the spawned anchor. King Bob-omb's geo_update_held_mario_pos therefore
+writes that anchor through the animated matrix stack, and its next behavior
+frame positions Mario while grabbed. Import keeps his full geo layout in
+ObjectModel.anchor_layout; other objects keep their existing audited traversal.
+The boss pass shares Mario's animation-global setup and animated-part arithmetic,
+then ports create_transformation_from_matrices and
+obj_update_pos_from_parent_transformation in original operation order. His
+billboards have display-list-only children and no simulated descendants; a
+changed topology fails explicitly. A held boss traverses the same tree, but
+this callback reads gCurGraphNodeObject (Mario) and his unset prevObj, so it
+must not move the boss's anchor while held. The native oracle builds the full
+boss graph with the original constructors and runs the original processors.
+
+The boss gate is lifted after authored and ROM complete-frame comparisons,
+including all nine actions, his dialogs, the animated anchor, grabs/escapes,
+heavy pickup/throw, damage, return jump, defeat particles and camera side
+effects. Numeric state seeding is limited to a single initialization after the
+first frame, explicitly labeled in tests/docs; no state is copied per frame.
+Star spawning remains an unsupported event and runtime stop. These tests do
+not claim a controller-only three-hit fight or completed act 1.
+
+The mist callback also writes oAnimState (0 for opacity 255, otherwise 1).
+The native harness executes the verbatim function, discarding only its drawing
+commands; the port mirrors the state write. Presentation accepts the audited
+parameter-0 callback and caches static builds by completed 8-bit opacity,
+setting environment alpha before the mist display list. Other parameters remain
+unsupported. This bounds the additional mist cache to 256 configurations.
+
+Mario updates before the boss actor list. Deferred Mario camera requests retain
+the second-focus position/held state seen before the objects update; the normal
+camera update reads the current boss state afterward. An existing BOB randomized
+replay exposed the old timing error when leaving C-Up into boss-fight mode.
+The held-boss focus also includes the original yaw-velocity sine offset.
+
+Headless GPU tests serialize adapter lifetimes with a test-only mutex. A concurrent
+run of eight GPU tests ended in SIGSEGV on Intel Vulkan locally; the same debug
+checks pass serially. The underlying driver cause has not been isolated. This keeps the default test command bounded
+without changing runtime rendering or skipping GPU assertions.
+
+## Optional presentation quality — 2026-10-10 (session 33)
+
+Off/4× MSAA and high-detail Mario are saved desktop choices, off by default.
+Direct viewer and screenshot commands inherit these two choices unless their
+CLI flags override them. Existing settings omit the new fields and retain the
+original defaults; invalid sample counts are rejected.
+
+Changing MSAA rebuilds every cached material pipeline, preserving uploaded
+meshes and model IDs. Window depth/MSAA targets are recreated after presenting
+the acquired surface texture. The launcher always draws into a single-sample
+surface; returning from a 4× game restores one sample, and Play reapplies the
+saved mode before level upload. Color multisampling/resolve and depth support
+use the formats' WebGPU guarantees for the device's enabled features; no
+adapter-specific format feature is requested. An unsupported request falls
+back to Off and is reported in pause/settings. This follows the pinned wgpu
+30.0.1 APIs (`TextureFormat::guaranteed_format_features`,
+`TextureFormatFeatureFlags`, `MultisampleState`).
+
+High-detail Mario sets distance zero only in the presentation drawer. The
+original simulation traversal still selects its own LOD, runs visibility-gated
+callbacks and writes Mario's held-object hand position. A quality toggle takes
+effect at the next tick so rebuilding a pose cannot advance the presentation
+punch scaler twice. Geometry transitions retain the drawer's existing pose
+interpolation. The detailed drawing can differ from the original hand anchor;
+we preserve gameplay rather than move a carried object's simulated position.
+
+Complete-frame presentation-independence checks live in the oracle suite,
+and displayed-LOD selection and GPU checks live in the renderer suite.
+Do not add an oracle dependency to renderer tests: the original native math
+exports `atan2f` with game-specific semantics, which conflicts with the host
+math used by the viewing camera. An initial test-only dependency exposed this
+collision and was removed. Runtime and renderer tests remain free of native
+oracle linkage.

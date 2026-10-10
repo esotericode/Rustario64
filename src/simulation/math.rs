@@ -307,6 +307,56 @@ pub fn mtxf_scale_vec3f(mtx: &Mat4, s: [f32; 3]) -> Mat4 {
     dest
 }
 
+/// mtxf_rotate_xyz_and_translate: the animated parts' rotation order.
+pub fn mtxf_rotate_xyz_and_translate(
+    trig: &TrigTables,
+    translate: [f32; 3],
+    rotate: [i16; 3],
+) -> Mat4 {
+    let sx = trig.sins(i32::from(rotate[0]));
+    let cx = trig.coss(i32::from(rotate[0]));
+    let sy = trig.sins(i32::from(rotate[1]));
+    let cy = trig.coss(i32::from(rotate[1]));
+    let sz = trig.sins(i32::from(rotate[2]));
+    let cz = trig.coss(i32::from(rotate[2]));
+    [
+        [cy * cz, cy * sz, -sy, 0.0],
+        [sx * sy * cz - cx * sz, sx * sy * sz + cx * cz, sx * cy, 0.0],
+        [cx * sy * cz + sx * sz, cx * sy * sz - sx * cz, cx * cy, 0.0],
+        [translate[0], translate[1], translate[2], 1.0],
+    ]
+}
+
+/// mtxf_translate.
+pub fn mtxf_translate(b: [f32; 3]) -> Mat4 {
+    let mut dest = mtxf_identity();
+    dest[3][0] = b[0];
+    dest[3][1] = b[1];
+    dest[3][2] = b[2];
+    dest
+}
+
+/// get_pos_from_transform_mtx: the world position of `obj`'s origin, given
+/// the camera transform it was built under.
+pub fn get_pos_from_transform_mtx(obj: &Mat4, cam: &Mat4) -> [f32; 3] {
+    let cam_x = cam[3][0] * cam[0][0] + cam[3][1] * cam[0][1] + cam[3][2] * cam[0][2];
+    let cam_y = cam[3][0] * cam[1][0] + cam[3][1] * cam[1][1] + cam[3][2] * cam[1][2];
+    let cam_z = cam[3][0] * cam[2][0] + cam[3][1] * cam[2][1] + cam[3][2] * cam[2][2];
+    [
+        obj[3][0] * cam[0][0] + obj[3][1] * cam[0][1] + obj[3][2] * cam[0][2] - cam_x,
+        obj[3][0] * cam[1][0] + obj[3][1] * cam[1][1] + obj[3][2] * cam[1][2] - cam_y,
+        obj[3][0] * cam[2][0] + obj[3][1] * cam[2][1] + obj[3][2] * cam[2][2] - cam_z,
+    ]
+}
+
+/// The integer half of one element in mtxf_to_mtx's 16.16 fixed-point
+/// matrix (guMtxF2L: the float times 65536 converted to s32, then the high
+/// 16 bits). Values whose fixed form leaves the s32 range are outside
+/// coverage (the conversion is undefined in C; Rust saturates).
+pub fn fixed_point_integer(value: f32) -> i16 {
+    (((value * 65536.0) as i32) >> 16) as i16
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

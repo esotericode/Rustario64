@@ -19,6 +19,15 @@ enum OracleEventKind {
     ORACLE_EVENT_LEVEL_INIT_TEXT = 11,  /* a = argument */
     ORACLE_EVENT_WIND_PARTICLES = 12,   /* a = type, b = angle */
     ORACLE_EVENT_UNSUPPORTED = 13,      /* a = reason, b = detail */
+    ORACLE_EVENT_ENV_CAMERA_SHAKE = 14, /* a = shake */
+    ORACLE_EVENT_DIALOG_SOUND = 15,     /* a = dialog ID */
+    ORACLE_EVENT_SEQ_LOWER_VOLUME = 16, /* a = player, b = duration << 8 | percentage */
+    ORACLE_EVENT_SEQ_UNLOWER_VOLUME = 17, /* a = player, b = duration */
+    ORACLE_EVENT_PLAY_MUSIC = 18,       /* a = player, b = seqArgs << 16 | fade */
+    ORACLE_EVENT_SEQ_FADE_OUT = 19,     /* a = player, b = duration */
+    ORACLE_EVENT_RACE_FANFARE = 20,
+    ORACLE_EVENT_POINT_CAMERA_SHAKE = 21,
+    ORACLE_EVENT_STOP_BACKGROUND_MUSIC = 22,
 };
 
 /* ORACLE_EVENT_UNSUPPORTED reasons. */
@@ -27,6 +36,7 @@ enum OracleUnsupported {
     ORACLE_UNSUPPORTED_SUBMERGED_GROUP = 2,
     ORACLE_UNSUPPORTED_INFINITE_STAIRS = 3,
     ORACLE_UNSUPPORTED_HUNDRED_COIN_STAR = 4,
+    ORACLE_UNSUPPORTED_STAR_SPAWN = 5,
 };
 
 typedef struct {
@@ -38,11 +48,14 @@ typedef struct {
 void oracle_event(s32 kind, s32 a, s32 b);
 void oracle_clear_events(void);
 
-/* The original camera.c set_camera_mode and set_camera_shake_from_hit,
- * compiled under these names by camera_unit.c. */
+/* The original camera.c set_camera_mode, set_camera_shake_from_hit and
+ * set_environmental_camera_shake, compiled under these names by
+ * camera_unit.c. */
 struct Camera;
 void oracle_camera_native_set_mode(struct Camera *c, s16 mode, s16 frames);
 void oracle_camera_native_hit(s16 shake);
+void oracle_camera_native_env_shake(s16 shake);
+void oracle_camera_native_point_shake(s16 shake, f32 x, f32 y, f32 z);
 /* Nonzero while the complete camera runs with the tick harness. */
 extern s32 gOracleCameraLinked;
 extern s16 gOracleHudCameraStatus;

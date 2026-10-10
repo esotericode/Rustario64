@@ -4,6 +4,7 @@
 //! with the decomp. Both are development entry points straight into
 //! Bob-omb Battlefield.
 use rustario64::{
+    APP_TITLE, VERSION,
     content::{
         animation::MarioAnimations,
         visual::{AreaVisual, VisualModel},
@@ -19,12 +20,12 @@ use rustario64::{
     presentation::{
         GraphicsOptions,
         mario::{MarioDrawer, shadow_origin},
-        objects::ObjectDrawer,
+        objects::{LevelModels, ObjectDrawer},
         shadow::{ShadowDrawer, player_shadow},
     },
     simulation::{
-        collision::CollisionWorld, game::GameEntry, math::TrigTables,
-        object::render::visible_objects,
+        collision::CollisionWorld, game::GameEntry, mario::render::held_visible_object,
+        math::TrigTables, object::render::visible_objects,
     },
 };
 use rustario64_render::{
@@ -54,8 +55,8 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 const HELP: &str = "Rustario64 development viewer (Bob-omb Battlefield, area 1)\n\n\
   rustario64-viewer [launch]   Open the local ROM launcher and presentation settings.\n\
-  rustario64-viewer screenshot /path/to/sm64.z64 --out private/bob.png [--view start|overview|summit|top] [--size 1280x960] [--msaa 4] [--no-cull] [--no-fog] [--collision] [--placements] [--mario-ticks N]\n\
-  rustario64-viewer view /path/to/sm64.z64 [--view start] [--msaa 4] [--no-fog] [--frames N] [--mario] [--no-interpolation] [--record NEW_PRIVATE_DIR]\n\n\
+  rustario64-viewer screenshot /path/to/sm64.z64 --out private/bob.png [--view start|overview|summit|top] [--size 1280x960] [--msaa 4] [--no-cull] [--no-fog] [--collision] [--placements] [--mario-ticks N] [--inputs RUN.inputs.json] [--start X,Y,Z[,YAW]]\n\
+  rustario64-viewer view /path/to/sm64.z64 [--view start] [--msaa 4] [--no-fog] [--frames N] [--mario] [--no-interpolation] [--record NEW_PRIVATE_DIR] [--start X,Y,Z[,YAW]]\n\n\
   View controls: WASD move, Q/E down/up, Shift faster, hold right mouse or arrow keys to look,\n\
   1-4 select presets, C collision overlay, P placement markers, F fog, M Mario mode, Esc pause/settings.\n\
   The camera is a presentation-only inspection camera, not the original camera.\n\n\
@@ -67,14 +68,19 @@ const HELP: &str = "Rustario64 development viewer (Bob-omb Battlefield, area 1)\
   placeholder box if they cannot be imported). Play stops at paths the port does not support\n\
   and at warps (falling off the course); R re-enters.\n\
   --mario-ticks N renders Mario after N frames of holding the stick up, from the original camera.\n\
+  --inputs RUN.inputs.json renders Mario after replaying a recorded run's tick inputs instead.\n\
+  --start X,Y,Z[,YAW] enters the level with Mario at another point (development entry; yaw in degrees).\n\
   --record writes each run's tick inputs to a new directory for exact replay against the decomp:\n\
   cargo run -p rustario64-oracle --example tick_trace -- ROM NEW_DIR --inputs RUN.inputs.json\n\
-  Presentation: --size WIDTHxHEIGHT, --fullscreen, --no-vsync; Esc pauses, resumes or opens Quit.\n";
+  Presentation: --size WIDTHxHEIGHT, --fullscreen, --no-vsync, --msaa 1|4,\n\
+  --high-detail-mario / --no-high-detail-mario; Esc opens pause/settings.\n\
+  MSAA and Mario detail use saved choices unless overridden above.\n";
 
 struct Options {
     view: Option<String>,
     size: (u32, u32),
     msaa: u32,
+    high_detail_mario: bool,
     cull: bool,
     fog: bool,
     collision: bool,
@@ -83,17 +89,24 @@ struct Options {
     frames: Option<u64>,
     mario: bool,
     mario_ticks: Option<u64>,
+    inputs: Option<PathBuf>,
     interpolation: bool,
     record: Option<PathBuf>,
     vsync: bool,
     fullscreen: bool,
+    /// A development start point for Mario: position and yaw in degrees.
+    start: Option<([i16; 3], i16)>,
 }
 
 fn parse(args: &[String]) -> AppResult<Options> {
+    // The two quality choices persist for direct play (including launch
+    // shortcuts). Explicit CLI flags override them for reproducible captures.
+    let saved = Settings::load().unwrap_or_default();
     let mut options = Options {
         view: None,
         size: (1280, 960),
-        msaa: 1,
+        msaa: saved.msaa,
+        high_detail_mario: saved.high_detail_mario,
         cull: true,
         fog: true,
         collision: false,
@@ -102,10 +115,12 @@ fn parse(args: &[String]) -> AppResult<Options> {
         frames: None,
         mario: false,
         mario_ticks: None,
+        inputs: None,
         interpolation: true,
         record: None,
         vsync: true,
         fullscreen: false,
+        start: None,
     };
     let mut i = 0;
     while i < args.len() {
@@ -121,6 +136,8 @@ fn parse(args: &[String]) -> AppResult<Options> {
             "--placements" => &mut options.placements,
             "--mario" => &mut options.mario,
             "--no-vsync" => &mut options.vsync,
+            "--high-detail-mario" => &mut options.high_detail_mario,
+            "--no-high-detail-mario" => &mut options.high_detail_mario,
             "--fullscreen" => &mut options.fullscreen,
             _ => {
                 match args[i].as_str() {
@@ -135,7 +152,19 @@ fn parse(args: &[String]) -> AppResult<Options> {
                     "--msaa" => options.msaa = value(i)?.parse()?,
                     "--frames" => options.frames = Some(value(i)?.parse()?),
                     "--mario-ticks" => options.mario_ticks = Some(value(i)?.parse()?),
+                    "--inputs" => options.inputs = Some(PathBuf::from(value(i)?)),
                     "--record" => options.record = Some(value(i)?.into()),
+                    "--start" => {
+                        let parts: Vec<i16> = value(i)?
+                            .split(',')
+                            .map(str::parse)
+                            .collect::<Result<_, _>>()?;
+                        options.start = match parts[..] {
+                            [x, y, z] => Some(([x, y, z], 0)),
+                            [x, y, z, yaw] => Some(([x, y, z], yaw)),
+                            _ => return Err("--start takes X,Y,Z or X,Y,Z,YAW".into()),
+                        };
+                    }
                     other => return Err(format!("unknown option {other}\n\n{HELP}").into()),
                 }
                 i += 2;
@@ -196,10 +225,16 @@ struct MarioModel {
     shadow_view: present::ShadowModelView,
     trig: &'static TrigTables,
     anims: &'static MarioAnimations,
+    high_detail: bool,
 }
 
 impl MarioModel {
-    fn new(level: &Level, session: &Session<'_>, camera: &FlyCamera) -> Option<Self> {
+    fn new(
+        level: &Level,
+        session: &Session<'_>,
+        camera: &FlyCamera,
+        high_detail: bool,
+    ) -> Option<Self> {
         let mut model = Self {
             drawer: MarioDrawer::new(level.mario_model?, level.trig, level.anims),
             view: present::MarioModelView::default(),
@@ -207,15 +242,21 @@ impl MarioModel {
             shadow_view: present::ShadowModelView::default(),
             trig: level.trig,
             anims: level.anims,
+            high_detail,
         };
         model.tick(session, camera);
         Some(model)
     }
 
-    /// Pose the latest tick; the level of detail uses the current camera.
+    /// Pose the latest tick. Distance zero selects Mario's most detailed
+    /// drawing branch; this never changes the simulation's render traversal.
     fn tick(&mut self, session: &Session<'_>, camera: &FlyCamera) {
         let pose = session.mario_pose();
-        let lod = present::lod_distance(camera, pose.position);
+        let lod = if self.high_detail {
+            0
+        } else {
+            present::lod_distance(camera, pose.position)
+        };
         if let Err(error) = self.drawer.update(&pose, Some(lod)) {
             eprintln!("warning: Mario's model could not be built: {error}");
         }
@@ -268,7 +309,8 @@ impl MarioModel {
     }
 }
 
-/// Coin and sparkle models share cached templates across all instances.
+/// Object models share cached templates across all instances (coins,
+/// sparkles, explosions and smoke baked per switch case; Bob-ombs skinned).
 struct ObjectDrawing {
     drawer: ObjectDrawer<'static>,
     view: present::ObjectModelView,
@@ -277,7 +319,15 @@ struct ObjectDrawing {
 impl ObjectDrawing {
     fn new(level: &Level, session: &Session<'_>) -> Self {
         let mut drawing = Self {
-            drawer: ObjectDrawer::new(&level.objects.content, level.trig),
+            drawer: ObjectDrawer::for_level(
+                &level.objects.content,
+                LevelModels {
+                    segments: &level.objects.level_segments,
+                    registrations: &level.objects.level_models,
+                    animations: &level.objects.animations,
+                },
+                level.trig,
+            ),
             view: present::ObjectModelView::default(),
         };
         drawing.tick(session);
@@ -285,7 +335,17 @@ impl ObjectDrawing {
     }
 
     fn tick(&mut self, session: &Session<'_>) {
-        let objects = visible_objects(session.world(), &session.game().camera.graph);
+        let mut objects = visible_objects(
+            session.world(),
+            &session.game().camera.graph,
+            &session.game().rendered_matrices,
+        );
+        // The object in Mario's hand, where the render pass put it.
+        objects.extend(held_visible_object(
+            session.mario(),
+            session.world(),
+            &session.game().rendered_mario,
+        ));
         if let Err(error) = self.drawer.update(objects) {
             eprintln!("warning: object models could not be built: {error}");
             // Avoid retaining stale coins after a failed presentation import.
@@ -424,9 +484,36 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
     if options.record.is_some() || options.mario {
         return Err("--mario and --record are window options; use --mario-ticks N".into());
     }
-    let level = load(rom_path)?;
+    let mut level = load(rom_path)?;
+    start_at(&mut level, options);
     let (info, mut renderer) = rustario64_render::headless(render_options(options))?;
-    let mario = options.mario_ticks.is_some();
+    // A replayed run, or N ticks holding the stick up.
+    let pads: Option<Vec<Pad>> = match (&options.inputs, options.mario_ticks) {
+        (Some(path), _) => {
+            let log = rustario64::trace::InputLog::from_json(&std::fs::read(path)?)?;
+            println!(
+                "Replaying {} ticks recorded from {} by {}",
+                log.inputs.len(),
+                log.entry,
+                log.producer
+            );
+            Some(
+                log.inputs
+                    .iter()
+                    .map(|t| Pad::from_tick(t.buttons, t.stick))
+                    .collect(),
+            )
+        }
+        (None, Some(ticks)) => Some(vec![
+            Pad {
+                up: true,
+                ..Pad::default()
+            };
+            ticks as usize
+        ]),
+        (None, None) => None,
+    };
+    let mario = pads.is_some();
     upload(
         &mut renderer,
         &level,
@@ -437,8 +524,10 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
     let view = options.view.as_deref().unwrap_or("start");
     let graphics = graphics_options(options);
     let mut model_builds = None;
-    let camera = match options.mario_ticks {
-        Some(ticks) => {
+    // The window's overlays for the captured frame (Mario mode).
+    let mut overlay = None;
+    let camera = match &pads {
+        Some(pads) => {
             let mut session = level.session();
             let follow = |session: &Session<'_>| {
                 let camera = present::reference_view(
@@ -450,14 +539,15 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
                     None => Ok(camera),
                 }
             };
-            let mut model = MarioModel::new(&level, &session, &follow(&session)?);
+            let mut model = MarioModel::new(
+                &level,
+                &session,
+                &follow(&session)?,
+                options.high_detail_mario,
+            );
             let mut objects = ObjectDrawing::new(&level, &session);
-            let hold_up = Pad {
-                up: true,
-                ..Pad::default()
-            };
-            for _ in 0..ticks {
-                if !session.step(&hold_up) {
+            for pad in pads {
+                if !session.step(pad) {
                     break;
                 }
                 objects.tick(&session);
@@ -479,10 +569,20 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
             println!("Mario: {}", describe(&session));
             objects.show(&mut renderer, &follow(&session)?, 1.0, graphics);
             println!(
-                "Objects: {} cached builds; HUD coins: {} (window overlay)",
+                "Objects: {} cached builds; HUD coins: {}",
                 objects.drawer.builds(),
                 session.world().hud.coins
             );
+            let world = session.world();
+            if world.dialog.id() != rustario64::simulation::mario::constants::DIALOG_NONE {
+                println!(
+                    "Dialog {} open (menu state {}, page at {})",
+                    world.dialog.id(),
+                    world.dialog.menu_state,
+                    world.dialog.page_start
+                );
+            }
+            overlay = Some((world.hud, world.dialog.clone(), world.dialogs));
             if let Some(stop) = session.stopped() {
                 println!("Play stopped: {stop}");
             }
@@ -491,7 +591,22 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
         None => preset(view, &level)?,
     };
     let (w, h) = options.size;
-    let pixels = renderer.capture(w, h, &camera)?;
+    let pixels = renderer.capture_with_overlay(w, h, &camera, |device, queue, view, format| {
+        if let Some((hud, dialog, table)) = &overlay {
+            let pixels_per_point = (h as f32 / 720.0).max(1.0);
+            rustario64_render::desktop::paint_offscreen(
+                device,
+                queue,
+                view,
+                format,
+                pixels_per_point,
+                |ctx| {
+                    present::show_coin_counter(ctx, hud);
+                    present::show_dialog_box(ctx, dialog, table);
+                },
+            );
+        }
+    })?;
     rustario64_render::write_png(Path::new(out), w, h, &pixels)?;
     let from = match (&options.view, mario) {
         (None, true) => "the original camera".to_owned(),
@@ -531,7 +646,7 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
         _ => {}
     }
     println!(
-        "Mario mode draws the simulated coins and sparkles. Other objects and the skybox remain missing; the sky is a placeholder clear color."
+        "Mario mode draws coins, sparkles, animated Bob-ombs and their effects, including held Bob-ombs, Bob-omb Buddies, King Bob-omb and the dialog box. Unported placements and the skybox remain missing; the sky is a placeholder clear color."
     );
     Ok(())
 }
@@ -662,7 +777,9 @@ fn create_gpu(
     let window = Arc::new(
         event_loop.create_window(
             Window::default_attributes()
-                .with_title("Rustario64 — Bob-omb Battlefield (development viewer)")
+                .with_title(format!(
+                    "{APP_TITLE} — Bob-omb Battlefield (development viewer)"
+                ))
                 .with_inner_size(PhysicalSize::new(size[0], size[1])),
         )?,
     );
@@ -704,6 +821,7 @@ fn create_gpu(
 
 impl App {
     fn prepare_gpu(&mut self, gpu: &mut Gpu) {
+        apply_renderer_settings(gpu, &self.settings);
         upload(
             &mut gpu.renderer,
             &self.level,
@@ -859,9 +977,11 @@ impl App {
             let ctx = root.ctx();
             if play.active {
                 present::show_coin_counter(ctx, &play.session.world().hud);
+                let world = play.session.world();
+                present::show_dialog_box(ctx, &world.dialog, world.dialogs);
             }
             if self.paused {
-                egui::Window::new("Paused")
+                egui::Window::new(format!("Paused · v{VERSION}"))
                     .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                     .resizable(false)
                     .collapsible(false)
@@ -871,10 +991,18 @@ impl App {
                             .max_height((ctx.content_rect().height() - 60.0).max(100.0))
                             .show(ui, |ui| {
                                 ui.heading("Bob-omb Battlefield");
+                                ui.label(format!("Version {VERSION}"));
                                 if let Some(stop) = play.session.stopped() {
                                     ui.label(format!("Play stopped: {stop}"));
                                 }
                                 self.settings.controls(ui);
+                                if self.settings.msaa
+                                    != gpu.renderer.supported_sample_count(self.settings.msaa)
+                                {
+                                    ui.label(
+                                        "4× MSAA is unavailable for this GPU target; using Off.",
+                                    );
+                                }
                                 ui.separator();
                                 ui.label("WASD move · Space jump · J attack · K crouch");
                                 ui.label("Arrows: C buttons · E: R camera · R: restart");
@@ -899,13 +1027,18 @@ impl App {
         );
         if self.settings != before {
             play.graphics.interpolation = self.settings.interpolation;
-            gpu.renderer.options_mut().fog = self.settings.fog;
+            if let Some(mario) = self.mario.as_mut() {
+                // Geometry switches on the next tick, preserving pose interpolation
+                // and avoiding a second advance of presentation punch animation.
+                mario.high_detail = self.settings.high_detail_mario;
+            }
             self.settings_error = self.settings.save().err();
         }
         gpu.window.pre_present_notify();
         gpu.renderer.queue().present(frame);
         // Reconfigure only after presenting the acquired surface texture.
         if self.settings != before {
+            apply_renderer_settings(gpu, &self.settings);
             apply_window_settings(gpu, &self.settings);
         }
         self.frames += 1;
@@ -914,11 +1047,14 @@ impl App {
                 let stop = play.session.stopped().map_or(String::new(), |stop| {
                     format!(" — stopped: {stop}; R re-enters")
                 });
-                format!("Rustario64 — BOB — Mario {}{stop}", describe(&play.session))
+                format!(
+                    "{APP_TITLE} — BOB — Mario {}{stop}",
+                    describe(&play.session)
+                )
             } else {
                 let p = self.camera.position;
                 format!(
-                    "Rustario64 — BOB viewer — {} ticks @30 Hz — camera ({:.0}, {:.0}, {:.0}) — M plays Mario",
+                    "{APP_TITLE} — BOB viewer — {} ticks @30 Hz — camera ({:.0}, {:.0}, {:.0}) — M plays Mario",
                     self.ticks, p[0], p[1], p[2]
                 )
             };
@@ -1038,6 +1174,14 @@ impl App {
             }
             _ => {}
         }
+    }
+}
+
+fn apply_renderer_settings(gpu: &mut Gpu, settings: &Settings) {
+    gpu.renderer.options_mut().fog = settings.fog;
+    let old_samples = gpu.renderer.options().sample_count;
+    if gpu.renderer.set_sample_count(settings.msaa) != old_samples {
+        resize_targets(gpu);
     }
 }
 
@@ -1185,7 +1329,7 @@ fn make_app(level: Level, options: &Options) -> AppResult<App> {
         recorder,
         reported_stop: false,
     };
-    let mario = MarioModel::new(&level, &play.session, &camera);
+    let mario = MarioModel::new(&level, &play.session, &camera, options.high_detail_mario);
     let objects = ObjectDrawing::new(&level, &play.session);
     let remembered = Settings::load().ok().and_then(|s| s.rom_path);
     let app = App {
@@ -1208,6 +1352,8 @@ fn make_app(level: Level, options: &Options) -> AppResult<App> {
         focused: true,
         settings: Settings {
             interpolation: options.interpolation,
+            high_detail_mario: options.high_detail_mario,
+            msaa: options.msaa,
             fog: options.fog,
             vsync: options.vsync,
             fullscreen: options.fullscreen,
@@ -1236,8 +1382,20 @@ fn finish_app(app: &mut App) -> AppResult<()> {
     Ok(())
 }
 
+/// The development `--start` entry: the level script's entry with Mario
+/// spawned elsewhere in the same area.
+fn start_at(level: &mut Level, options: &Options) {
+    if let Some((pos, yaw)) = options.start {
+        let area = level.entry.mario.spawn.area_index as u8;
+        level.entry.mario.spawn =
+            rustario64::simulation::mario::core::SpawnPoint::from_level_script(1, area, yaw, pos);
+    }
+}
+
 fn view(rom_path: &Path, options: &Options) -> AppResult<()> {
-    let mut app = make_app(load(rom_path)?, options)?;
+    let mut level = load(rom_path)?;
+    start_at(&mut level, options);
+    let mut app = make_app(level, options)?;
     app.controllers = Controllers::new();
     let mut desktop = Desktop {
         gpu: None,
@@ -1280,9 +1438,13 @@ impl Desktop {
         self.controllers.clear();
         self.parked_level = Some(game.level);
         if let Some(mut gpu) = game.gpu.take() {
+            // The launcher draws directly into the single-sample surface.
+            // Its next Play reapplies the saved quality choices before upload.
+            gpu.renderer.set_sample_count(1);
+            resize_targets(&mut gpu);
             gpu.renderer.load_model(&VisualModel::default());
             gpu.window.set_fullscreen(None);
-            gpu.window.set_title("Rustario64 — Select ROM");
+            gpu.window.set_title(&format!("{APP_TITLE} — Select ROM"));
             let _ = gpu.window.request_inner_size(PhysicalSize::new(800, 720));
             gpu.window.request_redraw();
             self.gpu = Some(gpu);
@@ -1340,6 +1502,8 @@ impl Desktop {
                 let mut options = parse(&[])?;
                 options.mario = true;
                 options.interpolation = self.settings.interpolation;
+                options.high_detail_mario = self.settings.high_detail_mario;
+                options.msaa = self.settings.msaa;
                 options.fog = self.settings.fog;
                 options.vsync = self.settings.vsync;
                 options.fullscreen = self.settings.fullscreen;
@@ -1405,6 +1569,7 @@ fn launcher_form(
                 .max_height(height)
                 .show(ui, |ui| {
                     ui.heading(egui::RichText::new("Rustario64").size(42.0));
+                    ui.label(format!("Version {VERSION}"));
                     ui.label("Bob-omb Battlefield · development build");
                     ui.add_space(20.0);
                     ui.label("Choose your Super Mario 64 ROM");
@@ -1477,7 +1642,7 @@ impl ApplicationHandler for Desktop {
         if self.gpu.is_none() {
             match create_gpu(event_loop, RenderOptions::default(), [800, 720]) {
                 Ok(gpu) => {
-                    gpu.window.set_title("Rustario64 — Select ROM");
+                    gpu.window.set_title(&format!("{APP_TITLE} — Select ROM"));
                     gpu.window.request_redraw();
                     self.gpu = Some(gpu);
                 }
@@ -1564,6 +1729,10 @@ fn run_desktop(desktop: &mut Desktop) -> AppResult<()> {
 
 fn run(args: &[String]) -> AppResult<()> {
     match args {
+        [cmd] if cmd == "--version" || cmd == "-V" => {
+            println!("{APP_TITLE}");
+            Ok(())
+        }
         [] => launch(None),
         [cmd] if cmd == "launch" => launch(None),
         [cmd, rom] if cmd == "launch" => launch(Some(Path::new(rom))),
@@ -1634,6 +1803,7 @@ mod tests {
                 text.push_str(&frame_text);
             }
             assert!(text.contains("Rustario64"));
+            assert!(text.contains(&format!("Version {VERSION}")));
             assert!(text.contains("Choose your Super Mario 64 ROM"));
             assert!(text.contains("Browse"));
             assert!(text.contains("Keyboard only"));
@@ -1645,6 +1815,80 @@ mod tests {
         let mut cached = None;
         assert!(load_selected(Path::new("missing-authored-fixture.z64"), &mut cached).is_err());
         assert!(cached.is_none());
+    }
+
+    #[test]
+    fn explicit_quality_flags_override_saved_choices_and_reject_invalid_msaa() {
+        let args = |s: &[&str]| s.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let enhanced = parse(&args(&["--msaa", "4", "--high-detail-mario"])).unwrap();
+        assert_eq!(enhanced.msaa, 4);
+        assert!(enhanced.high_detail_mario);
+        let original = parse(&args(&["--msaa", "1", "--no-high-detail-mario"])).unwrap();
+        assert_eq!(original.msaa, 1);
+        assert!(!original.high_detail_mario);
+        assert!(parse(&args(&["--msaa", "8"])).is_err());
+    }
+
+    #[test]
+    #[ignore = "requires RUSTARIO64_ROM; displayed LOD selection and switching"]
+    fn local_quality_choices_select_detailed_meshes_and_switch_back() {
+        let path = PathBuf::from(std::env::var_os("RUSTARIO64_ROM").expect("set RUSTARIO64_ROM"));
+        let level = load_selected(&path, &mut None).unwrap();
+        let mut session = level.session();
+        let mut camera = present::reference_view(
+            session.camera_view(1.0, GraphicsOptions::default()),
+            level.visual.camera,
+        );
+        let mut original = MarioModel::new(&level, &session, &camera, false).unwrap();
+        let mut enhanced = MarioModel::new(&level, &session, &camera, true).unwrap();
+        let mut higher_detail_frames = 0;
+        for tick in 0..240 {
+            assert!(session.step(&Pad {
+                up: tick < 180,
+                a: tick == 140,
+                b: tick == 200,
+                ..Pad::default()
+            }));
+            let pose = session.mario_pose();
+            // Force actual LOD transitions in presentation, independent of the
+            // authoritative camera used by movement and hand-position callbacks.
+            let distance = [100.0, 1000.0, 2000.0][(tick / 32) % 3];
+            camera = FlyCamera::looking_at(
+                [
+                    pose.position[0],
+                    pose.position[1],
+                    pose.position[2] + distance,
+                ],
+                pose.position,
+            );
+            // Also switch back to original detail, as the pause setting does.
+            enhanced.high_detail = tick % 96 < 64;
+            original.tick(&session, &camera);
+            enhanced.tick(&session, &camera);
+            let count = |m: &MarioModel| {
+                m.drawer
+                    .frame(1.0, false)
+                    .unwrap()
+                    .vertices
+                    .iter()
+                    .map(Vec::len)
+                    .sum::<usize>()
+            };
+            if enhanced.high_detail {
+                assert!(count(&enhanced) >= count(&original));
+                higher_detail_frames += usize::from(count(&enhanced) > count(&original));
+            } else {
+                assert_eq!(count(&enhanced), count(&original));
+            }
+            // Read interpolated frames repeatedly without advancing gameplay.
+            for alpha in [0.0, 0.25, 0.5, 1.0] {
+                assert!(enhanced.drawer.frame(alpha, true).is_some());
+            }
+        }
+        assert!(
+            higher_detail_frames > 0,
+            "fixture never exercised a lower-detail mesh"
+        );
     }
 
     #[test]

@@ -12,6 +12,7 @@ import stat
 import struct
 from pathlib import Path
 import zipfile
+from project_version import check as project_version
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGETS = {"linux-x86_64": "", "windows-x86_64": ".exe"}
@@ -90,7 +91,7 @@ def windows_subsystem(path: Path) -> int:
         return struct.unpack_from("<H", header, 92)[0]
 
 
-def package(target: str, release_dir: Path, output: Path, notices: str, build_info: str) -> Path:
+def package(target: str, release_dir: Path, output: Path, notices: str, build_info: str, version: str) -> Path:
     suffix = TARGETS[target]
     files = [(release_dir / (name + suffix), name + suffix)
              for name in RUNTIME_BINARIES]
@@ -105,13 +106,14 @@ def package(target: str, release_dir: Path, output: Path, notices: str, build_in
             if windows_subsystem(release_dir / (name + suffix)) != expected:
                 raise ValueError(f"incorrect Windows GUI/console subsystem: {name}")
     output.mkdir(parents=True, exist_ok=True)
-    archive = output / f"rustario64-{target}.zip"
+    folder = f"rustario64-{version}-{target}"
+    archive = output / f"{folder}.zip"
     # An existing artifact is an error so partial/old bundles cannot be reused.
     with zipfile.ZipFile(archive, "x", compression=zipfile.ZIP_DEFLATED) as bundle:
-        bundle.writestr(f"rustario64-{target}/THIRD_PARTY_NOTICES.txt", notices)
-        bundle.writestr(f"rustario64-{target}/BUILD_INFO.txt", build_info)
+        bundle.writestr(f"{folder}/THIRD_PARTY_NOTICES.txt", notices)
+        bundle.writestr(f"{folder}/BUILD_INFO.txt", build_info)
         for source, destination in files:
-            name = f"rustario64-{target}/{destination}"
+            name = f"{folder}/{destination}"
             if target == "linux-x86_64" and destination in RUNTIME_BINARIES:
                 info = zipfile.ZipInfo.from_file(source, name)
                 info.create_system = 3
@@ -130,6 +132,12 @@ def main():
     parser.add_argument("--release-dir", type=Path, default=ROOT / "target/release")
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     args = parser.parse_args()
+    version = project_version(ROOT)
+    for name in RUNTIME_BINARIES:
+        binary = (args.release_dir / (name + TARGETS[args.target])).resolve()
+        actual = subprocess.check_output([str(binary), "--version"], text=True).strip()
+        if actual != f"Rustario64 v{version}":
+            raise ValueError(f"{binary.name} reports {actual!r}; rebuild version {version} before packaging")
     raw = subprocess.check_output(["cargo", "metadata", "--locked", "--format-version", "1",
                                    "--filter-platform", TRIPLES[args.target]], cwd=ROOT)
     notices = dependency_notices(json.loads(raw))
@@ -137,8 +145,8 @@ def main():
     dirty = bool(subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=no"],
                                         cwd=ROOT, text=True).strip())
     compiler = subprocess.check_output(["rustc", "--version"], cwd=ROOT, text=True).strip()
-    build_info = f"Commit: {commit}\nTracked source modified: {dirty}\nTarget: {args.target}\nCompiler: {compiler}\n"
-    print(package(args.target, args.release_dir, args.output, notices, build_info))
+    build_info = f"Version: {version}\nCommit: {commit}\nTracked source modified: {dirty}\nTarget: {args.target}\nCompiler: {compiler}\n"
+    print(package(args.target, args.release_dir, args.output, notices, build_info, version))
 
 
 if __name__ == "__main__":

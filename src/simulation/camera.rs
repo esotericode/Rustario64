@@ -14,6 +14,7 @@ use super::{
     math::TrigTables,
 };
 
+pub mod cutscene;
 pub mod lakitu;
 pub mod obstruction;
 pub mod radial;

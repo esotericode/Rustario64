@@ -9,10 +9,19 @@
 #include "engine/math_util.h"
 #include "engine/surface_collision.h"
 #include "game/area.h"
+#include "game/interaction.h"
 #include "game/object_helpers.h"
 #include "game/object_list_processor.h"
 #include "game/rendering_graph_node.h"
 #include "game/spawn_object.h"
+#include "game/level_update.h"
+#include "game/mario_actions_cutscene.h"
+#include "game/camera.h"
+#include "game/ingame_menu.h"
+#include "game/behavior_actions.h"
+#include "game/debug.h"
+#include "engine/behavior_script.h"
+#include "game/obj_behaviors.h"
 
 /* src/game/object_helpers.c: static s16 sPowersOfTwo[] = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80 } */
 static s16 sPowersOfTwo[] = { 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80 };
@@ -480,4 +489,542 @@ void bhv_init_room(void) {
     } else {
         o->oRoom = -1;
     }
+}
+
+/* src/game/object_helpers.c: approach_s16_symmetric */
+s16 approach_s16_symmetric(s16 value, s16 target, s16 increment) {
+    s16 dist = target - value;
+
+    if (dist >= 0) {
+        if (dist > increment) {
+            value += increment;
+        } else {
+            value = target;
+        }
+    } else {
+        if (dist < -increment) {
+            value -= increment;
+        } else {
+            value = target;
+        }
+    }
+
+    return value;
+}
+
+/* src/game/object_helpers.c: obj_turn_toward_object */
+s16 obj_turn_toward_object(struct Object *obj, struct Object *target, s16 angleIndex, s16 turnAmount) {
+    f32 a, b, c, d;
+    UNUSED u8 filler[4];
+    s16 targetAngle, startAngle;
+
+    switch (angleIndex) {
+        case O_MOVE_ANGLE_PITCH_INDEX:
+        case O_FACE_ANGLE_PITCH_INDEX:
+            a = target->oPosX - obj->oPosX;
+            c = target->oPosZ - obj->oPosZ;
+            a = sqrtf(a * a + c * c);
+
+            b = -obj->oPosY;
+            d = -target->oPosY;
+
+            targetAngle = atan2s(a, d - b);
+            break;
+
+        case O_MOVE_ANGLE_YAW_INDEX:
+        case O_FACE_ANGLE_YAW_INDEX:
+            a = obj->oPosZ;
+            c = target->oPosZ;
+            b = obj->oPosX;
+            d = target->oPosX;
+
+            targetAngle = atan2s(c - a, d - b);
+            break;
+    }
+
+    startAngle = o->rawData.asU32[angleIndex];
+    o->rawData.asU32[angleIndex] = approach_s16_symmetric(startAngle, targetAngle, turnAmount);
+    return targetAngle;
+}
+
+/* src/game/object_helpers.c: obj_scale_xyz */
+void obj_scale_xyz(struct Object *obj, f32 xScale, f32 yScale, f32 zScale) {
+    obj->header.gfx.scale[0] = xScale;
+    obj->header.gfx.scale[1] = yScale;
+    obj->header.gfx.scale[2] = zScale;
+}
+
+/* src/game/object_helpers.c: cur_obj_init_animation */
+void cur_obj_init_animation(s32 animIndex) {
+    struct Animation **anims = o->oAnimations;
+    geo_obj_init_animation(&o->header.gfx, &anims[animIndex]);
+}
+
+/* src/game/object_helpers.c: cur_obj_set_pos_relative */
+void cur_obj_set_pos_relative(struct Object *other, f32 dleft, f32 dy, f32 dforward) {
+    f32 facingZ = coss(other->oMoveAngleYaw);
+    f32 facingX = sins(other->oMoveAngleYaw);
+
+    f32 dz = dforward * facingZ - dleft * facingX;
+    f32 dx = dforward * facingX + dleft * facingZ;
+
+    o->oMoveAngleYaw = other->oMoveAngleYaw;
+
+    o->oPosX = other->oPosX + dx;
+    o->oPosY = other->oPosY + dy;
+    o->oPosZ = other->oPosZ + dz;
+}
+
+/* src/game/object_helpers.c: cur_obj_enable_rendering_2 */
+void cur_obj_enable_rendering_2(void) {
+    cur_obj_enable_rendering();
+}
+
+/* src/game/object_helpers.c: cur_obj_move_after_thrown_or_dropped */
+static void cur_obj_move_after_thrown_or_dropped(f32 forwardVel, f32 velY) {
+    o->oMoveFlags = 0;
+    o->oFloorHeight = find_floor_height(o->oPosX, o->oPosY + 160.0f, o->oPosZ);
+
+    if (o->oFloorHeight > o->oPosY) {
+        o->oPosY = o->oFloorHeight;
+    } else if (o->oFloorHeight < FLOOR_LOWER_LIMIT_MISC) {
+        //! OoB failsafe
+        obj_copy_pos(o, gMarioObject);
+        o->oFloorHeight = find_floor_height(o->oPosX, o->oPosY, o->oPosZ);
+    }
+
+    o->oForwardVel = forwardVel;
+    o->oVelY = velY;
+
+    if (o->oForwardVel != 0) {
+        cur_obj_move_y(/*gravity*/ -4.0f, /*bounciness*/ -0.1f, /*buoyancy*/ 2.0f);
+    }
+}
+
+/* src/game/object_helpers.c: cur_obj_get_dropped */
+void cur_obj_get_dropped(void) {
+    cur_obj_become_tangible();
+    cur_obj_enable_rendering();
+
+    o->oHeldState = HELD_FREE;
+    cur_obj_move_after_thrown_or_dropped(0.0f, 0.0f);
+}
+
+/* src/game/object_helpers.c: bhv_dust_smoke_loop */
+void bhv_dust_smoke_loop(void) {
+    o->oPosX += o->oVelX;
+    o->oPosY += o->oVelY;
+    o->oPosZ += o->oVelZ;
+
+    if (o->oSmokeTimer == 10) {
+        obj_mark_for_deletion(o);
+    }
+
+    o->oSmokeTimer++;
+}
+
+/* src/game/object_helpers.c: obj_attack_collided_from_other_object */
+s32 obj_attack_collided_from_other_object(struct Object *obj) {
+    s32 numCollidedObjs;
+    struct Object *other;
+    s32 touchedOtherObject = FALSE;
+
+    numCollidedObjs = obj->numCollidedObjs;
+    if (numCollidedObjs != 0) {
+        other = obj->collidedObjs[0];
+
+        if (other != gMarioObject) {
+            other->oInteractStatus |= ATTACK_PUNCH | INT_STATUS_WAS_ATTACKED | INT_STATUS_INTERACTED
+                                      | INT_STATUS_TOUCHED_BOB_OMB;
+            touchedOtherObject = TRUE;
+        }
+    }
+
+    return touchedOtherObject;
+}
+
+/* src/game/object_helpers.c: obj_update_pos_from_parent_transformation */
+void obj_update_pos_from_parent_transformation(Mat4 a0, struct Object *a1) {
+    f32 spC = a1->oParentRelativePosX;
+    f32 sp8 = a1->oParentRelativePosY;
+    f32 sp4 = a1->oParentRelativePosZ;
+
+    a1->oPosX = spC * a0[0][0] + sp8 * a0[1][0] + sp4 * a0[2][0] + a0[3][0];
+    a1->oPosY = spC * a0[0][1] + sp8 * a0[1][1] + sp4 * a0[2][1] + a0[3][1];
+    a1->oPosZ = spC * a0[0][2] + sp8 * a0[1][2] + sp4 * a0[2][2] + a0[3][2];
+}
+
+/* src/game/object_helpers.c: create_transformation_from_matrices */
+void create_transformation_from_matrices(Mat4 a0, Mat4 a1, Mat4 a2) {
+    f32 spC, sp8, sp4;
+
+    spC = a2[3][0] * a2[0][0] + a2[3][1] * a2[0][1] + a2[3][2] * a2[0][2];
+    sp8 = a2[3][0] * a2[1][0] + a2[3][1] * a2[1][1] + a2[3][2] * a2[1][2];
+    sp4 = a2[3][0] * a2[2][0] + a2[3][1] * a2[2][1] + a2[3][2] * a2[2][2];
+
+    a0[0][0] = a1[0][0] * a2[0][0] + a1[0][1] * a2[0][1] + a1[0][2] * a2[0][2];
+    a0[0][1] = a1[0][0] * a2[1][0] + a1[0][1] * a2[1][1] + a1[0][2] * a2[1][2];
+    a0[0][2] = a1[0][0] * a2[2][0] + a1[0][1] * a2[2][1] + a1[0][2] * a2[2][2];
+
+    a0[1][0] = a1[1][0] * a2[0][0] + a1[1][1] * a2[0][1] + a1[1][2] * a2[0][2];
+    a0[1][1] = a1[1][0] * a2[1][0] + a1[1][1] * a2[1][1] + a1[1][2] * a2[1][2];
+    a0[1][2] = a1[1][0] * a2[2][0] + a1[1][1] * a2[2][1] + a1[1][2] * a2[2][2];
+
+    a0[2][0] = a1[2][0] * a2[0][0] + a1[2][1] * a2[0][1] + a1[2][2] * a2[0][2];
+    a0[2][1] = a1[2][0] * a2[1][0] + a1[2][1] * a2[1][1] + a1[2][2] * a2[1][2];
+    a0[2][2] = a1[2][0] * a2[2][0] + a1[2][1] * a2[2][1] + a1[2][2] * a2[2][2];
+
+    a0[3][0] = a1[3][0] * a2[0][0] + a1[3][1] * a2[0][1] + a1[3][2] * a2[0][2] - spC;
+    a0[3][1] = a1[3][0] * a2[1][0] + a1[3][1] * a2[1][1] + a1[3][2] * a2[1][2] - sp8;
+    a0[3][2] = a1[3][0] * a2[2][0] + a1[3][1] * a2[2][1] + a1[3][2] * a2[2][2] - sp4;
+
+    a0[0][3] = 0.0f;
+    a0[1][3] = 0.0f;
+    a0[2][3] = 0.0f;
+    a0[3][3] = 1.0f;
+}
+
+/* src/game/object_helpers.c: obj_set_held_state */
+void obj_set_held_state(struct Object *obj, const BehaviorScript *heldBehavior) {
+    obj->parentObj = o;
+
+    if (obj->oFlags & OBJ_FLAG_HOLDABLE) {
+        if (heldBehavior == bhvCarrySomething3) {
+            obj->oHeldState = HELD_HELD;
+        }
+
+        if (heldBehavior == bhvCarrySomething5) {
+            obj->oHeldState = HELD_THROWN;
+        }
+
+        if (heldBehavior == bhvCarrySomething4) {
+            obj->oHeldState = HELD_DROPPED;
+        }
+    } else {
+        obj->curBhvCommand = segmented_to_virtual(heldBehavior);
+        obj->bhvStackIndex = 0;
+    }
+}
+
+/* src/game/object_helpers.c: obj_set_gfx_pos_from_pos */
+void obj_set_gfx_pos_from_pos(struct Object *obj) {
+    obj->header.gfx.pos[0] = obj->oPosX;
+    obj->header.gfx.pos[1] = obj->oPosY;
+    obj->header.gfx.pos[2] = obj->oPosZ;
+}
+
+/* src/game/object_helpers.c: obj_set_gfx_pos_at_obj_pos */
+void obj_set_gfx_pos_at_obj_pos(struct Object *obj1, struct Object *obj2) {
+    obj1->header.gfx.pos[0] = obj2->oPosX;
+    obj1->header.gfx.pos[1] = obj2->oPosY + obj2->oGraphYOffset;
+    obj1->header.gfx.pos[2] = obj2->oPosZ;
+
+    obj1->header.gfx.angle[0] = obj2->oMoveAnglePitch & 0xFFFF;
+    obj1->header.gfx.angle[1] = obj2->oMoveAngleYaw & 0xFFFF;
+    obj1->header.gfx.angle[2] = obj2->oMoveAngleRoll & 0xFFFF;
+}
+
+/* src/game/object_helpers.c: set_time_stop_flags */
+void set_time_stop_flags(s32 flags) {
+    gTimeStopState |= flags;
+}
+
+/* src/game/object_helpers.c: clear_time_stop_flags */
+void clear_time_stop_flags(s32 flags) {
+    gTimeStopState = gTimeStopState & (flags ^ 0xFFFFFFFF);
+}
+
+/* src/game/object_helpers.c: lateral_dist_between_objects */
+f32 lateral_dist_between_objects(struct Object *obj1, struct Object *obj2) {
+    f32 dx = obj1->oPosX - obj2->oPosX;
+    f32 dz = obj1->oPosZ - obj2->oPosZ;
+
+    return sqrtf(dx * dx + dz * dz);
+}
+
+/* src/game/object_helpers.c: cur_obj_can_mario_activate_textbox */
+s32 cur_obj_can_mario_activate_textbox(f32 radius, f32 height, UNUSED s32 unused) {
+    if (o->oDistanceToMario < 1500.0f) {
+        f32 latDistToMario = lateral_dist_between_objects(o, gMarioObject);
+        UNUSED s16 angleFromMario = obj_angle_to_object(gMarioObject, o);
+
+        if (latDistToMario < radius && o->oPosY < gMarioObject->oPosY + 160.0f
+            && gMarioObject->oPosY < o->oPosY + height && !(gMarioStates[0].action & ACT_FLAG_AIR)
+            && mario_ready_to_speak()) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+/* src/game/object_helpers.c: cur_obj_can_mario_activate_textbox_2 */
+s32 cur_obj_can_mario_activate_textbox_2(f32 radius, f32 height) {
+    // The last argument here is unused. When this function is called directly the argument is always set to 0x7FFF.
+    return cur_obj_can_mario_activate_textbox(radius, height, 0x1000);
+}
+
+/* src/game/object_helpers.c: cur_obj_call_action_function */
+void cur_obj_call_action_function(void (*actionFunctions[])(void)) {
+    void (*actionFunction)(void) = actionFunctions[o->oAction];
+    actionFunction();
+}
+
+/* src/game/object_helpers.c: random_f32_around_zero */
+f32 random_f32_around_zero(f32 diameter) {
+    return random_float() * diameter - diameter / 2;
+}
+
+/* src/game/object_helpers.c: cur_obj_init_animation_with_sound */
+void cur_obj_init_animation_with_sound(s32 animIndex) {
+    struct Animation **anims = o->oAnimations;
+    geo_obj_init_animation(&o->header.gfx, &anims[animIndex]);
+    o->oSoundStateID = animIndex;
+}
+
+/* src/game/object_helpers.c: cur_obj_check_anim_frame */
+s32 cur_obj_check_anim_frame(s32 frame) {
+    s32 animFrame = o->header.gfx.animInfo.animFrame;
+
+    if (animFrame == frame) {
+        return TRUE;
+    } else {
+        return FALSE;
+    }
+}
+
+/* src/game/object_helpers.c: cur_obj_extend_animation_if_at_end */
+BAD_RETURN(s32) cur_obj_extend_animation_if_at_end(void) {
+    s32 animFrame = o->header.gfx.animInfo.animFrame;
+    s32 sp0 = o->header.gfx.animInfo.curAnim->loopEnd - 2;
+
+    if (animFrame == sp0) {
+        o->header.gfx.animInfo.animFrame--;
+    }
+}
+
+/* src/game/object_helpers.c: cur_obj_check_if_near_animation_end */
+s32 cur_obj_check_if_near_animation_end(void) {
+    u32 animFlags = (s32) o->header.gfx.animInfo.curAnim->flags;
+    s32 animFrame = o->header.gfx.animInfo.animFrame;
+    s32 nearLoopEnd = o->header.gfx.animInfo.curAnim->loopEnd - 2;
+    s32 isNearEnd = FALSE;
+
+    if (animFlags & ANIM_FLAG_NOLOOP && nearLoopEnd + 1 == animFrame) {
+        isNearEnd = TRUE;
+    }
+
+    if (animFrame == nearLoopEnd) {
+        isNearEnd = TRUE;
+    }
+
+    return isNearEnd;
+}
+
+/* src/game/object_helpers.c: cur_obj_init_animation_and_anim_frame */
+void cur_obj_init_animation_and_anim_frame(s32 animIndex, s32 animFrame) {
+    cur_obj_init_animation_with_sound(animIndex);
+    o->header.gfx.animInfo.animFrame = animFrame;
+}
+
+/* src/game/object_helpers.c: cur_obj_init_animation_and_check_if_near_end */
+s32 cur_obj_init_animation_and_check_if_near_end(s32 animIndex) {
+    cur_obj_init_animation_with_sound(animIndex);
+    return cur_obj_check_if_near_animation_end();
+}
+
+/* src/game/object_helpers.c: cur_obj_init_animation_and_extend_if_at_end */
+void cur_obj_init_animation_and_extend_if_at_end(s32 animIndex) {
+    cur_obj_init_animation_with_sound(animIndex);
+    cur_obj_extend_animation_if_at_end();
+}
+
+/* src/game/object_helpers.c: cur_obj_unrender_set_action_and_anim */
+void cur_obj_unrender_set_action_and_anim(s32 animIndex, s32 action) {
+    cur_obj_become_intangible();
+    cur_obj_disable_rendering();
+
+    // only set animation if non-negative value
+    if (animIndex >= 0) {
+        cur_obj_init_animation_with_sound(animIndex);
+    }
+
+    o->oAction = action;
+}
+
+/* src/game/object_helpers.c: cur_obj_rotate_yaw_toward */
+s32 cur_obj_rotate_yaw_toward(s16 target, s16 increment) {
+    s16 startYaw;
+
+    startYaw = (s16) o->oMoveAngleYaw;
+    o->oMoveAngleYaw = approach_s16_symmetric(o->oMoveAngleYaw, target, increment);
+
+    if ((o->oAngleVelYaw = (s16)((s16) o->oMoveAngleYaw - startYaw)) == 0) {
+        return TRUE;
+    } else {
+        return FALSE;
+    }
+}
+
+/* src/game/object_helpers.c: cur_obj_set_pos_to_home */
+void cur_obj_set_pos_to_home(void) {
+    o->oPosX = o->oHomeX;
+    o->oPosY = o->oHomeY;
+    o->oPosZ = o->oHomeZ;
+}
+
+/* src/game/object_helpers.c: cur_obj_angle_to_home */
+s16 cur_obj_angle_to_home(void) {
+    s16 angle;
+    f32 dx = o->oHomeX - o->oPosX;
+    f32 dz = o->oHomeZ - o->oPosZ;
+
+    angle = atan2s(dz, dx);
+    return angle;
+}
+
+/* src/game/object_helpers.c: cur_obj_rotate_face_angle_using_vel */
+void cur_obj_rotate_face_angle_using_vel(void) {
+    o->oFaceAnglePitch += o->oAngleVelPitch;
+    o->oFaceAngleYaw += o->oAngleVelYaw;
+    o->oFaceAngleRoll += o->oAngleVelRoll;
+}
+
+/* src/game/object_helpers.c: cur_obj_update_dialog_with_cutscene */
+s32 cur_obj_update_dialog_with_cutscene(s32 actionArg, s32 dialogFlags, s32 cutsceneTable, s32 dialogID) {
+    s32 dialogResponse = DIALOG_RESPONSE_NONE;
+    s32 doneTurning = TRUE;
+
+    switch (o->oDialogState) {
+#if BUGFIX_DIALOG_TIME_STOP
+        case DIALOG_STATUS_ENABLE_TIME_STOP:
+            // Wait for Mario to be ready to speak, and then enable time stop
+            if (mario_ready_to_speak() || gMarioState->action == ACT_READING_NPC_DIALOG) {
+                gTimeStopState |= TIME_STOP_ENABLED;
+                o->activeFlags |= ACTIVE_FLAG_INITIATED_TIME_STOP;
+                o->oDialogState++;
+                o->oDialogResponse = DIALOG_RESPONSE_NONE;
+            } else {
+                break;
+            }
+            // Fall through so that Mario's action is interrupted immediately
+            // after time is stopped
+#else
+        case DIALOG_STATUS_ENABLE_TIME_STOP:
+            //! We enable time stop even if Mario is not ready to speak. This
+            //  allows us to move during time stop as long as Mario never enters
+            //  an action that can be interrupted with text.
+            if (gMarioState->health >= 0x0100) {
+                gTimeStopState |= TIME_STOP_ENABLED;
+                o->activeFlags |= ACTIVE_FLAG_INITIATED_TIME_STOP;
+                o->oDialogState++;
+                o->oDialogResponse = DIALOG_RESPONSE_NONE;
+            }
+            break;
+#endif
+        case DIALOG_STATUS_INTERRUPT:
+            // Additional flag that makes the NPC rotate towards to Mario
+            if (dialogFlags & DIALOG_FLAG_TURN_TO_MARIO) {
+                doneTurning = cur_obj_rotate_yaw_toward(obj_angle_to_object(o, gMarioObject), 0x800);
+                // Failsafe just in case it takes more than 33 frames somehow
+                if (o->oDialogResponse >= 33) {
+                    doneTurning = TRUE;
+                }
+            }
+            // Interrupt status until Mario is actually speaking with the NPC and if the
+            // object is done turning to Mario
+            if (set_mario_npc_dialog(actionArg) == MARIO_DIALOG_STATUS_SPEAK && doneTurning) {
+                o->oDialogResponse = 0;
+                o->oDialogState++;
+            } else {
+                o->oDialogResponse++; // treated as a timer for the failsafe
+            }
+            break;
+
+        case DIALOG_STATUS_START_DIALOG:
+            // Special check for Cap Switch cutscene since the cutscene itself
+            // handles what dialog should use
+            if (cutsceneTable == CUTSCENE_CAP_SWITCH_PRESS) {
+                if ((o->oDialogResponse = cutscene_object_without_dialog(cutsceneTable, o))) {
+                    o->oDialogState++;
+                }
+            } else {
+                // General dialog cutscene function, most of the time
+                // the "CUTSCENE_DIALOG" cutscene is called
+                if ((o->oDialogResponse = cutscene_object_with_dialog(cutsceneTable, o, dialogID))) {
+                    o->oDialogState++;
+                }
+            }
+            break;
+
+        case DIALOG_STATUS_STOP_DIALOG:
+            // If flag defined, keep time stop enabled until the object
+            // decided to disable it independently
+            if (dialogFlags & DIALOG_FLAG_TIME_STOP_ENABLED) {
+                dialogResponse = o->oDialogResponse;
+                o->oDialogState = DIALOG_STATUS_ENABLE_TIME_STOP;
+            } else if (gMarioState->action != ACT_READING_NPC_DIALOG) {
+                // Disable time stop, then enable time stop for a frame
+                // until the set_mario_npc_dialog function disables it
+                gTimeStopState &= ~TIME_STOP_ENABLED;
+                o->activeFlags &= ~ACTIVE_FLAG_INITIATED_TIME_STOP;
+                dialogResponse = o->oDialogResponse;
+                o->oDialogState = DIALOG_STATUS_ENABLE_TIME_STOP;
+            } else {
+                // And finally stop Mario dialog status
+                set_mario_npc_dialog(MARIO_DIALOG_STOP);
+            }
+            break;
+    }
+
+    return dialogResponse;
+}
+
+/* src/game/object_helpers.c: cur_obj_spawn_particles */
+void cur_obj_spawn_particles(struct SpawnParticlesInfo *info) {
+    struct Object *particle;
+    s32 i;
+    f32 scale;
+    s32 numParticles = info->count;
+
+    // If there are a lot of objects already, limit the number of particles
+    if ((gPrevFrameObjectCount > (OBJECT_POOL_CAPACITY - 90)) && numParticles > 10) {
+        numParticles = 10;
+    }
+
+    // We're close to running out of object slots, so don't spawn particles at
+    // all
+    if (gPrevFrameObjectCount > (OBJECT_POOL_CAPACITY - 30)) {
+        numParticles = 0;
+    }
+
+    for (i = 0; i < numParticles; i++) {
+        scale = random_float() * (info->sizeRange * 0.1f) + info->sizeBase * 0.1f;
+
+        particle = spawn_object(o, info->model, bhvWhitePuffExplosion);
+
+        particle->oBhvParams2ndByte = info->bhvParam;
+        particle->oMoveAngleYaw = random_u16();
+        particle->oGravity = info->gravity;
+        particle->oDragStrength = info->dragStrength;
+
+        particle->oPosY += info->offsetY;
+        particle->oForwardVel = random_float() * info->forwardVelRange + info->forwardVelBase;
+        particle->oVelY = random_float() * info->velYRange + info->velYBase;
+
+        obj_scale_xyz(particle, scale, scale, scale);
+    }
+}
+
+/* src/game/object_helpers.c: cur_obj_shake_screen */
+void cur_obj_shake_screen(s32 shake) {
+    set_camera_shake_from_point(shake, o->oPosX, o->oPosY, o->oPosZ);
+}
+
+/* src/game/object_helpers.c: cur_obj_spawn_star_at_y_offset */
+void cur_obj_spawn_star_at_y_offset(f32 targetX, f32 targetY, f32 targetZ, f32 offsetY) {
+    f32 objectPosY = o->oPosY;
+    o->oPosY += offsetY + gDebugInfo[DEBUG_PAGE_ENEMYINFO][0];
+    spawn_default_star(targetX, targetY, targetZ);
+    o->oPosY = objectPosY;
 }

@@ -8,10 +8,12 @@
 //! queries, those traces become the authority and this harness can be retired.
 pub mod camera;
 pub mod camera_trace;
+pub mod grab;
 pub mod input_trace;
 pub mod object_motion;
 pub mod object_trace;
 pub mod shadow;
+pub mod standard_motion;
 pub mod tick_trace;
 
 use rustario64::{content::animation::MarioAnimations, simulation::TickInput};
@@ -19,6 +21,22 @@ use std::{
     collections::BTreeMap,
     sync::{Mutex, MutexGuard},
 };
+
+/// c/object_anims_unit.c's OracleAnimation.
+#[repr(C)]
+struct OracleAnimation {
+    segmented: u32,
+    flags: i16,
+    y_trans_divisor: i16,
+    start_frame: i16,
+    loop_start: i16,
+    loop_end: i16,
+    bone_count: i16,
+    index: *const u16,
+    index_count: i32,
+    values: *const i16,
+    value_count: i32,
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
@@ -98,11 +116,33 @@ unsafe extern "C" {
         preset_params: *const i16,
     );
     fn oracle_tick_set_spawn_infos(infos: *const OracleSpawnInfo, count: i32);
+    fn oracle_set_object_animations(
+        kind: i32,
+        table: u32,
+        anims: *const OracleAnimation,
+        count: i32,
+    );
+    fn oracle_render_set_king_model(nodes: *const OracleGeoNode, count: i32, root: i32);
+    fn oracle_render_set_mario_model(nodes: *const OracleGeoNode, count: i32, root: i32);
+    fn oracle_dialog_set_table(dialogs: *const OracleDialog, count: i32);
+    fn oracle_tick_seed_boss_field(slot: i32, field: i32, word: u32);
     fn oracle_tick_run(input: *const OracleTickInput);
     fn oracle_tick_snapshot(
         names: *mut *const *const std::ffi::c_char,
         words: *mut *const u32,
     ) -> i32;
+}
+
+/// One dialog entry for c/ingame_menu_unit.c (layout matches its
+/// `OracleDialog`).
+#[repr(C)]
+struct OracleDialog {
+    unused: u32,
+    lines_per_box: i32,
+    left_offset: i32,
+    width: i32,
+    text: *const u8,
+    text_length: i32,
 }
 
 /// A level entry for the tick oracle (layout matches `OracleTickSetup` in
@@ -150,6 +190,27 @@ struct OracleModel {
     child_start: *const i32,
     child_count: *const i32,
     children: *const i32,
+}
+
+/// One node of MODEL_MARIO's graph (layout matches `OracleGeoNode` in
+/// c/mario_render_unit.c), from which the oracle builds the node with the
+/// verbatim graph_node.c constructor.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OracleGeoNode {
+    pub kind: i32,
+    pub parent: i32,
+    pub layer: i32,
+    pub has_display_list: i32,
+    /// `MarioCallback` role (its declaration order), or -1.
+    pub callback: i32,
+    pub param: i32,
+    pub param2: i32,
+    pub param3: i32,
+    pub a: [i16; 3],
+    pub b: [i16; 3],
+    pub scale: u32,
+    pub flags: i32,
 }
 
 /// One area spawn info (layout matches `OracleSpawnInfo` in c/tick.c).
@@ -561,6 +622,63 @@ impl Oracle {
             );
             oracle_tick_set_spawn_infos(o.spawn_infos.as_ptr(), o.spawn_infos.len() as i32);
         }
+        for (kind, table, source) in [
+            (0, o.bobomb_table, &o.bobomb_animations),
+            (1, o.king_bobomb_table, &o.king_bobomb_animations),
+        ] {
+            let animations: Vec<OracleAnimation> = source
+                .iter()
+                .map(|a| OracleAnimation {
+                    segmented: a.segmented,
+                    flags: a.flags,
+                    y_trans_divisor: a.y_trans_divisor,
+                    start_frame: a.start_frame,
+                    loop_start: a.loop_start,
+                    loop_end: a.loop_end,
+                    bone_count: a.bone_count,
+                    index: a.index.as_ptr(),
+                    index_count: a.index.len() as i32,
+                    values: a.values.as_ptr(),
+                    value_count: a.values.len() as i32,
+                })
+                .collect();
+            // SAFETY: the C side copies the live slices before returning.
+            unsafe {
+                oracle_set_object_animations(
+                    kind,
+                    table,
+                    animations.as_ptr(),
+                    animations.len() as i32,
+                )
+            };
+        }
+        // SAFETY: the C side copies the live model slice before returning.
+        unsafe {
+            oracle_render_set_mario_model(
+                o.mario_model.as_ptr(),
+                o.mario_model.len() as i32,
+                o.mario_root,
+            );
+            oracle_render_set_king_model(
+                o.king_model.as_ptr(),
+                o.king_model.len() as i32,
+                o.king_root,
+            );
+        }
+        let dialogs: Vec<OracleDialog> = o
+            .dialogs
+            .iter()
+            .map(|d| OracleDialog {
+                unused: d.unused,
+                lines_per_box: i32::from(d.lines_per_box),
+                left_offset: i32::from(d.left_offset),
+                width: i32::from(d.width),
+                text: d.text.as_ptr(),
+                text_length: d.text.len() as i32,
+            })
+            .collect();
+        // SAFETY: as above; the C side copies every string.
+        unsafe { oracle_dialog_set_table(dialogs.as_ptr(), dialogs.len() as i32) };
     }
 
     /// Enter a level as c/tick.c's oracle_tick_begin does. Requires the
@@ -579,6 +697,15 @@ impl Oracle {
         };
         // SAFETY: a valid input record; tick_begin ran (the C side aborts otherwise).
         unsafe { oracle_tick_run(&input) };
+    }
+
+    /// Seed one numeric boss field for a development fixture after the first
+    /// frame. No pointers or packed halfwords are accepted; the C boundary
+    /// validates the slot's behavior and field before writing.
+    pub fn tick_seed_boss_field(&self, slot: u32, field: usize, word: u32) {
+        assert!(slot < 240 && field < 0x50);
+        // SAFETY: the C function bounds-checks the slot and numeric field.
+        unsafe { oracle_tick_seed_boss_field(slot as i32, field as i32, word) };
     }
 
     /// Every compared word after the last frame, named as c/tick.c names it.

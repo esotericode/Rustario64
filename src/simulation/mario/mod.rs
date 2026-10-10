@@ -21,16 +21,18 @@ pub mod animation;
 pub mod automatic;
 pub mod constants;
 pub mod core;
+pub mod cutscene;
 pub mod inputs;
 pub mod interaction;
 pub mod moving;
 pub mod object;
+pub mod render;
 pub mod stationary;
 pub mod step;
 pub mod tick;
 
 use crate::{
-    content::animation::MarioAnimations,
+    content::animation::{MarioAnimations, NO_OBJECT_ANIMATIONS, ObjectAnimations},
     simulation::{
         collision::{CollisionFlags, CollisionWorld, Surface, SurfaceIndex},
         controller::Controller,
@@ -56,7 +58,7 @@ pub enum SurfaceRef {
 /// Mario's object is an ordinary `struct Object`; it lives in MarioState
 /// (m->marioObj) rather than in the object pool's slot data.
 pub use crate::simulation::object::{
-    AnimInfo, AnimRef, GfxState, Object as MarioObject, ObjectFields, ObjectId,
+    AnimInfo, AnimRef, GfxState, Object as MarioObject, ObjectFields, ObjectId, ThrowMatrix,
 };
 
 /// struct MarioBodyState (gBodyStates[0]): model presentation state that the
@@ -202,6 +204,9 @@ pub enum Unsupported {
     /// interact_coin reached 100 coins in a main course, which spawns the
     /// 100-coin star (bhv_spawn_star_no_level_exit).
     HundredCoinStar,
+    /// An object spawned a star (spawn_default_star): the star object, its
+    /// cutscene and collection are not ported.
+    StarSpawn,
 }
 
 /// Calls into systems outside the simulated state, in call order. Mirrors the
@@ -223,6 +228,8 @@ pub enum Event {
         frames: i16,
     },
     CameraShake(i16),
+    /// set_environmental_camera_shake from an object (an explosion).
+    EnvironmentalCameraShake(i16),
     /// A level warp request (warp operation). No level runtime handles it yet.
     Warp(i32),
     LevelInitText(u32),
@@ -231,6 +238,41 @@ pub enum Event {
         yaw: i16,
     },
     Unsupported(Unsupported),
+    /// play_dialog_sound(dialogID), whose argument is a u8: the speaker's
+    /// voice for a dialog.
+    DialogSound(u8),
+    /// seq_player_lower_volume(player, duration, percentage).
+    SeqLowerVolume {
+        player: u8,
+        duration: u16,
+        percentage: u8,
+    },
+    /// seq_player_unlower_volume(player, duration).
+    SeqUnlowerVolume {
+        player: u8,
+        duration: u16,
+    },
+    /// play_music(player, seqArgs, fadeTimer).
+    PlayMusic {
+        player: u8,
+        seq_args: u16,
+        fade: u16,
+    },
+    /// seq_player_fade_out(player, duration).
+    SeqFadeOut {
+        player: u8,
+        duration: u16,
+    },
+    /// play_race_fanfare.
+    RaceFanfare,
+    /// set_camera_shake_from_point from an object (cur_obj_shake_screen),
+    /// with the point's coordinates as f32 bits.
+    PointCameraShake {
+        shake: i16,
+        point: [u32; 3],
+    },
+    /// stop_background_music(seqId).
+    StopBackgroundMusic(u16),
 }
 
 impl Event {
@@ -246,6 +288,7 @@ impl Event {
             Event::FadeoutCapMusic => (7, 0, 0),
             Event::CameraMode { mode, frames } => (8, i32::from(mode), i32::from(frames)),
             Event::CameraShake(shake) => (9, i32::from(shake), 0),
+            Event::EnvironmentalCameraShake(shake) => (14, i32::from(shake), 0),
             Event::Warp(op) => (10, op, 0),
             Event::LevelInitText(arg) => (11, arg as i32, 0),
             Event::WindParticles { pitch, yaw } => (12, i32::from(pitch), i32::from(yaw)),
@@ -254,7 +297,34 @@ impl Event {
                 Unsupported::SubmergedGroup(action) => (13, 2, action as i32),
                 Unsupported::InfiniteStairs => (13, 3, 0),
                 Unsupported::HundredCoinStar => (13, 4, 0),
+                Unsupported::StarSpawn => (13, 5, 0),
             },
+            Event::DialogSound(id) => (15, i32::from(id), 0),
+            Event::SeqLowerVolume {
+                player,
+                duration,
+                percentage,
+            } => (
+                16,
+                i32::from(player),
+                (i32::from(duration) << 8) | i32::from(percentage),
+            ),
+            Event::SeqUnlowerVolume { player, duration } => {
+                (17, i32::from(player), i32::from(duration))
+            }
+            Event::PlayMusic {
+                player,
+                seq_args,
+                fade,
+            } => (
+                18,
+                i32::from(player),
+                (i32::from(seq_args) << 16) | i32::from(fade),
+            ),
+            Event::SeqFadeOut { player, duration } => (19, i32::from(player), i32::from(duration)),
+            Event::RaceFanfare => (20, 0, 0),
+            Event::PointCameraShake { shake, .. } => (21, i32::from(shake), 0),
+            Event::StopBackgroundMusic(seq) => (22, i32::from(seq), 0),
         }
     }
 }
@@ -284,6 +354,9 @@ pub struct StepWorld<'a> {
     pub water_pseudo_floor_origin_offset: f32,
     /// gControllers[0], sampled once per tick before Mario updates.
     pub controller: Controller,
+    /// object_helpers.c's function-static grabReleaseState. Persist across
+    /// grab attempts; a fresh boot starts at zero, a neutral stick resets it.
+    pub grab_release_state: i32,
     /// m->area->camera.
     pub camera: CameraState,
     /// gCameraMovementFlags.
@@ -310,16 +383,32 @@ pub struct StepWorld<'a> {
     pub behaviors: &'a BehaviorScripts,
     /// gLoadedGraphNodes, with the render traversal of spawned models.
     pub models: &'a ObjectModels,
+    /// The object animation tables the level's loaded segments hold.
+    pub object_anims: &'a ObjectAnimations,
     /// The object pool and lists (Mario's object data stays in MarioState).
     pub objects: ObjectPool,
     /// The loaded area's placements and their respawn records.
     pub area: AreaObjects,
     /// gRandomSeed16, shared by objects and the camera.
     pub rng: Rng,
+    /// What Mario's geo callbacks wrote into his graph nodes.
+    pub mario_graph: render::MarioGraphState,
     /// gTimeStopState.
     pub time_stop_state: u32,
     /// gCurrCourseNum.
     pub course_num: i16,
+    /// The dialog box (ingame_menu.c's globals).
+    pub dialog: crate::simulation::dialog::DialogBox,
+    /// seg2_dialog_table.
+    pub dialogs: &'a crate::content::dialog::DialogTable,
+    /// The camera.c globals objects use to request cutscenes (the game
+    /// frame copies them from the camera and back around the object update).
+    pub cutscene: crate::simulation::camera::cutscene::ObjectCutsceneState,
+    /// gObjectCounter and gPrevFrameObjectCount: the objects the update
+    /// visited (spawner, then surface, then the rest), kept from the last
+    /// frame for particle limits.
+    pub object_counter: u32,
+    pub prev_frame_object_count: i16,
 }
 
 impl<'a> StepWorld<'a> {
@@ -341,6 +430,7 @@ impl<'a> StepWorld<'a> {
             area_index: 1,
             water_pseudo_floor_origin_offset: 0.0,
             controller: Controller::default(),
+            grab_release_state: 0,
             camera: CameraState::default(),
             camera_movement_flags: 0,
             special_triple_jump: 0,
@@ -356,11 +446,18 @@ impl<'a> StepWorld<'a> {
             events: Vec::new(),
             behaviors: &NO_SCRIPTS,
             models: &NO_MODELS,
+            object_anims: &NO_OBJECT_ANIMATIONS,
             objects: ObjectPool::new(),
             area: AreaObjects::default(),
             rng: Rng::default(),
+            mario_graph: render::MarioGraphState::default(),
             time_stop_state: 0,
             course_num: 0,
+            dialog: Default::default(),
+            dialogs: &crate::content::dialog::NO_DIALOGS,
+            cutscene: Default::default(),
+            object_counter: 0,
+            prev_frame_object_count: 0,
         }
     }
 

@@ -151,6 +151,7 @@ pub fn show_coin_counter(ctx: &egui::Context, hud: &rustario64::simulation::hud:
         egui::Area::new(egui::Id::new("coin counter"))
             .anchor(egui::Align2::RIGHT_TOP, [-24.0, 20.0])
             .interactable(false)
+            .fade_in(false)
             .show(ctx, |ui| {
                 egui::Frame::new()
                     .fill(egui::Color32::from_black_alpha(150))
@@ -165,6 +166,97 @@ pub fn show_coin_counter(ctx: &egui::Context, hud: &rustario64::simulation::hud:
                     });
             });
     }
+}
+
+/// The dialog box with development typography: the simulated box's page,
+/// opening and closing with its angle, a next-page marker and the yes/no
+/// choice. The original's rotating box and ROM font are pending.
+pub fn show_dialog_box(
+    ctx: &egui::Context,
+    dialog: &rustario64::simulation::dialog::DialogBox,
+    table: &rustario64::content::dialog::DialogTable,
+) {
+    let Some(view) = rustario64::presentation::dialog::dialog_view(dialog, table) else {
+        return;
+    };
+    if view.open <= 0.0 {
+        return;
+    }
+    let screen = ctx.content_rect();
+    let width = (screen.width() * 0.62).clamp(260.0, 820.0);
+    let text_size = (width / 26.0).clamp(14.0, 30.0);
+    let line_height = text_size * 1.3;
+    let height = line_height * view.lines_per_box as f32 + text_size * 1.6;
+    let scale = 0.25 + 0.75 * view.open;
+    let alpha = (150.0 * view.open) as u8;
+    egui::Area::new(egui::Id::new("dialog box"))
+        .anchor(egui::Align2::CENTER_TOP, [0.0, screen.height() * 0.08])
+        .interactable(false)
+        .fade_in(false)
+        .show(ctx, |ui| {
+            let (rect, _) = ui.allocate_exact_size(
+                egui::vec2(width * scale, height * scale),
+                egui::Sense::hover(),
+            );
+            let painter = ui.painter_at(rect);
+            painter.rect_filled(rect, 10.0 * scale, egui::Color32::from_black_alpha(alpha));
+            if view.open < 1.0 {
+                return;
+            }
+            let left = rect.left() + text_size;
+            let top = rect.top() + text_size * 0.8
+                - view.scroll * line_height * view.lines_per_box as f32;
+            for (i, line) in view.lines.iter().enumerate() {
+                let y = top + i as f32 * line_height;
+                if y < rect.top() + text_size * 0.3 || y + line_height > rect.bottom() {
+                    continue;
+                }
+                painter.text(
+                    egui::pos2(left, y),
+                    egui::Align2::LEFT_TOP,
+                    line,
+                    egui::FontId::proportional(text_size),
+                    egui::Color32::WHITE,
+                );
+            }
+            let triangle = |tip: egui::Pos2, size: f32, down: bool| {
+                let points = if down {
+                    vec![
+                        tip,
+                        tip + egui::vec2(size * 0.6, -size),
+                        tip + egui::vec2(-size * 0.6, -size),
+                    ]
+                } else {
+                    vec![
+                        tip,
+                        tip + egui::vec2(-size, -size * 0.6),
+                        tip + egui::vec2(-size, size * 0.6),
+                    ]
+                };
+                egui::Shape::convex_polygon(points, egui::Color32::WHITE, egui::Stroke::NONE)
+            };
+            if view.more {
+                let tip = egui::pos2(rect.right() - text_size, rect.bottom() - text_size * 0.5);
+                painter.add(triangle(tip, text_size * 0.6, true));
+            }
+            if let Some(choice) = view.choice {
+                let y = rect.bottom() - text_size * 0.5;
+                for (i, label) in ["Yes", "No"].into_iter().enumerate() {
+                    let x = left + text_size * (1.2 + 4.0 * i as f32);
+                    painter.text(
+                        egui::pos2(x, y),
+                        egui::Align2::LEFT_BOTTOM,
+                        label,
+                        egui::FontId::proportional(text_size),
+                        egui::Color32::WHITE,
+                    );
+                    if usize::from(choice as u8) == i + 1 {
+                        let tip = egui::pos2(x - text_size * 0.3, y - text_size * 0.55);
+                        painter.add(triangle(tip, text_size * 0.5, false));
+                    }
+                }
+            }
+        });
 }
 
 /// A placeholder for Mario until his model is imported: a box the size of his

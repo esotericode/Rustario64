@@ -2,6 +2,7 @@ pub mod animation;
 pub mod behavior;
 pub mod bob;
 pub mod collision;
+pub mod dialog;
 pub mod engine;
 pub mod geo;
 pub mod gfx;

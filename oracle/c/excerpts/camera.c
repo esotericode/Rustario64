@@ -15,6 +15,7 @@
 #include "game/ingame_menu.h"
 #include "game/object_list_processor.h"
 #include "game/level_update.h"
+#include "game/object_helpers.h"
 #include "game/camera.h"
 #include "camera_boundary.h"
 
@@ -2011,6 +2012,120 @@ void set_handheld_shake(u8 mode) {
         default:
             sHandheldShakeMag = 0x0;
             sHandheldShakeInc = 0.f;
+    }
+}
+
+/* src/game/camera.c: reduce_by_dist_from_camera */
+s16 reduce_by_dist_from_camera(s16 value, f32 maxDist, f32 posX, f32 posY, f32 posZ) {
+    Vec3f pos;
+    f32 dist;
+    s16 pitch;
+    s16 yaw;
+    s16 goalPitch;
+    s16 goalYaw;
+    s16 result = 0;
+    // Direction from pos to (Lakitu's) goalPos
+    f32 goalDX = gLakituState.goalPos[0] - posX;
+    f32 goalDY = gLakituState.goalPos[1] - posY;
+    f32 goalDZ = gLakituState.goalPos[2] - posZ;
+
+    dist = sqrtf(goalDX * goalDX + goalDY * goalDY + goalDZ * goalDZ);
+    if (maxDist > dist) {
+        pos[0] = posX;
+        pos[1] = posY;
+        pos[2] = posZ;
+        vec3f_get_dist_and_angle(gLakituState.goalPos, pos, &dist, &pitch, &yaw);
+        if (dist < maxDist) {
+            calculate_angles(gLakituState.goalPos, gLakituState.goalFocus, &goalPitch, &goalYaw);
+            //! Must be same line to match on -O2
+            pitch -= goalPitch; yaw -= goalYaw;
+            dist -= 2000.f;
+            if (dist < 0.f) {
+                dist = 0.f;
+            }
+            maxDist -= 2000.f;
+            if (maxDist < 2000.f) {
+                maxDist = 2000.f;
+            }
+            result = value * (1.f - dist / maxDist);
+            if (pitch < -0x1800 || pitch > 0x400 ||
+                yaw   < -0x1800 || yaw >   0x1800) {
+                result /= 2;
+            }
+        }
+    }
+    return result;
+}
+
+/* src/game/camera.c: set_pitch_shake_from_point */
+void set_pitch_shake_from_point(s16 mag, s16 decay, s16 inc, f32 maxDist, f32 posX, f32 posY, f32 posZ) {
+    Vec3f pos;
+    f32 dist;
+    s16 dummyPitch;
+    s16 dummyYaw;
+
+    pos[0] = posX;
+    pos[1] = posY;
+    pos[2] = posZ;
+    vec3f_get_dist_and_angle(gLakituState.goalPos, pos, &dist, &dummyPitch, &dummyYaw);
+    mag = reduce_by_dist_from_camera(mag, maxDist, posX, posY, posZ);
+    if (mag != 0) {
+        set_camera_pitch_shake(mag, decay, inc);
+    }
+}
+
+/* src/game/camera.c: set_fov_shake_from_point */
+void set_fov_shake_from_point(s16 amplitude, s16 decay, s16 shakeSpeed, f32 maxDist, f32 posX, f32 posY, f32 posZ) {
+    amplitude = reduce_by_dist_from_camera(amplitude, maxDist, posX, posY, posZ);
+
+    if (amplitude != 0) {
+        if (amplitude > sFOVState.shakeAmplitude) { // literally use the function above you silly nintendo, smh
+            sFOVState.shakeAmplitude = amplitude;
+            sFOVState.decay = decay;
+            sFOVState.shakeSpeed = shakeSpeed;
+        }
+    }
+}
+
+/* src/game/camera.c: set_fov_shake_from_point_preset */
+void set_fov_shake_from_point_preset(u8 preset, f32 posX, f32 posY, f32 posZ) {
+    switch (preset) {
+        case SHAKE_FOV_SMALL:
+            set_fov_shake_from_point(0x100, 0x30, 0x8000, 3000.f, posX, posY, posZ);
+            break;
+        case SHAKE_FOV_MEDIUM:
+            set_fov_shake_from_point(0x200, 0x30, 0x8000, 4000.f, posX, posY, posZ);
+            break;
+        case SHAKE_FOV_LARGE:
+            set_fov_shake_from_point(0x300, 0x30, 0x8000, 6000.f, posX, posY, posZ);
+            break;
+        case SHAKE_FOV_UNUSED:
+            set_fov_shake_from_point(0x800, 0x20, 0x4000, 3000.f, posX, posY, posZ);
+            break;
+    }
+}
+
+/* src/game/camera.c: set_camera_shake_from_point */
+void set_camera_shake_from_point(s16 shake, f32 posX, f32 posY, f32 posZ) {
+    switch (shake) {
+        case SHAKE_POS_BOWLING_BALL:
+            set_pitch_shake_from_point(0x28, 0x8, 0x4000, 2000.f, posX, posY, posZ);
+            break;
+
+        case SHAKE_POS_SMALL:
+            set_pitch_shake_from_point(0x80, 0x8, 0x4000, 4000.f, posX, posY, posZ);
+            set_fov_shake_from_point_preset(SHAKE_FOV_SMALL, posX, posY, posZ);
+            break;
+
+        case SHAKE_POS_MEDIUM:
+            set_pitch_shake_from_point(0xC0, 0x8, 0x4000, 6000.f, posX, posY, posZ);
+            set_fov_shake_from_point_preset(SHAKE_FOV_MEDIUM, posX, posY, posZ);
+            break;
+
+        case SHAKE_POS_LARGE:
+            set_pitch_shake_from_point(0x100, 0x8, 0x3000, 8000.f, posX, posY, posZ);
+            set_fov_shake_from_point_preset(SHAKE_FOV_LARGE, posX, posY, posZ);
+            break;
     }
 }
 
@@ -4326,4 +4441,207 @@ Gfx *geo_camera_fov(s32 callContext, struct GraphNode *g, UNUSED void *context) 
 /* src/game/camera.c: set_fov_function */
 void set_fov_function(u8 func) {
     sFOVState.fovFunc = func;
+}
+
+/* src/game/camera.c: s16 sCutsceneDialogID */
+s16 sCutsceneDialogID;
+
+/* src/game/camera.c: struct CameraStoredInfo sCameraStoreCutscene */
+struct CameraStoredInfo sCameraStoreCutscene;
+
+/* src/game/camera.c: u8 sCutsceneDialogResponse = DIALOG_RESPONSE_NONE */
+u8 sCutsceneDialogResponse = DIALOG_RESPONSE_NONE;
+
+/* src/game/camera.c: start_object_cutscene */
+void start_object_cutscene(u8 cutscene, struct Object *o) {
+    sObjectCutscene = cutscene;
+    gRecentCutscene = 0;
+    gCutsceneFocus = o;
+    gObjCutsceneDone = FALSE;
+}
+
+/* src/game/camera.c: cutscene_object_with_dialog */
+s16 cutscene_object_with_dialog(u8 cutscene, struct Object *o, s16 dialogID) {
+    s16 response = DIALOG_RESPONSE_NONE;
+
+    if ((gCamera->cutscene == 0) && (sObjectCutscene == 0)) {
+        if (gRecentCutscene != cutscene) {
+            start_object_cutscene(cutscene, o);
+            if (dialogID != DIALOG_NONE) {
+                sCutsceneDialogID = dialogID;
+            } else {
+                sCutsceneDialogID = DIALOG_001;
+            }
+        } else {
+            response = sCutsceneDialogResponse;
+        }
+
+        gRecentCutscene = 0;
+    }
+    return response;
+}
+
+/* src/game/camera.c: reset_pan_distance */
+void reset_pan_distance(UNUSED struct Camera *c) {
+    sPanDistance = 0;
+}
+
+/* src/game/camera.c: store_info_star */
+void store_info_star(struct Camera *c) {
+    reset_pan_distance(c);
+    vec3f_copy(sCameraStoreCutscene.pos, c->pos);
+    sCameraStoreCutscene.focus[0] = sMarioCamState->pos[0];
+    sCameraStoreCutscene.focus[1] = c->focus[1];
+    sCameraStoreCutscene.focus[2] = sMarioCamState->pos[2];
+}
+
+/* src/game/camera.c: retrieve_info_star */
+void retrieve_info_star(struct Camera *c) {
+    vec3f_copy(c->pos, sCameraStoreCutscene.pos);
+    vec3f_copy(c->focus, sCameraStoreCutscene.focus);
+}
+
+/* src/game/camera.c: cutscene_soften_music */
+void cutscene_soften_music(UNUSED struct Camera *c) {
+    seq_player_lower_volume(SEQ_PLAYER_LEVEL, 60, 40);
+}
+
+/* src/game/camera.c: cutscene_unsoften_music */
+void cutscene_unsoften_music(UNUSED struct Camera *c) {
+    seq_player_unlower_volume(SEQ_PLAYER_LEVEL, 60);
+}
+
+/* src/game/camera.c: cutscene_dialog_start */
+BAD_RETURN(s32) cutscene_dialog_start(struct Camera *c) {
+    UNUSED u8 filler[4];
+    UNUSED s16 unused;
+    s16 yaw;
+
+    cutscene_soften_music(c);
+    set_time_stop_flags(TIME_STOP_ENABLED | TIME_STOP_DIALOG);
+
+#ifndef VERSION_JP
+    if (c->mode == CAMERA_MODE_BOSS_FIGHT) {
+        vec3f_copy(sCameraStoreCutscene.focus, c->focus);
+        vec3f_copy(sCameraStoreCutscene.pos, c->pos);
+    } else {
+#endif
+        store_info_star(c);
+#ifndef VERSION_JP
+    }
+#endif
+
+    // Store Mario's position and faceAngle
+    sCutsceneVars[8].angle[0] = 0;
+    vec3f_copy(sCutsceneVars[8].point, sMarioCamState->pos);
+    sCutsceneVars[8].point[1] += 125.f;
+
+    // Store gCutsceneFocus's position and yaw
+    object_pos_to_vec3f(sCutsceneVars[9].point, gCutsceneFocus);
+    sCutsceneVars[9].point[1] += gCutsceneFocus->hitboxHeight + 200.f;
+    sCutsceneVars[9].angle[1] = calculate_yaw(sCutsceneVars[8].point, sCutsceneVars[9].point);
+
+    yaw = calculate_yaw(sMarioCamState->pos, gLakituState.curPos);
+    if ((yaw - sCutsceneVars[9].angle[1]) & 0x8000) {
+        sCutsceneVars[9].angle[1] -= 0x6000;
+    } else {
+        sCutsceneVars[9].angle[1] += 0x6000;
+    }
+}
+
+/* src/game/camera.c: cutscene_dialog_move_mario_shoulder */
+BAD_RETURN(s32) cutscene_dialog_move_mario_shoulder(struct Camera *c) {
+    f32 dist;
+    s16 pitch, yaw;
+    Vec3f focus, pos;
+
+    scale_along_line(focus, sCutsceneVars[9].point, sMarioCamState->pos, 0.7f);
+    vec3f_get_dist_and_angle(c->pos, focus, &dist, &pitch, &yaw);
+    pitch = calculate_pitch(c->pos, sCutsceneVars[9].point);
+    vec3f_set_dist_and_angle(c->pos, pos, dist, pitch, yaw);
+
+    focus[1] = focus[1] + (sCutsceneVars[9].point[1] - focus[1]) * 0.1f;
+    approach_vec3f_asymptotic(c->focus, focus, 0.2f, 0.2f, 0.2f);
+
+    vec3f_copy(pos, c->pos);
+
+    // Set y pos to cvar8's y (top of focus object)
+    pos[1] = sCutsceneVars[8].point[1];
+    vec3f_get_dist_and_angle(sCutsceneVars[8].point, pos, &dist, &pitch, &yaw);
+    approach_s16_asymptotic_bool(&yaw, sCutsceneVars[9].angle[1], 0x10);
+    approach_f32_asymptotic_bool(&dist, 180.f, 0.05f);
+    vec3f_set_dist_and_angle(sCutsceneVars[8].point, pos, dist, pitch, yaw);
+
+    // Move up if Mario is below the focus object, down is Mario is above
+    pos[1] = sCutsceneVars[8].point[1]
+              + sins(calculate_pitch(sCutsceneVars[9].point, sCutsceneVars[8].point)) * 100.f;
+
+    approach_f32_asymptotic_bool(&c->pos[1], pos[1], 0.05f);
+    c->pos[0] = pos[0];
+    c->pos[2] = pos[2];
+}
+
+/* src/game/camera.c: cutscene_dialog_create_dialog_box */
+BAD_RETURN(s32) cutscene_dialog_create_dialog_box(struct Camera *c) {
+    if (c->cutscene == CUTSCENE_RACE_DIALOG) {
+        create_dialog_box_with_response(sCutsceneDialogID);
+    } else {
+        create_dialog_box(sCutsceneDialogID);
+    }
+
+    //! Unused. This may have been used before sCutsceneDialogResponse was implemented.
+    sCutsceneVars[8].angle[0] = DIALOG_RESPONSE_NOT_DEFINED;
+}
+
+/* src/game/camera.c: cutscene_dialog */
+BAD_RETURN(s32) cutscene_dialog(struct Camera *c) {
+    cutscene_event(cutscene_dialog_start, c, 0, 0);
+    cutscene_event(cutscene_dialog_move_mario_shoulder, c, 0, -1);
+    cutscene_event(cutscene_dialog_create_dialog_box, c, 10, 10);
+    sStatusFlags |= CAM_FLAG_SMOOTH_MOVEMENT;
+
+    if (gDialogResponse != DIALOG_RESPONSE_NONE) {
+        sCutsceneDialogResponse = gDialogResponse;
+    }
+
+    if ((get_dialog_id() == DIALOG_NONE) && (sCutsceneVars[8].angle[0] != 0)) {
+        if (c->cutscene != CUTSCENE_RACE_DIALOG) {
+            sCutsceneDialogResponse = DIALOG_RESPONSE_NOT_DEFINED;
+        }
+
+        gCutsceneTimer = CUTSCENE_LOOP;
+        retrieve_info_star(c);
+        transition_next_state(c, 15);
+        sStatusFlags |= CAM_FLAG_UNUSED_CUTSCENE_ACTIVE;
+        cutscene_unsoften_music(c);
+    }
+}
+
+/* src/game/camera.c: cutscene_dialog_set_flag */
+BAD_RETURN(s32) cutscene_dialog_set_flag(UNUSED struct Camera *c) {
+    sStatusFlags |= CAM_FLAG_UNUSED_CUTSCENE_ACTIVE;
+}
+
+/* src/game/camera.c: cutscene_dialog_end */
+BAD_RETURN(s32) cutscene_dialog_end(struct Camera *c) {
+    sStatusFlags |= CAM_FLAG_UNUSED_CUTSCENE_ACTIVE;
+    c->cutscene = 0;
+    clear_time_stop_flags(TIME_STOP_ENABLED | TIME_STOP_DIALOG);
+}
+
+/* src/game/camera.c: struct Cutscene sCutsceneDialog[] */
+struct Cutscene sCutsceneDialog[] = {
+    { cutscene_dialog, CUTSCENE_LOOP },
+    { cutscene_dialog_set_flag, 12 },
+    { cutscene_dialog_end, 0 }
+};
+
+/* src/game/camera.c: cutscene_event */
+s32 cutscene_event(CameraEvent event, struct Camera *c, s16 start, s16 end) {
+    if (start <= gCutsceneTimer) {
+        if (end == -1 || end >= gCutsceneTimer) {
+            event(c);
+        }
+    }
+    return 0;
 }

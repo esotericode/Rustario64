@@ -2,6 +2,7 @@
 pub mod camera;
 pub mod collision;
 pub mod controller;
+pub mod dialog;
 pub mod game;
 pub mod hud;
 pub mod mario;

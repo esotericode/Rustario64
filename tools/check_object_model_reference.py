@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the ROM's coin and sparkle models against a clean pinned decomp checkout.
+"""Check the ROM's coin, sparkle, mist and King Bob-omb models against a clean pinned decomp checkout.
 
 Independently of the Rust importer, this reads level_main_scripts_entry from
 the ROM (sm64tools "main_level_scripts", segment 0x15) up to its
@@ -42,6 +42,8 @@ MODELS = {
     0x74: ("actors/coin/geo.inc.c", "yellow_coin_geo"),
     0x75: ("actors/coin/geo.inc.c", "yellow_coin_no_shadow_geo"),
     0x95: ("actors/sparkle/geo.inc.c", "sparkles_geo"),
+    0x8E: ("actors/mist/geo.inc.c", "mist_geo"),
+    0x56: ("actors/king_bobomb/geo.inc.c", "king_bobomb_geo"),
 }
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -92,6 +94,35 @@ while True:
 assert loads == LOADS, "main-script loads differ from the version adapter"
 segments = {seg: rom[start:end] for seg, (start, end, mio0) in LOADS.items() if not mio0}
 
+# Follow BOB's main-script model-loading calls; model IDs are reused by
+# other actor groups, so scanning every global registration is ambiguous.
+bob_script = rom[0x405A60:0x405FB0]
+king = []
+for at in range(0, len(bob_script) - 7, 4):
+    if bob_script[at:at + 2] != bytes([6, 8]):
+        continue
+    target = be32(bob_script, at + 4)
+    if target >> 24 != 0x15:
+        continue
+    pc = target & 0xFFFFFF
+    while scripts[pc:pc + 2] in (bytes([0x21, 8]), bytes([0x22, 8])):
+        if be16(scripts, pc + 2, False) & 0xFFF == 0x56:
+            king.append((scripts[pc], be32(scripts, pc + 4)))
+        pc += 8
+    assert scripts[pc:pc + 2] == bytes([7, 4]), "model-loading subroutine return"
+assert king == [(0x22, 0x0C000000)], "King Bob-omb's original model registration"
+registered[0x56] = king[0]
+# BOB's script loads group3's raw geo segment. The animation/model data in
+# segment 5 remains private; this checker needs only geometry commands.
+bob_script = rom[0x405A60:0x405FB0]
+geo_loads = [(be32(bob_script, at + 4), be32(bob_script, at + 8))
+             for at in range(0, len(bob_script) - 11, 4)
+             if bob_script[at:at + 4] == bytes([0x17, 12, 0, 0x0C])]
+assert len(geo_loads) == 1, "BOB group3 geo load"
+start, end = geo_loads[0]
+assert start < end <= len(rom)
+segments[0x0C] = rom[start:end]
+
 
 def clean(text):
     return re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
@@ -134,6 +165,21 @@ for model, (path, layout) in sorted(MODELS.items()):
             assert op == 0x0E and be16(data, at + 2) == number(args[0]), (layout, macro)
             name, function = args[1], be32(data, at + 4)
             assert callbacks.setdefault(name, function) == function, f"{name} has two addresses"
+            at += 8
+        elif macro == "GEO_ASM":
+            assert op == 0x18 and be16(data, at + 2) == number(args[0]), (layout, macro)
+            name, function = args[1], be32(data, at + 4)
+            assert callbacks.setdefault(name, function) == function, f"{name} has two addresses"
+            at += 8
+        elif macro == "GEO_SCALE":
+            assert (op, data[at + 1], be32(data, at + 4)) == (0x1D, number(args[0]), number(args[1])), (layout, macro)
+            at += 8
+        elif macro == "GEO_ANIMATED_PART":
+            dl = 0 if args[4] == "NULL" else int(re.search(r"_([0-9A-Fa-f]{8})$", args[4]).group(1), 16)
+            assert (op, data[at + 1], [be16(data, at + k) for k in (2, 4, 6)], be32(data, at + 8)) == (0x13, number(args[0]), [number(a) for a in args[1:4]], dl), (layout, macro)
+            at += 12
+        elif macro == "GEO_BILLBOARD":
+            assert data[at:at + 8] == bytes([0x14, 0, 0, 0, 0, 0, 0, 0]), (layout, macro)
             at += 8
         elif macro == "GEO_DISPLAY_LIST":
             dl = int(re.search(r"_([0-9A-Fa-f]{8})$", args[1]).group(1), 16)
