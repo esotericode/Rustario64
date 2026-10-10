@@ -336,16 +336,6 @@ void *virtual_to_segmented(u32 segment, const void *addr) {
     return (void *) addr;
 }
 
-/* object_helpers.c's standard vertical movement: only a moving release
- * (cur_obj_move_after_thrown_or_dropped with speed) reaches it, which no
- * ported object does; the Rust port panics there too. */
-void cur_obj_move_y(f32 gravity, f32 bounciness, f32 buoyancy) {
-    (void) gravity;
-    (void) bounciness;
-    (void) buoyancy;
-    unreachable_without_objects("cur_obj_move_y (thrown or placed objects)");
-}
-
 /* The display list's per-frame arena (alloc_display_list in game_init.c) as
  * obj_orient_graph uses it: Mat4-sized blocks, reset when each frame starts.
  * Exhausting the original's pool is not modelled. */

@@ -78,6 +78,16 @@ What works now:
 - The original enemy `object_step` physics (wall reflection, slopes/friction,
   bouncing, water motion and terrain alignment): 63,174 authored and 123,200
   local BOB component calls match native C bit for bit, and Bob-ombs use it.
+- King Bob-omb's **standard movement foundation**: floor/wall queries, drag,
+  slope/edge avoidance, ground/air/water transitions, return-home arc movement
+  and moving throw/drop release. 537,435 component comparisons match the native
+  decomp exactly, including BOB collision/trig data. The boss itself is still
+  disabled pending behavior, animated anchors, dialogs and cutscenes.
+- Shared boss **grab/release interactions**: enemy grabs, Mario's thrown action
+  transition, anchor placement, escape controls and non-Bowser object release.
+  2,860 component calls match native C, including heavy pickup/walk/throw with
+  the ROM's original Mario animations and the 13th-tick release. These helpers
+  do not enable King Bob-omb's placement.
 
 This is level exploration with Mario's movement and camera, not mission
 support: of the objects only the coins and Bob-ombs are simulated. King
@@ -394,11 +404,20 @@ is never spawned; it is listed in `AreaObjects::skipped` with the reason.
 
 ## Next increment
 
-Physical-GPU Windows/Linux playtesting continues. Coins, Bob-ombs and carrying
-and throwing them now work. Next is King Bob-omb (his movement, grabbing and
-throwing Mario, being thrown, dialogs and the star) with the camera cutscenes
-the first mission needs. Original-execution traces remain the
-eventual authority. Skybox and placement models remain M1 work.
+Linux Intel GPU startup, offscreen drawing and recorded-run replay were checked
+locally in session 24; human controller and Windows playtesting remains.
+Coins, Bob-ombs and carrying and throwing them work. King Bob-omb's standard
+movement and grab/release helpers are now ported and component-compared,
+including Mario's heavy actions with original animations. Next is his behavior
+and animations, authoritative held-Mario render callback, dialogs, time-stop,
+the star and the camera cutscenes the first mission needs. Original-execution
+traces remain the eventual authority. Skybox and placement models remain M1 work.
+
+Movement and grabbing checks without a ROM:
+`cargo test --locked --release -p rustario64-oracle --test standard_motion --test grab`.
+With your supported ROM, set `RUSTARIO64_ROM` and append
+`-- --include-ignored --nocapture`. This tests movement/grab prerequisites, not
+the boss fight or mission completion.
 
 Camera checks without a ROM: `cargo test --locked -p rustario64-oracle --test camera --test lakitu --test radial --test camera_tick`;
 repeat with `--release` for optimized comparisons. The owner-ROM camera tests

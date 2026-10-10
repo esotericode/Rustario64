@@ -704,3 +704,14 @@ void obj_set_gfx_pos_from_pos(struct Object *obj) {
     obj->header.gfx.pos[1] = obj->oPosY;
     obj->header.gfx.pos[2] = obj->oPosZ;
 }
+
+/* src/game/object_helpers.c: obj_set_gfx_pos_at_obj_pos */
+void obj_set_gfx_pos_at_obj_pos(struct Object *obj1, struct Object *obj2) {
+    obj1->header.gfx.pos[0] = obj2->oPosX;
+    obj1->header.gfx.pos[1] = obj2->oPosY + obj2->oGraphYOffset;
+    obj1->header.gfx.pos[2] = obj2->oPosZ;
+
+    obj1->header.gfx.angle[0] = obj2->oMoveAnglePitch & 0xFFFF;
+    obj1->header.gfx.angle[1] = obj2->oMoveAngleYaw & 0xFFFF;
+    obj1->header.gfx.angle[2] = obj2->oMoveAngleRoll & 0xFFFF;
+}

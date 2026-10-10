@@ -337,6 +337,41 @@ fn able_to_grab_object(m: &MarioState, w: &StepWorld<'_>, o: ObjectId) -> bool {
     false
 }
 
+/// object_facing_mario: both ends of the signed angle range are inclusive.
+fn object_facing_mario(m: &MarioState, w: &StepWorld<'_>, o: ObjectId, range: i16) -> bool {
+    let o = w.objects.slot(o);
+    let angle = w
+        .trig
+        .atan2s(m.pos[2] - o.raw.f32(O_POS_Z), m.pos[0] - o.raw.f32(O_POS_X));
+    let delta = angle.wrapping_sub(o.raw.s32(O_MOVE_ANGLE_YAW) as i16);
+    -i32::from(range) <= i32::from(delta) && delta <= range
+}
+
+/// check_object_grab_mario. Preserve the source's OR with !sInvulnerable:
+/// air/attacking actions can still be grabbed without invulnerability.
+fn check_object_grab_mario(m: &mut MarioState, w: &mut StepWorld<'_>, o: ObjectId) -> bool {
+    if (m.action & (ACT_FLAG_AIR | ACT_FLAG_INVULNERABLE | ACT_FLAG_ATTACKING) == 0
+        || w.interaction.invulnerable == 0)
+        && w.objects.slot(o).raw.u32(O_INTERACTION_SUBTYPE) & INT_SUBTYPE_GRABS_MARIO != 0
+        && object_facing_mario(m, w, o, 0x2AAA)
+    {
+        mario_stop_riding_and_holding(m, w);
+        let o_fields = &mut w.objects.slot_mut(o).raw;
+        o_fields.set_u32(
+            O_INTERACT_STATUS,
+            INT_STATUS_INTERACTED | INT_STATUS_GRABBED_MARIO,
+        );
+        m.face_angle[1] = o_fields.s32(O_MOVE_ANGLE_YAW) as i16;
+        m.interact_obj = Some(o);
+        m.used_obj = Some(o);
+        core::update_mario_sound_and_camera(m, w);
+        w.play_sound(SOUND_MARIO_OOOF);
+        return core::set_mario_action(m, w, ACT_GRABBED, 0) != 0;
+    }
+    push_mario_out_of_object(m, w, o, -5.0);
+    false
+}
+
 /// interact_grabbable: a kick or trip launches a kickable object; a grab
 /// attempt marks it for mario_check_object_grab; otherwise Mario is pushed
 /// out (every ported object is not Bowser).
@@ -350,8 +385,8 @@ fn interact_grabbable(m: &mut MarioState, w: &mut StepWorld<'_>, o: ObjectId) ->
             return false;
         }
     }
-    if subtype & INT_SUBTYPE_GRABS_MARIO != 0 {
-        needs_objects("check_object_grab_mario (the grabbed action)");
+    if subtype & INT_SUBTYPE_GRABS_MARIO != 0 && check_object_grab_mario(m, w, o) {
+        return true;
     }
     if able_to_grab_object(m, w, o) && subtype & INT_SUBTYPE_NOT_GRABBABLE == 0 {
         m.interact_obj = Some(o);

@@ -831,3 +831,67 @@ objects other than Bob-ombs, the castle mirror's Mario, Mario's prevObj
 view while holding (covered only incidentally), original N64 execution, and
 the visual placement of the held object against the original game (checked in
 local screenshots only).
+
+## Standard object movement (session 24, 2026-10-10)
+
+oracle/tests/standard_motion.rs compares object/standard_motion.rs and the
+moving-release helper with 21 verbatim pinned object_helpers.c functions.
+Original native collision/trig execute. All 80 raw words, return values and
+collision-query flags compare exactly; floor pointers are normalized to stable
+index + 1 handles and floor type/room halfwords to N64 order at transport only.
+
+| Coverage | Exact native comparisons |
+| --- | ---: |
+| Five base angles × every signed-halfword goal, including half-turn saturation | 327,680 |
+| Landing/bounce/water flags, terminal speed, signed zero, drag overshoot, floor types, partial updates, wall radius/angle/coordinate casts and arc bounds | 4,475 |
+| Moving/stationary release, floor correction and out-of-bounds fallback to Mario | 80 |
+| Authored generated states plus 120 independently evolving 240-tick trajectories | 87,600 |
+| BOB collision and ROM trig: generated states and independent trajectories | 117,600 |
+| Total | 537,435 |
+
+Trajectories compare after both floor/wall refresh and movement and never repair
+native state from Rust. They alternate normal and return-home motion. Tests pass
+in optimized Linux x86_64 builds; authored tests also run without the ROM in CI.
+Mutations replacing strict landing with <=, selecting the first wall instead of
+the last, and making the -50-unit cliff test inclusive each fail the targeted
+boundary test. Mutations are restored before final validation.
+
+These checks establish a standard movement component, not King Bob-omb's actor,
+heavy holds, dialogs, mission completion or N64 execution. Imported terrain has
+no room system; room mismatches and dynamic surfaces are unvalidated. Invalid/
+out-of-range float-to-integer conversions and source NULL dereferences remain
+outside coverage (Rust explicitly panics at unsupported NULL floor reads).
+
+The existing owner-ROM Mario/camera/object/Bob-omb suites pass locally. A native
+Intel Graphics (MTL)/Vulkan window on Ubuntu 26.04.1 records 61 ticks; replay
+compares exactly including supported objects and authoritative render-pass
+state. Six renderer integration tests pass with physical-GPU access. These are
+automated startup/drawing/replay checks, not human controller-feel evidence.
+
+
+## Shared boss grab/release components (session 25, 2026-10-10)
+
+oracle/tests/grab.rs compares the newly completed interaction/grabbed action
+and shared held-object helpers with the original C. Both sides allocate the
+same authored actor/anchor/carried-object fixture, then evolve independently.
+Every existing Mario/object snapshot word and ordered event compares after
+every operation, with exact return values. The fixtures supply initial states
+and input/animation advancement; they do not run a behavior or full game frame.
+
+| Coverage | Exact component calls |
+| --- | ---: |
+| Inclusive facing limits, action/invulnerability combinations, dropping an already held object, grab acknowledgment and held animation | 400 |
+| Animated anchor, parent deactivation, throw/escape states, yaw truncation and forward/backward/-0 release | 360 |
+| Strict 30/40 stick hysteresis across attempts, A presses and simultaneous stick/A | 641 |
+| Moving/stationary/NPC object release, floor correction and out-of-bounds fallback | 108 |
+| Authored heavy pickup, idle, walking and 13th-tick release, independently chained | 671 |
+| Same heavy sequences with original ROM Mario animations and trig, on authored terrain | 680 |
+| Total | 2,860 |
+
+The native escape function's local static is verified through its persistent
+return sequence; it has no snapshot accessor. Mutations making the grab guard
+an AND, resetting escape at exactly 30, and releasing a heavy object on tick 12
+are detected. Authored and owner-ROM optimized tests pass. King Bob-omb's
+behavior, rendered held-Mario callback, dialog/cutscene/time-stop transitions,
+star/completion, Bowser release and ridden-object dismount are outside coverage.
+These comparisons are against native C, not original N64 execution.

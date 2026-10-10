@@ -293,7 +293,7 @@ fn compare_with_camera(
     write_traces(out, &native, &candidate)?;
     let source = if recorded { "recorded" } else { "scripted" };
     println!(
-        "{frames} {source} BOB frames with the original camera compare exactly (Mario and every camera word)."
+        "{frames} {source} BOB frames compare exactly (Mario, the original camera, supported objects and render-pass state)."
     );
     match stop {
         Some(RustStop::Panic(message)) => println!(
@@ -310,7 +310,7 @@ fn compare_with_camera(
         out.display()
     );
     println!(
-        "Mario's object and the area camera only: no other objects, cutscenes, warps or particles. Comparisons are against the natively compiled decomp, not N64 execution."
+        "The compared object subset includes BOB's coins and Bob-ombs. Cutscenes and warp execution remain unsupported. Comparisons are against the natively compiled decomp, not N64 execution."
     );
     Ok(())
 }

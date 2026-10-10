@@ -1015,3 +1015,65 @@ Mario's object rows with the HOLP the pass just wrote as translation, which is
 exactly the camera-space matrix with the camera removed, then the held
 object's own scale. The viewer's `screenshot --inputs RUN.inputs.json`
 replays a recorded run before capturing, for inspecting any moment of play.
+
+## Standard object movement — 2026-10-10 (session 24)
+
+King Bob-omb uses object_helpers.c's standard movement and a return-home arc,
+which are separate from ordinary Bob-ombs' object_step. Port and verify these
+prerequisites before enabling the boss; do not approximate his movement with
+object_step. The implementation lives in object/standard_motion.rs and keeps
+the original floor/wall query order, signed-halfword position casts, last-wall
+selection, integer degree conversion, quadratic drag, negative speed sign,
+strict landing/edge tests, water flags and deactivation partial updates.
+
+The object field union gains explicit big-endian halfword access. oFloor uses
+zero for NULL and surface index + 1 for a typed stable surface handle in its
+original raw slot; the floor type and room share their original high/low halves.
+No host address enters Rust simulation. The native component adapter maps real
+C surface pointers to that handle and canonicalizes the host halfword layout.
+This changes transport, not native movement. Frame-level pointer snapshot
+support must be extended when a behavior first uses oFloor in linked frames.
+
+Moving throw/drop release accepts the current object and Mario explicitly;
+it keeps the original out-of-bounds failsafe and runs vertical motion only
+when forward speed is nonzero. Stationary releases preserve the previous
+behavior. King Bob-omb's actual thrown/placed dispatcher is still pending.
+
+The oracle compiles 21 verbatim pinned CC0 functions and replaces the former
+cur_obj_move_y aborting boundary. Five tests compare every raw word/return/query
+flag on authored and ROM terrain, including independently evolving sustained
+trajectories and three rejected mutations. The runtime remains Rust and no new
+actor is enabled. Roomed/dynamic worlds and original-execution traces remain
+outside the checked compatibility target.
+
+
+## Shared boss grabbing — 2026-10-10 (session 25)
+
+Implement the original grab/release chain before adding King Bob-omb's actor.
+The shared grabbable handler retains the source's inclusive facing interval
+and its OR with !sInvulnerable. It drops a held object and records the original
+sound/camera requests before changing Mario to ACT_GRABBED. Mario's release
+reads usedObj's yaw, copies his animated graphics position and chooses the
+forward/backward thrown action from the sign of forwardVel (including -0).
+
+common_anchor_mario_behavior belongs to chuckya.inc.c and is also used by King
+Bob-omb. It positions Mario's graphics before copying the parent's yaw into
+the anchor, preserves addition vs OR in its two release paths, and deletes the
+anchor only when its parent has exactly ACTIVE_FLAG_DEACTIVATED. Boss render
+traversal must still position this anchor through the real held-Mario callback.
+
+The escape helper's function-static grabReleaseState is explicit StepWorld
+state: zero at fresh boot, persistent between attempts, reset by a stick
+magnitude strictly below 30. A magnitude strictly above 40 or a new A press
+returns one escape action. The native fixture retains the original local
+static; its return sequence verifies hysteresis without rewriting the source.
+It has no snapshot accessor for that variable. Existing world snapshots cover
+all their previous fields and the objects/actions/events changed by this work.
+
+The release dispatcher handles the supported non-Bowser actors. Bowser's
+special parent-relative throw offset and ridden-object dismount remain future
+work. Heavy throw uses HELD_DROPPED at timer 13; the actor's release dispatcher
+supplies its own forward/vertical speeds afterward. The new oracle fixture
+allocates ordinary objects as test carriers, injects initial state once, and
+calls unmodified native functions. It never executes a King Bob-omb script,
+skips dialogs or substitutes a completed mission.

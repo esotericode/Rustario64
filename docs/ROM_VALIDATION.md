@@ -319,3 +319,45 @@ common0 segment, and 82 placements are recorded as unported
 9,600 BOB frames of objects, 30,511 BOB frames of Bob-omb encounters (with
 holding, through the ROM's `mario_geo` as MODEL_MARIO's render graph) and the
 77,112 BOB camera frames match the native decomp word for word.
+
+## Local-machine continuation — 2026-10-10 (session 24)
+
+Continued latest remote development 05eefdc (ahead of main) locally. The owner's
+existing 8 MiB M.z64 validates as the same US v1.0 fingerprint. The complete
+release workspace/all-target suite with all ROM tests enabled passes. New
+standard-motion tests add 117,600 BOB collision/trig component calls, all exact
+against native C; actor/mission support is unchanged.
+
+The native 120-frame viewer smoke and private 1280×960 Mario/Bob-omb image run
+on Intel Graphics (MTL)/Vulkan under Ubuntu 26.04.1. The window's 61 tick inputs
+replay exactly against the pinned native decomp, including camera, supported
+objects and Mario's render-pass state. All six offscreen renderer integration
+tests also pass with physical-GPU access. The sandboxed renderer suite passes
+on llvmpipe separately. Screenshots are visually inspected; this does not
+establish N64 pixel or universal simulation fidelity.
+
+Rust 1.99.0 is installed locally. Missing pkg-config/libudev development packages
+and X11 helper libraries were extracted under ignored private/sysroot and used
+through a private local wrapper because sudo authentication was unavailable.
+System packages were not changed. ROM, packages, images and recordings remain
+outside tracked source and are excluded from source publication.
+
+
+## Shared boss grab/release checks — 2026-10-10 (session 25)
+
+The private US ROM supplies Mario's original heavy-object animations and trig
+for 680 exact action-component calls on authored terrain. Another 2,180
+ROM-free calls cover grabs, anchor/release, escape controls and object release.
+Native and Rust states evolve independently; these fixtures do not run the
+King Bob-omb behavior. No placement or mission support is newly enabled.
+
+The rebuilt viewer again uses Intel Graphics (MTL)/Vulkan: a private 1280×960
+Mario/Bob-omb image is inspected, and a 120-draw-frame native run records 60
+simulation ticks that replay exactly against the pinned native C. Six
+renderer integration checks also pass with physical GPU access. The ROM and
+all generated content remain private and are excluded from source publication.
+
+All 196 release workspace/all-target tests pass with the private ROM tests
+enabled. Five authored grab tests pass in debug (owner test ignored normally).
+Formatting, warnings-denied Clippy, pinned excerpt regeneration/check and the
+runtime release build pass.

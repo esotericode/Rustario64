@@ -191,3 +191,24 @@ across a focus change; release/center before resuming. Try two controllers and
 Keyboard only. Choose another ROM, test
 an unreadable/unsupported file, then select the valid ROM again. Report controller
 model, USB/Bluetooth, mapping and OS alongside the normal build/GPU details.
+
+## Session 24 local hardware evidence
+
+Ubuntu 26.04.1, Intel Graphics (MTL), Vulkan: the native window starts from the
+owner ROM, runs 120 draw frames/61 simulation ticks and closes cleanly. Its
+recorded inputs replay exactly in the native oracle. Six renderer integration
+checks pass with GPU access, and a 1280×960 screenshot showing Mario, a Bob-omb
+and fuse smoke is inspected. Automated keyboard injection could not retain
+window focus, so interactive keyboard/controller and Windows checks remain open.
+King Bob-omb is still disabled; this session adds his standard movement
+prerequisites, not an encounter that a human can play yet.
+
+
+## Session 25 hardware regression
+
+The rebuilt runtime is checked on the laptop's Intel Graphics (MTL), Vulkan.
+A native window closes cleanly after 120 draw frames/60 simulation ticks; all
+60 recorded ticks replay exactly in native C. Six offscreen renderer checks
+pass with physical device access. A private 1280×960 Mario/Bob-omb screenshot
+is visually inspected. The new boss grabbing helpers have component coverage;
+King Bob-omb's placement/encounter and human input-feel checks remain pending.

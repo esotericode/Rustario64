@@ -14,6 +14,8 @@ fn main() {
         "c/behavior_data_unit.c",
         "c/object_render_unit.c",
         "c/object_step_unit.c",
+        "c/standard_motion_unit.c",
+        "c/grab_unit.c",
         "c/obj_behaviors_unit.c",
         "c/object_anims_unit.c",
         "c/mario_render_unit.c",
@@ -89,6 +91,8 @@ fn main() {
         "c/constants.inc.c",
         "c/lakitu_state.inc.c",
         "c/object_step_boundary.h",
+        "c/standard_motion_boundary.h",
+        "c/grab_boundary.h",
         "c/obj_behaviors_boundary.h",
         "c/rendering_traversal_boundary.h",
     ] {

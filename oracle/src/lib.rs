@@ -8,10 +8,12 @@
 //! queries, those traces become the authority and this harness can be retired.
 pub mod camera;
 pub mod camera_trace;
+pub mod grab;
 pub mod input_trace;
 pub mod object_motion;
 pub mod object_trace;
 pub mod shadow;
+pub mod standard_motion;
 pub mod tick_trace;
 
 use rustario64::{content::animation::MarioAnimations, simulation::TickInput};

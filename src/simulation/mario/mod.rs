@@ -288,6 +288,9 @@ pub struct StepWorld<'a> {
     pub water_pseudo_floor_origin_offset: f32,
     /// gControllers[0], sampled once per tick before Mario updates.
     pub controller: Controller,
+    /// object_helpers.c's function-static grabReleaseState. Persist across
+    /// grab attempts; a fresh boot starts at zero, a neutral stick resets it.
+    pub grab_release_state: i32,
     /// m->area->camera.
     pub camera: CameraState,
     /// gCameraMovementFlags.
@@ -349,6 +352,7 @@ impl<'a> StepWorld<'a> {
             area_index: 1,
             water_pseudo_floor_origin_offset: 0.0,
             controller: Controller::default(),
+            grab_release_state: 0,
             camera: CameraState::default(),
             camera_movement_flags: 0,
             special_triple_jump: 0,

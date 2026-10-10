@@ -27,6 +27,7 @@ pub mod render;
 pub mod script;
 pub mod sound;
 pub mod spawn;
+pub mod standard_motion;
 
 use crate::simulation::mario::{Mat4, constants::*};
 
@@ -186,6 +187,16 @@ impl Default for ObjectFields {
 }
 
 impl ObjectFields {
+    /// N64 big-endian halfword: 0 is the high half, 1 is the low half.
+    pub fn s16(&self, index: usize, half: usize) -> i16 {
+        assert!(half < 2);
+        (self.0[index] >> (16 * (1 - half))) as i16
+    }
+    pub fn set_s16(&mut self, index: usize, half: usize, value: i16) {
+        assert!(half < 2);
+        let shift = 16 * (1 - half);
+        self.0[index] = (self.0[index] & !(0xFFFF << shift)) | (u32::from(value as u16) << shift);
+    }
     pub fn s32(&self, index: usize) -> i32 {
         self.0[index] as i32
     }
@@ -286,6 +297,20 @@ impl Default for Object {
 }
 
 impl Object {
+    /// oFloor: a stable surface index plus one in its original raw word;
+    /// zero is NULL. It never contains a host or ROM pointer.
+    pub fn floor(&self) -> Option<crate::simulation::collision::SurfaceIndex> {
+        self.raw
+            .u32(O_FLOOR)
+            .checked_sub(1)
+            .map(|index| u16::try_from(index).expect("invalid object floor handle"))
+    }
+
+    pub fn set_floor(&mut self, floor: Option<crate::simulation::collision::SurfaceIndex>) {
+        self.raw
+            .set_u32(O_FLOOR, floor.map_or(0, |index| u32::from(index) + 1));
+    }
+
     /// geo_reset_object_node, as clear_objects leaves every pool slot:
     /// init_graph_node_object with no model at the origin, then inactive.
     pub fn reset_node(&mut self) {

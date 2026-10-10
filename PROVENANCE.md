@@ -338,3 +338,46 @@ code: `mario_render_unit.c`, `rendering_traversal_boundary.h`, the
 `object_render_unit.c` and the new tests. No vendored file changed (73). No
 ROM data, decoded models or rendered images are committed; local screenshots
 of holding stay in the ignored `private/` directory.
+
+### Standard object movement — session 24
+
+src/simulation/object/standard_motion.rs translates the same pinned CC0
+src/game/object_helpers.c: clear_move_flag, cur_obj_update_floor_height_and_get_floor,
+apply_drag_to_value, cur_obj_apply_drag_xz, cur_obj_move_xz, the underwater and
+ground/air flag updates, cur_obj_move_y_and_get_water_level, cur_obj_move_y,
+abs_angle_diff, cur_obj_compute_vel_xz, cur_obj_detect_steep_floor,
+cur_obj_resolve_wall_collisions, cur_obj_update_floor, the floor/wall update
+functions, cur_obj_move_standard, cur_obj_within_12k_bounds and the two
+velocity/gravity movement functions. object/held.rs completes the existing
+cur_obj_move_after_thrown_or_dropped translation with its real vertical step.
+Existing LICENSES/sm64-CC0.txt applies; no reference revision changes.
+
+oracle/c/excerpts/standard_motion.c contains those 21 functions verbatim,
+generated/checked by extract_excerpts.py; per-item hashes are recorded in
+oracle/README.md. Standard-motion C boundary/transport, Rust transport,
+independently authored terrain/input tests and object halfword/handle accessors
+are MIT. The boundary canonicalizes native surface pointers and halfword layout
+without substituting movement/query logic. The runtime never links the oracle.
+No ROM bytes, models, textures, expanded placements, new library dependencies
+or SDK headers are added. Local Ubuntu packages and screenshots remain ignored
+private test-environment files and are not included in runtime bundles.
+
+
+### Shared boss grabbing — session 25
+
+The same pinned CC0 interaction.c supplies object_facing_mario and
+check_object_grab_mario in mario/interaction.rs; mario_actions_automatic.c
+supplies the completed act_grabbed branch. object/held.rs translates
+object_helpers.c's cur_obj_check_grabbed_mario,
+player_performed_grab_escape_action and cur_obj_get_thrown_or_placed for the
+supported non-Bowser subset, and behaviors/chuckya.inc.c's
+common_anchor_mario_behavior, also used by King Bob-omb. Existing CC0 notice
+applies. No reference revision or dependency changes.
+
+The oracle adds verbatim grab_helpers.c and mario_anchor.c excerpts and extends
+standard_motion.c with the original release dispatcher/parent-relative helper
+and object_helpers.c with obj_set_gfx_pos_at_obj_pos. Generated per-item hashes
+are in oracle/README.md. Existing complete Mario sources and the interaction
+excerpt execute the original action/interaction without modification. The
+fixture C/Rust boundary and independently authored scenario tests are MIT.
+No runtime C integration, ROM bytes, models or screenshots are committed.
