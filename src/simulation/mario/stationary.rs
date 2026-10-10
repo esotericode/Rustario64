@@ -1,15 +1,15 @@
 //! Stationary actions, translated from pinned CC0
-//! src/game/mario_actions_stationary.c. Actions that hold an object (the
-//! ACT_HOLD_* family) need objects and panic until objects are simulated.
+//! src/game/mario_actions_stationary.c, including the ACT_HOLD_* family.
 use super::{
     Event, MarioState, StepWorld,
     animation::{is_anim_at_end, is_anim_past_end, set_mario_animation},
     constants::*,
     core::{
-        check_common_action_exits, drop_and_set_mario_action, find_floor_height_relative_polar,
-        hurt_and_set_mario_action, play_mario_heavy_landing_sound, play_mario_landing_sound,
-        play_sound_if_no_flag, set_jump_from_landing, set_jumping_action, set_mario_action,
-        set_water_plunge_action, update_mario_sound_and_camera,
+        check_common_action_exits, check_common_hold_action_exits, drop_and_set_mario_action,
+        find_floor_height_relative_polar, hurt_and_set_mario_action,
+        play_mario_heavy_landing_sound, play_mario_landing_sound, play_sound_if_no_flag,
+        set_jump_from_landing, set_jumping_action, set_mario_action, set_water_plunge_action,
+        update_mario_sound_and_camera,
     },
     interaction::{mario_drop_held_object, mario_throw_held_object},
     step::{
@@ -17,7 +17,111 @@ use super::{
         stationary_ground_step,
     },
 };
-use crate::simulation::collision::SURFACE_FLAG_DYNAMIC;
+use crate::simulation::{collision::SURFACE_FLAG_DYNAMIC, object::object_mut};
+
+/// m->marioObj->oInteractStatus & INT_STATUS_MARIO_DROP_OBJECT.
+pub(crate) fn told_to_drop(m: &MarioState) -> bool {
+    m.obj.raw.u32(O_INTERACT_STATUS) & INT_STATUS_MARIO_DROP_OBJECT != 0
+}
+
+/// check_common_hold_idle_cancels. The held object is never
+/// bhvJumpingBox here (the crazy box is not ported).
+fn check_common_hold_idle_cancels(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if floor_normal_y(m, w) < 0.29237169 {
+        return mario_push_off_steep_floor(m, w, ACT_HOLD_FREEFALL, 0);
+    }
+    let held = m
+        .held_obj
+        .expect("Mario holds no object (the original dereferences NULL)");
+    let raw = &mut object_mut(&mut w.objects, &mut m.obj, held).raw;
+    let subtype = raw.u32(O_INTERACTION_SUBTYPE);
+    if subtype & INT_SUBTYPE_DROP_IMMEDIATELY != 0 {
+        raw.set_u32(
+            O_INTERACTION_SUBTYPE,
+            subtype & !INT_SUBTYPE_DROP_IMMEDIATELY,
+        );
+        return set_mario_action(m, w, ACT_PLACING_DOWN, 0);
+    }
+    if m.input & INPUT_STOMPED != 0 {
+        return drop_and_set_mario_action(m, w, ACT_SHOCKWAVE_BOUNCE, 0);
+    }
+    if m.input & INPUT_A_PRESSED != 0 {
+        return set_jumping_action(m, w, ACT_HOLD_JUMP, 0);
+    }
+    if m.input & INPUT_OFF_FLOOR != 0 {
+        return set_mario_action(m, w, ACT_HOLD_FREEFALL, 0);
+    }
+    if m.input & INPUT_ABOVE_SLIDE != 0 {
+        return set_mario_action(m, w, ACT_HOLD_BEGIN_SLIDING, 0);
+    }
+    if m.input & INPUT_NONZERO_ANALOG != 0 {
+        m.face_angle[1] = m.intended_yaw;
+        return set_mario_action(m, w, ACT_HOLD_WALKING, 0);
+    }
+    if m.input & INPUT_B_PRESSED != 0 {
+        return set_mario_action(m, w, ACT_THROWING, 0);
+    }
+    if m.input & INPUT_Z_DOWN != 0 {
+        return drop_and_set_mario_action(m, w, ACT_START_CROUCHING, 0);
+    }
+    0
+}
+
+/// act_hold_idle (the crazy-box bounce is unreachable, as above).
+fn act_hold_idle(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if told_to_drop(m) {
+        return drop_and_set_mario_action(m, w, ACT_IDLE, 0);
+    }
+    if m.quicksand_depth > 30.0 {
+        return drop_and_set_mario_action(m, w, ACT_IN_QUICKSAND, 0);
+    }
+    if check_common_hold_idle_cancels(m, w) != 0 {
+        return 1;
+    }
+    stationary_ground_step(m, w);
+    set_mario_animation(m, w, MARIO_ANIM_IDLE_WITH_LIGHT_OBJ);
+    0
+}
+
+fn act_hold_heavy_idle(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if m.input & INPUT_STOMPED != 0 {
+        return drop_and_set_mario_action(m, w, ACT_SHOCKWAVE_BOUNCE, 0);
+    }
+    if m.input & INPUT_OFF_FLOOR != 0 {
+        return drop_and_set_mario_action(m, w, ACT_FREEFALL, 0);
+    }
+    if m.input & INPUT_ABOVE_SLIDE != 0 {
+        return drop_and_set_mario_action(m, w, ACT_BEGIN_SLIDING, 0);
+    }
+    if m.input & INPUT_NONZERO_ANALOG != 0 {
+        return set_mario_action(m, w, ACT_HOLD_HEAVY_WALKING, 0);
+    }
+    if m.input & INPUT_B_PRESSED != 0 {
+        return set_mario_action(m, w, ACT_HEAVY_THROW, 0);
+    }
+    stationary_ground_step(m, w);
+    set_mario_animation(m, w, MARIO_ANIM_IDLE_HEAVY_OBJ);
+    0
+}
+
+fn act_hold_panting_unused(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if told_to_drop(m) {
+        return drop_and_set_mario_action(m, w, ACT_PANTING, 0);
+    }
+    if m.input & INPUT_STOMPED != 0 {
+        return drop_and_set_mario_action(m, w, ACT_SHOCKWAVE_BOUNCE, 0);
+    }
+    if m.health >= 0x500 {
+        return set_mario_action(m, w, ACT_HOLD_IDLE, 0);
+    }
+    if check_common_hold_idle_cancels(m, w) != 0 {
+        return 1;
+    }
+    set_mario_animation(m, w, MARIO_ANIM_WALK_PANTING);
+    stationary_ground_step(m, w);
+    m.body.eye_state = MARIO_EYES_HALF_CLOSED;
+    0
+}
 
 fn floor_normal_y(m: &MarioState, w: &StepWorld<'_>) -> f32 {
     w.surface(
@@ -29,7 +133,7 @@ fn floor_normal_y(m: &MarioState, w: &StepWorld<'_>) -> f32 {
 
 /// check_common_idle_cancels.
 pub fn check_common_idle_cancels(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
-    mario_drop_held_object(m);
+    mario_drop_held_object(m, w);
     if floor_normal_y(m, w) < 0.29237169 {
         return mario_push_off_steep_floor(m, w, ACT_FREEFALL, 0);
     }
@@ -454,6 +558,29 @@ fn act_butt_slide_stop(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     0
 }
 
+fn act_hold_butt_slide_stop(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
+    if told_to_drop(m) {
+        return drop_and_set_mario_action(m, w, ACT_IDLE, 0);
+    }
+    if m.input & INPUT_STOMPED != 0 {
+        return drop_and_set_mario_action(m, w, ACT_SHOCKWAVE_BOUNCE, 0);
+    }
+    if m.input & (INPUT_NONZERO_ANALOG | INPUT_A_PRESSED | INPUT_OFF_FLOOR | INPUT_ABOVE_SLIDE) != 0
+    {
+        return check_common_hold_action_exits(m, w);
+    }
+    if m.input & INPUT_B_PRESSED != 0 {
+        return set_mario_action(m, w, ACT_THROWING, 0);
+    }
+    stopping_step(
+        m,
+        w,
+        MARIO_ANIM_STAND_UP_FROM_SLIDING_WITH_LIGHT_OBJ,
+        ACT_HOLD_IDLE,
+    );
+    0
+}
+
 fn act_slide_kick_slide_stop(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     if m.input & INPUT_STOMPED != 0 {
         return drop_and_set_mario_action(m, w, ACT_SHOCKWAVE_BOUNCE, 0);
@@ -599,6 +726,25 @@ fn check_common_landing_cancels(m: &mut MarioState, w: &mut StepWorld<'_>, actio
     0
 }
 
+/// act_hold_jump_land_stop and act_hold_freefall_land_stop.
+fn hold_land_stop(m: &mut MarioState, w: &mut StepWorld<'_>, anim: i32) -> i32 {
+    if told_to_drop(m) {
+        return drop_and_set_mario_action(m, w, ACT_IDLE, 0);
+    }
+    if m.input & INPUT_STOMPED != 0 {
+        return drop_and_set_mario_action(m, w, ACT_SHOCKWAVE_BOUNCE, 0);
+    }
+    if m.input & (INPUT_NONZERO_ANALOG | INPUT_A_PRESSED | INPUT_OFF_FLOOR | INPUT_ABOVE_SLIDE) != 0
+    {
+        return check_common_hold_action_exits(m, w);
+    }
+    if m.input & INPUT_B_PRESSED != 0 {
+        return set_mario_action(m, w, ACT_THROWING, 0);
+    }
+    landing_step(m, w, anim, ACT_HOLD_IDLE);
+    0
+}
+
 fn land_stop(m: &mut MarioState, w: &mut StepWorld<'_>, jump: u32, anim: i32) -> i32 {
     if check_common_landing_cancels(m, w, jump) != 0 {
         return 1;
@@ -651,7 +797,7 @@ fn act_air_throw_land(m: &mut MarioState, w: &mut StepWorld<'_>) -> i32 {
     }
     m.action_timer = m.action_timer.wrapping_add(1);
     if m.action_timer == 4 {
-        mario_throw_held_object(m);
+        mario_throw_held_object(m, w);
     }
     landing_step(m, w, MARIO_ANIM_THROW_LIGHT_OBJECT, ACT_IDLE);
     0
@@ -781,17 +927,12 @@ pub fn mario_execute_stationary_action(m: &mut MarioState, w: &mut StepWorld<'_>
         ACT_GROUND_POUND_LAND => act_ground_pound_land(m, w),
         ACT_BRAKING_STOP => act_braking_stop(m, w),
         ACT_BUTT_SLIDE_STOP => act_butt_slide_stop(m, w),
-        ACT_HOLD_PANTING_UNUSED
-        | ACT_HOLD_IDLE
-        | ACT_HOLD_HEAVY_IDLE
-        | ACT_HOLD_JUMP_LAND_STOP
-        | ACT_HOLD_FREEFALL_LAND_STOP
-        | ACT_HOLD_BUTT_SLIDE_STOP => {
-            panic!(
-                "stationary action {:#X} holds an object; objects are not simulated yet",
-                m.action
-            )
-        }
+        ACT_HOLD_PANTING_UNUSED => act_hold_panting_unused(m, w),
+        ACT_HOLD_IDLE => act_hold_idle(m, w),
+        ACT_HOLD_HEAVY_IDLE => act_hold_heavy_idle(m, w),
+        ACT_HOLD_JUMP_LAND_STOP => hold_land_stop(m, w, MARIO_ANIM_JUMP_LAND_WITH_LIGHT_OBJ),
+        ACT_HOLD_FREEFALL_LAND_STOP => hold_land_stop(m, w, MARIO_ANIM_FALL_LAND_WITH_LIGHT_OBJ),
+        ACT_HOLD_BUTT_SLIDE_STOP => act_hold_butt_slide_stop(m, w),
         action => panic!("stationary action {action:#X} is not in the original table"),
     };
     if cancel == 0 && m.input & INPUT_IN_WATER != 0 {

@@ -95,6 +95,8 @@ fn object(case: usize, generation: u64, pos: [f32; 3]) -> VisibleObject {
         angle: [0; 3],
         scale: [1.0; 3],
         billboard: true,
+        throw_matrix: None,
+        animation: None,
         cases: vec![(0, case)],
     }
 }

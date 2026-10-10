@@ -3,14 +3,22 @@
 //! addresses in the Rust side's behavior segment, the loaded models' render
 //! traversals, and the macro entries and spawn infos whose scripts the port
 //! runs), and the Rust side of the object words c/tick.c's snapshot names.
-use crate::tick_trace::Words;
+use crate::{OracleGeoNode, tick_trace::Words};
+use rustario64::import::geo::GeoNodeKind;
 use rustario64::simulation::{
-    mario::{MarioState, StepWorld, tick::LevelObjects},
-    object::{Object, ObjectId, ObjectList, RespawnInfo, render::RenderNodeKind, script::Behavior},
+    mario::{
+        MarioState, StepWorld,
+        render::{MarioCallback, MarioModel},
+        tick::LevelObjects,
+    },
+    object::{
+        AnimRef, Object, ObjectId, ObjectList, RespawnInfo, ThrowMatrix, render::RenderNodeKind,
+        script::Behavior,
+    },
 };
 
 /// The verbatim scripts c/behavior_data_unit.c compiles, in its order.
-pub const VERBATIM_SCRIPTS: [Behavior; 7] = [
+pub const VERBATIM_SCRIPTS: [Behavior; 17] = [
     Behavior::CoinFormationSpawn,
     Behavior::CoinFormation,
     Behavior::YellowCoin,
@@ -18,7 +26,31 @@ pub const VERBATIM_SCRIPTS: [Behavior; 7] = [
     Behavior::GoldenCoinSparkles,
     Behavior::Mario,
     Behavior::SpinAirborneWarp,
+    Behavior::SoundSpawner,
+    Behavior::MovingYellowCoin,
+    Behavior::Bobomb,
+    Behavior::BobombFuseSmoke,
+    Behavior::CarrySomething3,
+    Behavior::CarrySomething4,
+    Behavior::CarrySomething5,
+    Behavior::Explosion,
+    Behavior::BobombBullyDeathSmoke,
+    Behavior::Respawner,
 ];
+
+/// One animation of a host table (c/object_anims_unit.c's OracleAnimation).
+#[derive(Debug, Clone, Default)]
+pub struct NativeAnimation {
+    pub segmented: u32,
+    pub flags: i16,
+    pub y_trans_divisor: i16,
+    pub start_frame: i16,
+    pub loop_start: i16,
+    pub loop_end: i16,
+    pub bone_count: i16,
+    pub index: Vec<u16>,
+    pub values: Vec<i16>,
+}
 
 /// One model's flattened render traversal.
 #[derive(Debug, Clone, Default)]
@@ -44,6 +76,162 @@ pub struct NativeObjects {
     pub preset_models: Vec<i16>,
     pub preset_params: Vec<i16>,
     pub spawn_infos: Vec<crate::OracleSpawnInfo>,
+    /// bhvBobomb's LOAD_ANIMATIONS table (its segmented address in the
+    /// Rust side's script) and its animations, for the host copy of
+    /// bobomb_seg8_anims_0802396C.
+    pub bobomb_table: u32,
+    pub bobomb_animations: Vec<NativeAnimation>,
+    /// MODEL_MARIO's graph for c/mario_render_unit.c (empty without one),
+    /// and its root's index.
+    pub mario_model: Vec<OracleGeoNode>,
+    pub mario_root: i32,
+}
+
+/// MODEL_MARIO's nodes in registration order with their parents, as
+/// c/mario_render_unit.c builds them.
+pub fn mario_geo_nodes(model: &MarioModel) -> (Vec<OracleGeoNode>, i32) {
+    let layout = &model.layout;
+    let mut parent = vec![-1i32; layout.nodes.len()];
+    for (i, node) in layout.nodes.iter().enumerate() {
+        for &child in &node.children {
+            parent[child] = i as i32;
+        }
+    }
+    let role = |i: usize| match model.role(i) {
+        None => -1,
+        Some(role) => match role {
+            MarioCallback::MirrorBackfaceCulling => 0,
+            MarioCallback::MirrorSetAlpha => 1,
+            MarioCallback::SwitchStandRun => 2,
+            MarioCallback::SwitchCapEffect => 3,
+            MarioCallback::SwitchCapOnOff => 4,
+            MarioCallback::SwitchEyes => 5,
+            MarioCallback::SwitchHand => 6,
+            MarioCallback::HeadRotation => 7,
+            MarioCallback::TiltTorso => 8,
+            MarioCallback::RotateWingCapWings => 9,
+            MarioCallback::HandFootScaler => 10,
+            MarioCallback::MovePartFromParent => 11,
+            MarioCallback::HandGrabPos => 12,
+        },
+    };
+    let nodes = layout
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(i, node)| {
+            let mut out = OracleGeoNode {
+                parent: parent[i],
+                layer: i32::from(node.kind.layer()),
+                callback: role(i),
+                flags: i32::from(node.flags as i16),
+                ..Default::default()
+            };
+            let dl = |d: Option<u32>| i32::from(d.is_some());
+            match node.kind {
+                GeoNodeKind::Start => out.kind = 0,
+                GeoNodeKind::LevelOfDetail {
+                    min_distance,
+                    max_distance,
+                } => {
+                    out.kind = 1;
+                    out.param = i32::from(min_distance);
+                    out.param2 = i32::from(max_distance);
+                }
+                GeoNodeKind::SwitchCase { num_cases, .. } => {
+                    out.kind = 2;
+                    out.param = i32::from(num_cases);
+                }
+                GeoNodeKind::TranslationRotation {
+                    translation,
+                    rotation,
+                    display_list,
+                    ..
+                } => {
+                    out.kind = 3;
+                    out.a = translation;
+                    out.b = rotation;
+                    out.has_display_list = dl(display_list);
+                }
+                GeoNodeKind::Translation {
+                    translation,
+                    display_list,
+                    ..
+                } => {
+                    out.kind = 4;
+                    out.a = translation;
+                    out.has_display_list = dl(display_list);
+                }
+                GeoNodeKind::Rotation {
+                    rotation,
+                    display_list,
+                    ..
+                } => {
+                    out.kind = 5;
+                    out.b = rotation;
+                    out.has_display_list = dl(display_list);
+                }
+                GeoNodeKind::Scale {
+                    scale,
+                    display_list,
+                    ..
+                } => {
+                    out.kind = 6;
+                    out.scale = scale;
+                    out.has_display_list = dl(display_list);
+                }
+                GeoNodeKind::AnimatedPart {
+                    translation,
+                    display_list,
+                    ..
+                } => {
+                    out.kind = 7;
+                    out.a = translation;
+                    out.has_display_list = dl(display_list);
+                }
+                GeoNodeKind::Billboard {
+                    translation,
+                    display_list,
+                    ..
+                } => {
+                    out.kind = 8;
+                    out.a = translation;
+                    out.has_display_list = dl(display_list);
+                }
+                GeoNodeKind::DisplayList { .. } => {
+                    out.kind = 9;
+                    out.has_display_list = 1;
+                }
+                GeoNodeKind::Shadow {
+                    shadow_type,
+                    solidity,
+                    scale,
+                } => {
+                    out.kind = 10;
+                    out.param = i32::from(shadow_type);
+                    out.param2 = i32::from(solidity);
+                    out.param3 = i32::from(scale);
+                }
+                GeoNodeKind::Generated { param, .. } => {
+                    out.kind = 11;
+                    out.param = i32::from(param);
+                }
+                GeoNodeKind::HeldObject { param, offset, .. } => {
+                    out.kind = 12;
+                    out.param = i32::from(param);
+                    out.a = offset;
+                }
+                GeoNodeKind::CullingRadius { radius } => {
+                    out.kind = 13;
+                    out.param = i32::from(radius);
+                }
+                ref other => panic!("Mario's model holds a {other:?} node"),
+            }
+            out
+        })
+        .collect();
+    let root = layout.root.expect("Mario's model has no root") as i32;
+    (nodes, root)
 }
 
 impl NativeObjects {
@@ -57,8 +245,12 @@ impl NativeObjects {
             preset_behaviors: vec![0; 366],
             preset_models: vec![0; 366],
             preset_params: vec![0; 366],
+            mario_root: -1,
             ..Default::default()
         };
+        if let Some(model) = objects.models.mario_model() {
+            (out.mario_model, out.mario_root) = mario_geo_nodes(model);
+        }
         for model in objects.models.ids() {
             let mut native = NativeModel {
                 model: i32::from(model),
@@ -83,6 +275,30 @@ impl NativeObjects {
                 }
             }
             out.models.push(native);
+        }
+        let bobomb = scripts.address(Behavior::Bobomb);
+        if let Ok(tables) = scripts.animation_tables(bobomb) {
+            let table = *tables
+                .iter()
+                .next()
+                .expect("bhvBobomb loads one animation table");
+            out.bobomb_table = table;
+            if let Some(entries) = objects.animations.tables.get(&table) {
+                for address in entries {
+                    let a = &objects.animations.animations[address];
+                    out.bobomb_animations.push(NativeAnimation {
+                        segmented: *address,
+                        flags: a.flags,
+                        y_trans_divisor: a.y_trans_divisor,
+                        start_frame: a.start_frame,
+                        loop_start: a.loop_start,
+                        loop_end: a.loop_end,
+                        bone_count: a.bone_count,
+                        index: a.index.clone(),
+                        values: a.values.clone(),
+                    });
+                }
+            }
         }
         for (index, entry) in objects.area.macros.iter().enumerate() {
             if scripts.check(entry.behavior).is_err() {
@@ -159,9 +375,13 @@ pub fn put_object(o: &mut Words, prefix: &str, obj: &Object) {
         name("gfx.anim.animYTrans"),
         i32::from(gfx.anim.anim_y_trans),
     );
-    o.i(
+    o.put(
         name("gfx.anim.curAnim"),
-        i32::from(gfx.anim.cur_anim.is_some()),
+        match gfx.anim.cur_anim {
+            None => 0,
+            Some(AnimRef::MarioDmaBuffer) => 1,
+            Some(AnimRef::Object(address)) => address,
+        },
     );
     o.i(name("gfx.anim.animFrame"), i32::from(gfx.anim.anim_frame));
     o.put(name("gfx.anim.animTimer"), u32::from(gfx.anim.anim_timer));
@@ -170,10 +390,16 @@ pub fn put_object(o: &mut Words, prefix: &str, obj: &Object) {
         gfx.anim.anim_frame_accel_assist,
     );
     o.i(name("gfx.anim.animAccel"), gfx.anim.anim_accel);
-    o.i(
-        name("gfx.throwMatrix"),
-        gfx.throw_matrix.map_or(-1, |m| m as i32),
-    );
+    match gfx.throw_matrix {
+        None => o.i(name("gfx.throwMatrix"), -1),
+        Some(ThrowMatrix::FloorAlign(index)) => o.i(name("gfx.throwMatrix"), index as i32),
+        Some(ThrowMatrix::Terrain(matrix)) => {
+            o.i(name("gfx.throwMatrix"), 2);
+            for (i, value) in matrix.as_flattened().iter().enumerate() {
+                o.f(name(&format!("gfx.throwMatrixWords[{i}]")), *value);
+            }
+        }
+    }
     o.put(
         name("collidedObjInteractTypes"),
         obj.collided_obj_interact_types,

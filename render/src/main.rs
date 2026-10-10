@@ -4,6 +4,7 @@
 //! with the decomp. Both are development entry points straight into
 //! Bob-omb Battlefield.
 use rustario64::{
+    APP_TITLE, VERSION,
     content::{
         animation::MarioAnimations,
         visual::{AreaVisual, VisualModel},
@@ -19,12 +20,12 @@ use rustario64::{
     presentation::{
         GraphicsOptions,
         mario::{MarioDrawer, shadow_origin},
-        objects::ObjectDrawer,
+        objects::{LevelModels, ObjectDrawer},
         shadow::{ShadowDrawer, player_shadow},
     },
     simulation::{
-        collision::CollisionWorld, game::GameEntry, math::TrigTables,
-        object::render::visible_objects,
+        collision::CollisionWorld, game::GameEntry, mario::render::held_visible_object,
+        math::TrigTables, object::render::visible_objects,
     },
 };
 use rustario64_render::{
@@ -54,8 +55,8 @@ type AppResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 const HELP: &str = "Rustario64 development viewer (Bob-omb Battlefield, area 1)\n\n\
   rustario64-viewer [launch]   Open the local ROM launcher and presentation settings.\n\
-  rustario64-viewer screenshot /path/to/sm64.z64 --out private/bob.png [--view start|overview|summit|top] [--size 1280x960] [--msaa 4] [--no-cull] [--no-fog] [--collision] [--placements] [--mario-ticks N]\n\
-  rustario64-viewer view /path/to/sm64.z64 [--view start] [--msaa 4] [--no-fog] [--frames N] [--mario] [--no-interpolation] [--record NEW_PRIVATE_DIR]\n\n\
+  rustario64-viewer screenshot /path/to/sm64.z64 --out private/bob.png [--view start|overview|summit|top] [--size 1280x960] [--msaa 4] [--no-cull] [--no-fog] [--collision] [--placements] [--mario-ticks N] [--inputs RUN.inputs.json] [--start X,Y,Z[,YAW]]\n\
+  rustario64-viewer view /path/to/sm64.z64 [--view start] [--msaa 4] [--no-fog] [--frames N] [--mario] [--no-interpolation] [--record NEW_PRIVATE_DIR] [--start X,Y,Z[,YAW]]\n\n\
   View controls: WASD move, Q/E down/up, Shift faster, hold right mouse or arrow keys to look,\n\
   1-4 select presets, C collision overlay, P placement markers, F fog, M Mario mode, Esc pause/settings.\n\
   The camera is a presentation-only inspection camera, not the original camera.\n\n\
@@ -67,6 +68,8 @@ const HELP: &str = "Rustario64 development viewer (Bob-omb Battlefield, area 1)\
   placeholder box if they cannot be imported). Play stops at paths the port does not support\n\
   and at warps (falling off the course); R re-enters.\n\
   --mario-ticks N renders Mario after N frames of holding the stick up, from the original camera.\n\
+  --inputs RUN.inputs.json renders Mario after replaying a recorded run's tick inputs instead.\n\
+  --start X,Y,Z[,YAW] enters the level with Mario at another point (development entry; yaw in degrees).\n\
   --record writes each run's tick inputs to a new directory for exact replay against the decomp:\n\
   cargo run -p rustario64-oracle --example tick_trace -- ROM NEW_DIR --inputs RUN.inputs.json\n\
   Presentation: --size WIDTHxHEIGHT, --fullscreen, --no-vsync; Esc pauses, resumes or opens Quit.\n";
@@ -83,10 +86,13 @@ struct Options {
     frames: Option<u64>,
     mario: bool,
     mario_ticks: Option<u64>,
+    inputs: Option<PathBuf>,
     interpolation: bool,
     record: Option<PathBuf>,
     vsync: bool,
     fullscreen: bool,
+    /// A development start point for Mario: position and yaw in degrees.
+    start: Option<([i16; 3], i16)>,
 }
 
 fn parse(args: &[String]) -> AppResult<Options> {
@@ -102,10 +108,12 @@ fn parse(args: &[String]) -> AppResult<Options> {
         frames: None,
         mario: false,
         mario_ticks: None,
+        inputs: None,
         interpolation: true,
         record: None,
         vsync: true,
         fullscreen: false,
+        start: None,
     };
     let mut i = 0;
     while i < args.len() {
@@ -135,7 +143,19 @@ fn parse(args: &[String]) -> AppResult<Options> {
                     "--msaa" => options.msaa = value(i)?.parse()?,
                     "--frames" => options.frames = Some(value(i)?.parse()?),
                     "--mario-ticks" => options.mario_ticks = Some(value(i)?.parse()?),
+                    "--inputs" => options.inputs = Some(PathBuf::from(value(i)?)),
                     "--record" => options.record = Some(value(i)?.into()),
+                    "--start" => {
+                        let parts: Vec<i16> = value(i)?
+                            .split(',')
+                            .map(str::parse)
+                            .collect::<Result<_, _>>()?;
+                        options.start = match parts[..] {
+                            [x, y, z] => Some(([x, y, z], 0)),
+                            [x, y, z, yaw] => Some(([x, y, z], yaw)),
+                            _ => return Err("--start takes X,Y,Z or X,Y,Z,YAW".into()),
+                        };
+                    }
                     other => return Err(format!("unknown option {other}\n\n{HELP}").into()),
                 }
                 i += 2;
@@ -268,7 +288,8 @@ impl MarioModel {
     }
 }
 
-/// Coin and sparkle models share cached templates across all instances.
+/// Object models share cached templates across all instances (coins,
+/// sparkles, explosions and smoke baked per switch case; Bob-ombs skinned).
 struct ObjectDrawing {
     drawer: ObjectDrawer<'static>,
     view: present::ObjectModelView,
@@ -277,7 +298,15 @@ struct ObjectDrawing {
 impl ObjectDrawing {
     fn new(level: &Level, session: &Session<'_>) -> Self {
         let mut drawing = Self {
-            drawer: ObjectDrawer::new(&level.objects.content, level.trig),
+            drawer: ObjectDrawer::for_level(
+                &level.objects.content,
+                LevelModels {
+                    segments: &level.objects.level_segments,
+                    registrations: &level.objects.level_models,
+                    animations: &level.objects.animations,
+                },
+                level.trig,
+            ),
             view: present::ObjectModelView::default(),
         };
         drawing.tick(session);
@@ -285,7 +314,17 @@ impl ObjectDrawing {
     }
 
     fn tick(&mut self, session: &Session<'_>) {
-        let objects = visible_objects(session.world(), &session.game().camera.graph);
+        let mut objects = visible_objects(
+            session.world(),
+            &session.game().camera.graph,
+            &session.game().rendered_matrices,
+        );
+        // The object in Mario's hand, where the render pass put it.
+        objects.extend(held_visible_object(
+            session.mario(),
+            session.world(),
+            &session.game().rendered_mario,
+        ));
         if let Err(error) = self.drawer.update(objects) {
             eprintln!("warning: object models could not be built: {error}");
             // Avoid retaining stale coins after a failed presentation import.
@@ -424,9 +463,36 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
     if options.record.is_some() || options.mario {
         return Err("--mario and --record are window options; use --mario-ticks N".into());
     }
-    let level = load(rom_path)?;
+    let mut level = load(rom_path)?;
+    start_at(&mut level, options);
     let (info, mut renderer) = rustario64_render::headless(render_options(options))?;
-    let mario = options.mario_ticks.is_some();
+    // A replayed run, or N ticks holding the stick up.
+    let pads: Option<Vec<Pad>> = match (&options.inputs, options.mario_ticks) {
+        (Some(path), _) => {
+            let log = rustario64::trace::InputLog::from_json(&std::fs::read(path)?)?;
+            println!(
+                "Replaying {} ticks recorded from {} by {}",
+                log.inputs.len(),
+                log.entry,
+                log.producer
+            );
+            Some(
+                log.inputs
+                    .iter()
+                    .map(|t| Pad::from_tick(t.buttons, t.stick))
+                    .collect(),
+            )
+        }
+        (None, Some(ticks)) => Some(vec![
+            Pad {
+                up: true,
+                ..Pad::default()
+            };
+            ticks as usize
+        ]),
+        (None, None) => None,
+    };
+    let mario = pads.is_some();
     upload(
         &mut renderer,
         &level,
@@ -437,8 +503,8 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
     let view = options.view.as_deref().unwrap_or("start");
     let graphics = graphics_options(options);
     let mut model_builds = None;
-    let camera = match options.mario_ticks {
-        Some(ticks) => {
+    let camera = match &pads {
+        Some(pads) => {
             let mut session = level.session();
             let follow = |session: &Session<'_>| {
                 let camera = present::reference_view(
@@ -452,12 +518,8 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
             };
             let mut model = MarioModel::new(&level, &session, &follow(&session)?);
             let mut objects = ObjectDrawing::new(&level, &session);
-            let hold_up = Pad {
-                up: true,
-                ..Pad::default()
-            };
-            for _ in 0..ticks {
-                if !session.step(&hold_up) {
+            for pad in pads {
+                if !session.step(pad) {
                     break;
                 }
                 objects.tick(&session);
@@ -531,7 +593,7 @@ fn screenshot(rom_path: &Path, options: &Options) -> AppResult<()> {
         _ => {}
     }
     println!(
-        "Mario mode draws the simulated coins and sparkles. Other objects and the skybox remain missing; the sky is a placeholder clear color."
+        "Mario mode draws coins, sparkles, animated Bob-ombs and their effects, including held Bob-ombs. Unported placements and the skybox remain missing; the sky is a placeholder clear color."
     );
     Ok(())
 }
@@ -662,7 +724,9 @@ fn create_gpu(
     let window = Arc::new(
         event_loop.create_window(
             Window::default_attributes()
-                .with_title("Rustario64 — Bob-omb Battlefield (development viewer)")
+                .with_title(format!(
+                    "{APP_TITLE} — Bob-omb Battlefield (development viewer)"
+                ))
                 .with_inner_size(PhysicalSize::new(size[0], size[1])),
         )?,
     );
@@ -861,7 +925,7 @@ impl App {
                 present::show_coin_counter(ctx, &play.session.world().hud);
             }
             if self.paused {
-                egui::Window::new("Paused")
+                egui::Window::new(format!("Paused · v{VERSION}"))
                     .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                     .resizable(false)
                     .collapsible(false)
@@ -871,6 +935,7 @@ impl App {
                             .max_height((ctx.content_rect().height() - 60.0).max(100.0))
                             .show(ui, |ui| {
                                 ui.heading("Bob-omb Battlefield");
+                                ui.label(format!("Version {VERSION}"));
                                 if let Some(stop) = play.session.stopped() {
                                     ui.label(format!("Play stopped: {stop}"));
                                 }
@@ -914,11 +979,14 @@ impl App {
                 let stop = play.session.stopped().map_or(String::new(), |stop| {
                     format!(" — stopped: {stop}; R re-enters")
                 });
-                format!("Rustario64 — BOB — Mario {}{stop}", describe(&play.session))
+                format!(
+                    "{APP_TITLE} — BOB — Mario {}{stop}",
+                    describe(&play.session)
+                )
             } else {
                 let p = self.camera.position;
                 format!(
-                    "Rustario64 — BOB viewer — {} ticks @30 Hz — camera ({:.0}, {:.0}, {:.0}) — M plays Mario",
+                    "{APP_TITLE} — BOB viewer — {} ticks @30 Hz — camera ({:.0}, {:.0}, {:.0}) — M plays Mario",
                     self.ticks, p[0], p[1], p[2]
                 )
             };
@@ -1236,8 +1304,20 @@ fn finish_app(app: &mut App) -> AppResult<()> {
     Ok(())
 }
 
+/// The development `--start` entry: the level script's entry with Mario
+/// spawned elsewhere in the same area.
+fn start_at(level: &mut Level, options: &Options) {
+    if let Some((pos, yaw)) = options.start {
+        let area = level.entry.mario.spawn.area_index as u8;
+        level.entry.mario.spawn =
+            rustario64::simulation::mario::core::SpawnPoint::from_level_script(1, area, yaw, pos);
+    }
+}
+
 fn view(rom_path: &Path, options: &Options) -> AppResult<()> {
-    let mut app = make_app(load(rom_path)?, options)?;
+    let mut level = load(rom_path)?;
+    start_at(&mut level, options);
+    let mut app = make_app(level, options)?;
     app.controllers = Controllers::new();
     let mut desktop = Desktop {
         gpu: None,
@@ -1282,7 +1362,7 @@ impl Desktop {
         if let Some(mut gpu) = game.gpu.take() {
             gpu.renderer.load_model(&VisualModel::default());
             gpu.window.set_fullscreen(None);
-            gpu.window.set_title("Rustario64 — Select ROM");
+            gpu.window.set_title(&format!("{APP_TITLE} — Select ROM"));
             let _ = gpu.window.request_inner_size(PhysicalSize::new(800, 720));
             gpu.window.request_redraw();
             self.gpu = Some(gpu);
@@ -1405,6 +1485,7 @@ fn launcher_form(
                 .max_height(height)
                 .show(ui, |ui| {
                     ui.heading(egui::RichText::new("Rustario64").size(42.0));
+                    ui.label(format!("Version {VERSION}"));
                     ui.label("Bob-omb Battlefield · development build");
                     ui.add_space(20.0);
                     ui.label("Choose your Super Mario 64 ROM");
@@ -1477,7 +1558,7 @@ impl ApplicationHandler for Desktop {
         if self.gpu.is_none() {
             match create_gpu(event_loop, RenderOptions::default(), [800, 720]) {
                 Ok(gpu) => {
-                    gpu.window.set_title("Rustario64 — Select ROM");
+                    gpu.window.set_title(&format!("{APP_TITLE} — Select ROM"));
                     gpu.window.request_redraw();
                     self.gpu = Some(gpu);
                 }
@@ -1564,6 +1645,10 @@ fn run_desktop(desktop: &mut Desktop) -> AppResult<()> {
 
 fn run(args: &[String]) -> AppResult<()> {
     match args {
+        [cmd] if cmd == "--version" || cmd == "-V" => {
+            println!("{APP_TITLE}");
+            Ok(())
+        }
         [] => launch(None),
         [cmd] if cmd == "launch" => launch(None),
         [cmd, rom] if cmd == "launch" => launch(Some(Path::new(rom))),
@@ -1634,6 +1719,7 @@ mod tests {
                 text.push_str(&frame_text);
             }
             assert!(text.contains("Rustario64"));
+            assert!(text.contains(&format!("Version {VERSION}")));
             assert!(text.contains("Choose your Super Mario 64 ROM"));
             assert!(text.contains("Browse"));
             assert!(text.contains("Keyboard only"));

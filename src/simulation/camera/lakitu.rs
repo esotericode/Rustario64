@@ -273,6 +273,25 @@ impl Rig {
             };
         }
     }
+    /// set_environmental_camera_shake. None of its shakes draws randomness.
+    pub fn environmental_shake(&mut self, shake: i16) {
+        match shake {
+            c::SHAKE_ENV_EXPLOSION => self.set_pitch_shake(0x60, 0x8, 0x4000),
+            c::SHAKE_ENV_BOWSER_THROW_BOUNCE => self.set_pitch_shake(0xC0, 0x8, 0x4000),
+            c::SHAKE_ENV_BOWSER_JUMP => self.set_pitch_shake(0x100, 0x8, 0x3000),
+            c::SHAKE_ENV_UNUSED_6 => self.set_roll_shake(0x80, 0x10, 0x3000),
+            c::SHAKE_ENV_UNUSED_7 => self.set_pitch_shake(0x20, 0x8, i16::MIN),
+            c::SHAKE_ENV_PYRAMID_EXPLODE => self.set_pitch_shake(0x40, 0x8, i16::MIN),
+            c::SHAKE_ENV_JRB_SHIP_DRAIN => {
+                self.set_pitch_shake(0x20, 0x8, i16::MIN);
+                self.set_roll_shake(0x400, 0x10, 0x100);
+            }
+            c::SHAKE_ENV_FALLING_BITS_PLAT => self.set_pitch_shake(0x40, 0x2, i16::MIN),
+            c::SHAKE_ENV_UNUSED_5 => self.set_yaw_shake(-0x200, 0x80, 0x200),
+            _ => {}
+        }
+    }
+
     /// set_camera_shake_from_hit. `action` is sMarioCamState's; the shock
     /// shake draws twice from the shared random sequence.
     pub fn shake_from_hit(&mut self, shake: i16, action: u32, rng: &mut Rng) {

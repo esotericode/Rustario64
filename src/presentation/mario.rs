@@ -6,10 +6,10 @@
 //! rotation and scale callbacks from his body state and applies each animated
 //! part's animation values (geo_process_animated_part).
 //!
-//! Presentation reads the simulation and never writes it, so the callbacks'
-//! own writes into the body state are not made: the torso and head angles are
-//! drawn as zero where the callbacks would reset them, and the punch-scale
-//! countdown runs here, from the tick on which a punch sets it.
+//! Presentation reads the simulation and never writes it. The callbacks'
+//! writes into the body state (the torso and head resets, the punch-scale
+//! countdown) are the simulation's render pass (`simulation::mario::render`),
+//! so a completed tick's body state is the state the pass drew with.
 //!
 //! Display lists are built once per distinct draw list (the switch
 //! configuration and level of detail), skinned on the CPU once per tick, and
@@ -91,7 +91,7 @@ impl MarioPose {
 }
 
 /// mtxf_rotate_zxy_and_translate.
-fn rotate_zxy_and_translate(trig: &TrigTables, t: [f32; 3], r: [i16; 3]) -> Mat4 {
+pub(crate) fn rotate_zxy_and_translate(trig: &TrigTables, t: [f32; 3], r: [i16; 3]) -> Mat4 {
     let [rx, ry, rz] = r.map(i32::from);
     let (sx, cx) = (trig.sins(rx), trig.coss(rx));
     let (sy, cy) = (trig.sins(ry), trig.coss(ry));
@@ -115,7 +115,7 @@ fn rotate_zxy_and_translate(trig: &TrigTables, t: [f32; 3], r: [i16; 3]) -> Mat4
 }
 
 /// mtxf_rotate_xyz_and_translate.
-fn rotate_xyz_and_translate(trig: &TrigTables, t: [f32; 3], r: [i16; 3]) -> Mat4 {
+pub(crate) fn rotate_xyz_and_translate(trig: &TrigTables, t: [f32; 3], r: [i16; 3]) -> Mat4 {
     let [rx, ry, rz] = r.map(i32::from);
     let (sx, cx) = (trig.sins(rx), trig.coss(rx));
     let (sy, cy) = (trig.sins(ry), trig.coss(ry));
@@ -129,7 +129,7 @@ fn rotate_xyz_and_translate(trig: &TrigTables, t: [f32; 3], r: [i16; 3]) -> Mat4
 }
 
 /// mtxf_scale_vec3f: scales the first three rows.
-fn scale_rows(m: &Mat4, s: [f32; 3]) -> Mat4 {
+pub(crate) fn scale_rows(m: &Mat4, s: [f32; 3]) -> Mat4 {
     let mut out = *m;
     for (row, factor) in out.iter_mut().zip(s) {
         for value in row.iter_mut() {
@@ -146,24 +146,17 @@ const ATTACK_SCALE: [u8; 18] = [
     10, 12, 16, 24, 10, 10, 10, 14, 20, 30, 10, 10, 10, 16, 20, 26, 26, 20,
 ];
 
-/// The punch-scale countdown that geo_mario_hand_foot_scaler keeps in the body
-/// state: it starts when a tick sets a new punch state and drops by one per
-/// drawn frame (one per tick at the original frame rate) until zero.
+/// The punch state geo_mario_hand_foot_scaler drew with: the simulation's
+/// render pass counts it down (once per tick at the original frame rate), so
+/// it is the completed tick's body state.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct PunchScale {
-    seen: u8,
     current: u8,
 }
 
 impl PunchScale {
     fn advance(&mut self, punch_state: u8) {
-        if punch_state != self.seen {
-            self.seen = punch_state;
-            self.current = punch_state;
-        }
-        if self.current & 0x3F > 0 {
-            self.current -= 1;
-        }
+        self.current = punch_state;
     }
 
     /// geo_mario_hand_foot_scaler's scale for parameter `part`.
@@ -180,7 +173,7 @@ impl PunchScale {
 
 /// geo_set_animation_globals' gCurrAnimType.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AnimType {
+pub(crate) enum AnimType {
     Translation,
     LateralTranslation,
     VerticalTranslation,
@@ -188,20 +181,20 @@ enum AnimType {
     Rotation,
 }
 
-struct AnimCursor<'a> {
-    animation: &'a Animation,
-    frame: i32,
-    multiplier: f32,
-    kind: AnimType,
+pub(crate) struct AnimCursor<'a> {
+    pub(crate) animation: &'a Animation,
+    pub(crate) frame: i32,
+    pub(crate) multiplier: f32,
+    pub(crate) kind: AnimType,
     /// Attribute (index pair) to read next.
-    attribute: usize,
+    pub(crate) attribute: usize,
 }
 
 impl AnimCursor<'_> {
     /// retrieve_animation_index and the value it selects. Reads the original
     /// would make outside the tables (a negative frame, more parts than
     /// attributes) draw as zero instead.
-    fn next(&mut self) -> i16 {
+    pub(crate) fn next(&mut self) -> i16 {
         let attribute = self.attribute;
         self.attribute += 1;
         let index = &self.animation.index;
@@ -616,7 +609,7 @@ pub struct MarioDrawer<'a> {
 }
 
 /// A unit normal as the signed bytes a lit vertex carries in its color.
-fn quantize_normal(n: [f32; 3], color: &mut [u8; 4]) {
+pub(crate) fn quantize_normal(n: [f32; 3], color: &mut [u8; 4]) {
     let length = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
     if length > 0.0 {
         for (byte, value) in color.iter_mut().zip(n) {
@@ -879,18 +872,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn punch_scale_counts_down_once_per_tick_from_a_new_state() {
+    fn punch_scale_reads_the_state_the_pass_drew_with() {
         let mut punch = PunchScale::default();
-        // The first punch sets (0 << 6) | 4: the right hand grows, then shrinks.
+        // The first punch sets (0 << 6) | 4 and the pass counts it down per
+        // tick: the right hand grows, then shrinks.
         let mut scales = vec![];
-        for _ in 0..5 {
-            punch.advance(4);
+        for state in [3, 2, 1, 0, 0] {
+            punch.advance(state);
             scales.push(punch.scale(0));
         }
         assert_eq!(scales, [2.4, 1.6, 1.2, 1.0, 1.0]);
         // Other parts stay at full size; a kick switches to the foot.
         assert_eq!(punch.scale(1), 1.0);
-        punch.advance((2 << 6) | 6);
+        punch.advance((2 << 6) | 5);
         assert_eq!(punch.scale(2), 2.0);
     }
 

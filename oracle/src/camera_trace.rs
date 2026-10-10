@@ -466,7 +466,8 @@ pub fn game_trace(
             rom_sha1: rom_sha1.into(),
             reference_revision: version::REFERENCE_REVISION.into(),
             reference_configuration: "full-frame-camera-v1; native C IEEE/fwrapv/no-FMA/AVOID_UB; \
-                Mario's object and the area camera (update_camera, no triggers); level entry \
+                Mario, supported objects, authoritative render-pass writes and the area camera \
+                (update_camera, no triggers); level entry \
                 without warp from a fresh boot; camera yaw produced by the camera; sound, warp \
                 and particle calls recorded as events; debug pages off"
                 .into(),

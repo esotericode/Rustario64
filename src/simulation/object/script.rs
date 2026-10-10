@@ -28,14 +28,25 @@ pub enum Behavior {
     GoldenCoinSparkles,
     /// A BREAK: the warp node object level entries spin Mario out of.
     SpinAirborneWarp,
+    Bobomb,
+    BobombFuseSmoke,
+    Explosion,
+    Respawner,
+    BobombBullyDeathSmoke,
+    MovingYellowCoin,
+    SoundSpawner,
     /// Compared by bhv_cmd_begin.
     MessagePanel,
     HauntedChair,
     MadPiano,
+    /// Compared by obj_set_held_state.
+    CarrySomething3,
+    CarrySomething4,
+    CarrySomething5,
 }
 
 impl Behavior {
-    pub const ALL: [Behavior; 10] = [
+    pub const ALL: [Behavior; 20] = [
         Behavior::Mario,
         Behavior::YellowCoin,
         Behavior::CoinFormation,
@@ -43,9 +54,19 @@ impl Behavior {
         Behavior::CoinSparkles,
         Behavior::GoldenCoinSparkles,
         Behavior::SpinAirborneWarp,
+        Behavior::Bobomb,
+        Behavior::BobombFuseSmoke,
+        Behavior::Explosion,
+        Behavior::Respawner,
+        Behavior::BobombBullyDeathSmoke,
+        Behavior::MovingYellowCoin,
+        Behavior::SoundSpawner,
         Behavior::MessagePanel,
         Behavior::HauntedChair,
         Behavior::MadPiano,
+        Behavior::CarrySomething3,
+        Behavior::CarrySomething4,
+        Behavior::CarrySomething5,
     ];
 
     /// The pinned data/behavior_data.c name.
@@ -58,9 +79,19 @@ impl Behavior {
             Behavior::CoinSparkles => "bhvCoinSparkles",
             Behavior::GoldenCoinSparkles => "bhvGoldenCoinSparkles",
             Behavior::SpinAirborneWarp => "bhvSpinAirborneWarp",
+            Behavior::Bobomb => "bhvBobomb",
+            Behavior::BobombFuseSmoke => "bhvBobombFuseSmoke",
+            Behavior::Explosion => "bhvExplosion",
+            Behavior::Respawner => "bhvRespawner",
+            Behavior::BobombBullyDeathSmoke => "bhvBobombBullyDeathSmoke",
+            Behavior::MovingYellowCoin => "bhvMovingYellowCoin",
+            Behavior::SoundSpawner => "bhvSoundSpawner",
             Behavior::MessagePanel => "bhvMessagePanel",
             Behavior::HauntedChair => "bhvHauntedChair",
             Behavior::MadPiano => "bhvMadPiano",
+            Behavior::CarrySomething3 => "bhvCarrySomething3",
+            Behavior::CarrySomething4 => "bhvCarrySomething4",
+            Behavior::CarrySomething5 => "bhvCarrySomething5",
         }
     }
 
@@ -86,10 +117,21 @@ pub enum Native {
     BhvCoinFormationSpawnLoop,
     BhvCoinSparklesLoop,
     BhvGoldenCoinSparklesLoop,
+    BhvBobombInit,
+    BhvBobombLoop,
+    BhvBobombFuseSmokeInit,
+    BhvDustSmokeLoop,
+    BhvExplosionInit,
+    BhvExplosionLoop,
+    BhvRespawnerLoop,
+    BhvBobombBullyDeathSmokeInit,
+    BhvMovingYellowCoinInit,
+    BhvMovingYellowCoinLoop,
+    BhvSoundSpawnerInit,
 }
 
 impl Native {
-    pub const ALL: [Native; 10] = [
+    pub const ALL: [Native; 21] = [
         Native::TryPrintDebugMarioLevelInfo,
         Native::BhvMarioUpdate,
         Native::TryDoMarioDebugObjectSpawn,
@@ -100,6 +142,17 @@ impl Native {
         Native::BhvCoinFormationSpawnLoop,
         Native::BhvCoinSparklesLoop,
         Native::BhvGoldenCoinSparklesLoop,
+        Native::BhvBobombInit,
+        Native::BhvBobombLoop,
+        Native::BhvBobombFuseSmokeInit,
+        Native::BhvDustSmokeLoop,
+        Native::BhvExplosionInit,
+        Native::BhvExplosionLoop,
+        Native::BhvRespawnerLoop,
+        Native::BhvBobombBullyDeathSmokeInit,
+        Native::BhvMovingYellowCoinInit,
+        Native::BhvMovingYellowCoinLoop,
+        Native::BhvSoundSpawnerInit,
     ];
 
     /// The pinned decomp function name.
@@ -115,6 +168,17 @@ impl Native {
             Native::BhvCoinFormationSpawnLoop => "bhv_coin_formation_spawn_loop",
             Native::BhvCoinSparklesLoop => "bhv_coin_sparkles_loop",
             Native::BhvGoldenCoinSparklesLoop => "bhv_golden_coin_sparkles_loop",
+            Native::BhvBobombInit => "bhv_bobomb_init",
+            Native::BhvBobombLoop => "bhv_bobomb_loop",
+            Native::BhvBobombFuseSmokeInit => "bhv_bobomb_fuse_smoke_init",
+            Native::BhvDustSmokeLoop => "bhv_dust_smoke_loop",
+            Native::BhvExplosionInit => "bhv_explosion_init",
+            Native::BhvExplosionLoop => "bhv_explosion_loop",
+            Native::BhvRespawnerLoop => "bhv_respawner_loop",
+            Native::BhvBobombBullyDeathSmokeInit => "bhv_bobomb_bully_death_smoke_init",
+            Native::BhvMovingYellowCoinInit => "bhv_moving_yellow_coin_init",
+            Native::BhvMovingYellowCoinLoop => "bhv_moving_yellow_coin_loop",
+            Native::BhvSoundSpawnerInit => "bhv_sound_spawner_init",
         }
     }
 
@@ -123,6 +187,9 @@ impl Native {
     }
 
     /// The behaviors the function can spawn, for [`BehaviorScripts::check`].
+    /// bhv_respawner_loop spawns the behavior its creator stored
+    /// (create_respawner's callers list it themselves), and the explosion's
+    /// underwater bubbles are an unported runtime path (see `explosion`).
     pub fn spawns(self) -> &'static [Behavior] {
         match self {
             Native::BhvYellowCoinLoop | Native::BhvCoinFormationSpawnLoop => {
@@ -130,6 +197,17 @@ impl Native {
             }
             Native::BhvCoinFormationLoop => &[Behavior::CoinFormationSpawn],
             Native::BhvGoldenCoinSparklesLoop => &[Behavior::CoinSparkles],
+            Native::BhvBobombLoop => &[
+                Behavior::BobombFuseSmoke,
+                Behavior::Explosion,
+                Behavior::MovingYellowCoin,
+                Behavior::Respawner,
+                Behavior::Bobomb,
+                Behavior::BobombBullyDeathSmoke,
+            ],
+            Native::BhvExplosionInit => &[Behavior::SoundSpawner],
+            Native::BhvExplosionLoop => &[Behavior::BobombBullyDeathSmoke],
+            Native::BhvMovingYellowCoinLoop => &[Behavior::GoldenCoinSparkles],
             _ => &[],
         }
     }
@@ -140,8 +218,8 @@ impl Native {
 pub enum Unported {
     /// A CALL_NATIVE target with no Rust translation.
     Native { command: u32, function: u32 },
-    /// A command whose system is not ported (object animations, object
-    /// collision models, water droplets) or an invalid opcode.
+    /// A command whose system is not ported (object collision models,
+    /// water droplets) or an invalid opcode.
     Command { command: u32, opcode: u8 },
     /// An OR_INT that sets object flags whose cur_obj_update handling needs
     /// object transforms.
@@ -277,6 +355,23 @@ impl BehaviorScripts {
     /// command path (following CALL and GOTO), the scripts its commands and
     /// natives spawn, and every native.
     pub fn check(&self, script: u32) -> Result<(), Unported> {
+        self.reachable_commands(script).map(|_| ())
+    }
+
+    /// The segmented tables of every LOAD_ANIMATIONS that `script` and the
+    /// scripts it spawns can reach, for importing their animations.
+    pub fn animation_tables(&self, script: u32) -> Result<BTreeSet<u32>, Unported> {
+        Ok(self
+            .reachable_commands(script)?
+            .into_iter()
+            .filter(|at| self.word(*at) >> 24 == 0x27)
+            .map(|at| self.word(at + 4))
+            .collect())
+    }
+
+    /// Every command address reachable from `script` (see [`Self::check`]),
+    /// or the first reason it cannot run.
+    pub fn reachable_commands(&self, script: u32) -> Result<BTreeSet<u32>, Unported> {
         let mut scripts = vec![script];
         let mut seen_scripts = BTreeSet::new();
         let mut seen = BTreeSet::new();
@@ -327,8 +422,8 @@ impl BehaviorScripts {
                                 return Err(Unported::Flags { command: at, flags });
                             }
                         }
-                        // Object animations, collision models and water droplets.
-                        0x27 | 0x28 | 0x2A | 0x37 => {
+                        // Object collision models and water droplets.
+                        0x2A | 0x37 => {
                             return Err(Unported::Command {
                                 command: at,
                                 opcode,
@@ -340,7 +435,7 @@ impl BehaviorScripts {
                 }
             }
         }
-        Ok(())
+        Ok(seen)
     }
 }
 
@@ -473,6 +568,14 @@ impl ScriptBuilder {
     pub fn begin_repeat_unused(&mut self, count: u8) -> &mut Self {
         self.bb(0x26, count)
     }
+    pub fn load_animations(&mut self, field: usize, table: u32) -> &mut Self {
+        self.bb(0x27, field as u8);
+        self.words.push(table);
+        self
+    }
+    pub fn animate(&mut self, index: u8) -> &mut Self {
+        self.bb(0x28, index)
+    }
     pub fn spawn_child_with_param(&mut self, param: i16, model: u32, behavior: u32) -> &mut Self {
         self.bbh(0x29, 0, param);
         self.words.extend([model, behavior]);
@@ -544,8 +647,9 @@ impl ScriptBuilder {
 /// An authored segment for ROM-free tests: the pinned data/behavior_data.c
 /// scripts of every [`Behavior`] the port runs, encoded with
 /// [`ScriptBuilder`] at authored addresses, and authored native addresses.
-/// The three behaviors bhv_cmd_begin compares against are BEGIN/BREAK
-/// stand-ins (they are only compared by address). Not ROM content.
+/// The Bob-omb loads `animation::authored_object_animations`' table. The
+/// three behaviors bhv_cmd_begin compares against are BEGIN/BREAK stand-ins
+/// (they are only compared by address). Not ROM content.
 pub fn authored_scripts() -> BehaviorScripts {
     let native = |n: Native| {
         AUTHORED_NATIVE_BASE + 4 * Native::ALL.iter().position(|x| *x == n).unwrap() as u32
@@ -614,6 +718,104 @@ pub fn authored_scripts() -> BehaviorScripts {
         .end_loop();
     behaviors.push((Behavior::SpinAirborneWarp, b.here()));
     b.brk();
+    behaviors.push((Behavior::SoundSpawner, b.here()));
+    b.begin(OBJ_LIST_UNIMPORTANT as u8)
+        .or_int(O_FLAGS, OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE)
+        .delay(3)
+        .call_native(native(Native::BhvSoundSpawnerInit))
+        .delay(30)
+        .deactivate();
+    behaviors.push((Behavior::MovingYellowCoin, b.here()));
+    b.begin(OBJ_LIST_LEVEL as u8)
+        .or_int(O_FLAGS, OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE)
+        .billboard()
+        .set_hitbox(100, 64)
+        .set_int(O_INTERACT_TYPE, INTERACT_COIN as i16)
+        .set_int(O_INTANGIBLE_TIMER, 0)
+        .set_int(O_ANIM_STATE, -1)
+        .call_native(native(Native::BhvMovingYellowCoinInit))
+        .begin_loop()
+        .call_native(native(Native::BhvMovingYellowCoinLoop))
+        .add_int(O_ANIM_STATE, 1)
+        .end_loop();
+    behaviors.push((Behavior::Bobomb, b.here()));
+    b.begin(OBJ_LIST_DESTRUCTIVE as u8)
+        .or_int(
+            O_FLAGS,
+            OBJ_FLAG_PERSISTENT_RESPAWN
+                | OBJ_FLAG_COMPUTE_ANGLE_TO_MARIO
+                | OBJ_FLAG_HOLDABLE
+                | OBJ_FLAG_COMPUTE_DIST_TO_MARIO
+                | OBJ_FLAG_SET_FACE_YAW_TO_MOVE_YAW
+                | OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE,
+        )
+        .load_animations(O_ANIMATIONS, super::animation::AUTHORED_BOBOMB_ANIMATIONS)
+        .drop_to_floor()
+        .animate(0)
+        .set_int(O_INTANGIBLE_TIMER, 0)
+        .set_home()
+        .call_native(native(Native::BhvBobombInit))
+        .begin_loop()
+        .call_native(native(Native::BhvBobombLoop))
+        .end_loop();
+    behaviors.push((Behavior::BobombFuseSmoke, b.here()));
+    b.begin(OBJ_LIST_DEFAULT as u8)
+        .or_int(O_FLAGS, OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE)
+        .billboard()
+        .set_int(O_ANIM_STATE, -1)
+        .call_native(native(Native::BhvBobombFuseSmokeInit))
+        .delay(1)
+        .begin_loop()
+        .call_native(native(Native::BhvDustSmokeLoop))
+        .add_int(O_ANIM_STATE, 1)
+        .end_loop();
+    behaviors.push((Behavior::Explosion, b.here()));
+    b.begin(OBJ_LIST_DESTRUCTIVE as u8)
+        .or_int(
+            O_FLAGS,
+            OBJ_FLAG_COMPUTE_DIST_TO_MARIO | OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE,
+        )
+        .billboard()
+        .set_interact_type(INTERACT_DAMAGE)
+        .set_int(O_DAMAGE_OR_COIN_VALUE, 2)
+        .set_int(O_INTANGIBLE_TIMER, 0)
+        .set_hitbox_with_offset(150, 150, 150)
+        .set_int(O_ANIM_STATE, -1)
+        .call_native(native(Native::BhvExplosionInit))
+        .begin_loop()
+        .call_native(native(Native::BhvExplosionLoop))
+        .add_int(O_ANIM_STATE, 1)
+        .end_loop();
+    behaviors.push((Behavior::BobombBullyDeathSmoke, b.here()));
+    b.begin(OBJ_LIST_UNIMPORTANT as u8)
+        .or_int(
+            O_FLAGS,
+            OBJ_FLAG_MOVE_Y_WITH_TERMINAL_VEL
+                | OBJ_FLAG_MOVE_XZ_USING_FVEL
+                | OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE,
+        )
+        .billboard()
+        .set_int(O_ANIM_STATE, -1)
+        .call_native(native(Native::BhvBobombBullyDeathSmokeInit))
+        .delay(1)
+        .begin_loop()
+        .call_native(native(Native::BhvDustSmokeLoop))
+        .add_int(O_ANIM_STATE, 1)
+        .end_loop();
+    behaviors.push((Behavior::Respawner, b.here()));
+    b.begin(OBJ_LIST_DEFAULT as u8)
+        .or_int(O_FLAGS, OBJ_FLAG_UPDATE_GFX_POS_AND_ANGLE)
+        .begin_loop()
+        .call_native(native(Native::BhvRespawnerLoop))
+        .end_loop();
+    for carry in [
+        Behavior::CarrySomething3,
+        Behavior::CarrySomething4,
+        Behavior::CarrySomething5,
+    ] {
+        behaviors.push((carry, b.here()));
+        b.begin(OBJ_LIST_DEFAULT as u8).brk();
+    }
     for stand_in in [
         Behavior::MessagePanel,
         Behavior::HauntedChair,
@@ -1012,6 +1214,23 @@ fn run_command(m: &mut MarioState, w: &mut StepWorld<'_>, id: ObjectId, cmd: &mu
             }
             BREAK
         }
+        // LOAD_ANIMATIONS: cur_obj_set_vptr keeps the script's segmented word.
+        0x27 => {
+            object_mut(&mut w.objects, &mut m.obj, id)
+                .raw
+                .set_u32(byte2, arg(1));
+            *cmd += 8;
+            CONTINUE
+        }
+        // ANIMATE.
+        0x28 => {
+            let anims = w.object_anims;
+            let o = object_mut(&mut w.objects, &mut m.obj, id);
+            let entry = super::animation::animation_entry(o, byte2 as i32);
+            super::animation::geo_obj_init_animation(&mut o.gfx, anims, entry);
+            *cmd += 4;
+            CONTINUE
+        }
         // SET_HITBOX_WITH_OFFSET.
         0x2B => {
             let o = object_mut(&mut w.objects, &mut m.obj, id);
@@ -1111,7 +1330,7 @@ fn run_command(m: &mut MarioState, w: &mut StepWorld<'_>, id: ObjectId, cmd: &mu
 
 /// CALL_NATIVE's dispatch to the Rust translations.
 fn call_native(native: Native, m: &mut MarioState, w: &mut StepWorld<'_>, id: ObjectId) {
-    use super::coin;
+    use super::{bobomb, coin, explosion, moving_coin, sound};
     match native {
         Native::TryPrintDebugMarioLevelInfo | Native::TryDoMarioDebugObjectSpawn => {}
         Native::BhvMarioUpdate => {
@@ -1128,6 +1347,21 @@ fn call_native(native: Native, m: &mut MarioState, w: &mut StepWorld<'_>, id: Ob
         Native::BhvCoinFormationSpawnLoop => coin::bhv_coin_formation_spawn_loop(m, w, id),
         Native::BhvCoinSparklesLoop => coin::bhv_coin_sparkles_loop(m, w, id),
         Native::BhvGoldenCoinSparklesLoop => coin::bhv_golden_coin_sparkles_loop(m, w, id),
+        Native::BhvBobombInit => bobomb::bhv_bobomb_init(m, w, id),
+        Native::BhvBobombLoop => bobomb::bhv_bobomb_loop(m, w, id),
+        Native::BhvBobombFuseSmokeInit => bobomb::bhv_bobomb_fuse_smoke_init(m, w, id),
+        Native::BhvDustSmokeLoop => {
+            helpers::bhv_dust_smoke_loop(object_mut(&mut w.objects, &mut m.obj, id))
+        }
+        Native::BhvExplosionInit => explosion::bhv_explosion_init(m, w, id),
+        Native::BhvExplosionLoop => explosion::bhv_explosion_loop(m, w, id),
+        Native::BhvRespawnerLoop => explosion::bhv_respawner_loop(m, w, id),
+        Native::BhvBobombBullyDeathSmokeInit => {
+            explosion::bhv_bobomb_bully_death_smoke_init(m, w, id)
+        }
+        Native::BhvMovingYellowCoinInit => moving_coin::bhv_moving_yellow_coin_init(m, w, id),
+        Native::BhvMovingYellowCoinLoop => moving_coin::bhv_moving_yellow_coin_loop(m, w, id),
+        Native::BhvSoundSpawnerInit => sound::bhv_sound_spawner_init(m, w, id),
     }
 }
 
@@ -1172,8 +1406,8 @@ mod tests {
         b.begin(8).begin_loop().call_native(0x8000_0000).end_loop();
         let unknown_native = b.here();
         b.begin(8).call_native(0x8123_4560).brk();
-        let animated = b.here();
-        b.begin(8).words.extend([0x2800_0000]);
+        let solid = b.here();
+        b.begin(8).words.extend([0x2A00_0000, 0x0700_0000]);
         let flags = b.here();
         b.begin(8)
             .or_int(O_FLAGS, OBJ_FLAG_TRANSFORM_RELATIVE_TO_PARENT)
@@ -1181,7 +1415,7 @@ mod tests {
         let spawner = b.here();
         b.begin(8).spawn_obj(0, unknown_native).brk();
         let through_goto = b.here();
-        b.begin(8).goto(animated);
+        b.begin(8).goto(solid);
         let s = scripts(&b);
         assert_eq!(s.check(0x1300_0000), Ok(()));
         assert_eq!(
@@ -1192,10 +1426,10 @@ mod tests {
             })
         );
         assert_eq!(
-            s.check(animated),
+            s.check(solid),
             Err(Unported::Command {
-                command: animated + 4,
-                opcode: 0x28
+                command: solid + 4,
+                opcode: 0x2A
             })
         );
         assert!(matches!(s.check(flags), Err(Unported::Flags { .. })));

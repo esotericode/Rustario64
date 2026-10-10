@@ -25,12 +25,13 @@ pub mod inputs;
 pub mod interaction;
 pub mod moving;
 pub mod object;
+pub mod render;
 pub mod stationary;
 pub mod step;
 pub mod tick;
 
 use crate::{
-    content::animation::MarioAnimations,
+    content::animation::{MarioAnimations, NO_OBJECT_ANIMATIONS, ObjectAnimations},
     simulation::{
         collision::{CollisionFlags, CollisionWorld, Surface, SurfaceIndex},
         controller::Controller,
@@ -56,7 +57,7 @@ pub enum SurfaceRef {
 /// Mario's object is an ordinary `struct Object`; it lives in MarioState
 /// (m->marioObj) rather than in the object pool's slot data.
 pub use crate::simulation::object::{
-    AnimInfo, AnimRef, GfxState, Object as MarioObject, ObjectFields, ObjectId,
+    AnimInfo, AnimRef, GfxState, Object as MarioObject, ObjectFields, ObjectId, ThrowMatrix,
 };
 
 /// struct MarioBodyState (gBodyStates[0]): model presentation state that the
@@ -223,6 +224,8 @@ pub enum Event {
         frames: i16,
     },
     CameraShake(i16),
+    /// set_environmental_camera_shake from an object (an explosion).
+    EnvironmentalCameraShake(i16),
     /// A level warp request (warp operation). No level runtime handles it yet.
     Warp(i32),
     LevelInitText(u32),
@@ -246,6 +249,7 @@ impl Event {
             Event::FadeoutCapMusic => (7, 0, 0),
             Event::CameraMode { mode, frames } => (8, i32::from(mode), i32::from(frames)),
             Event::CameraShake(shake) => (9, i32::from(shake), 0),
+            Event::EnvironmentalCameraShake(shake) => (14, i32::from(shake), 0),
             Event::Warp(op) => (10, op, 0),
             Event::LevelInitText(arg) => (11, arg as i32, 0),
             Event::WindParticles { pitch, yaw } => (12, i32::from(pitch), i32::from(yaw)),
@@ -284,6 +288,9 @@ pub struct StepWorld<'a> {
     pub water_pseudo_floor_origin_offset: f32,
     /// gControllers[0], sampled once per tick before Mario updates.
     pub controller: Controller,
+    /// object_helpers.c's function-static grabReleaseState. Persist across
+    /// grab attempts; a fresh boot starts at zero, a neutral stick resets it.
+    pub grab_release_state: i32,
     /// m->area->camera.
     pub camera: CameraState,
     /// gCameraMovementFlags.
@@ -310,12 +317,16 @@ pub struct StepWorld<'a> {
     pub behaviors: &'a BehaviorScripts,
     /// gLoadedGraphNodes, with the render traversal of spawned models.
     pub models: &'a ObjectModels,
+    /// The object animation tables the level's loaded segments hold.
+    pub object_anims: &'a ObjectAnimations,
     /// The object pool and lists (Mario's object data stays in MarioState).
     pub objects: ObjectPool,
     /// The loaded area's placements and their respawn records.
     pub area: AreaObjects,
     /// gRandomSeed16, shared by objects and the camera.
     pub rng: Rng,
+    /// What Mario's geo callbacks wrote into his graph nodes.
+    pub mario_graph: render::MarioGraphState,
     /// gTimeStopState.
     pub time_stop_state: u32,
     /// gCurrCourseNum.
@@ -341,6 +352,7 @@ impl<'a> StepWorld<'a> {
             area_index: 1,
             water_pseudo_floor_origin_offset: 0.0,
             controller: Controller::default(),
+            grab_release_state: 0,
             camera: CameraState::default(),
             camera_movement_flags: 0,
             special_triple_jump: 0,
@@ -356,9 +368,11 @@ impl<'a> StepWorld<'a> {
             events: Vec::new(),
             behaviors: &NO_SCRIPTS,
             models: &NO_MODELS,
+            object_anims: &NO_OBJECT_ANIMATIONS,
             objects: ObjectPool::new(),
             area: AreaObjects::default(),
             rng: Rng::default(),
+            mario_graph: render::MarioGraphState::default(),
             time_stop_state: 0,
             course_num: 0,
         }

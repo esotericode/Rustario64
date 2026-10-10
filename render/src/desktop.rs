@@ -159,47 +159,64 @@ impl Ui {
         mut output: egui::FullOutput,
     ) {
         self.input
-            .handle_platform_output(window, output.platform_output);
-        let jobs = self
-            .context
-            .tessellate(output.shapes, output.pixels_per_point);
-        let screen = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: [window.inner_size().width, window.inner_size().height],
-            pixels_per_point: output.pixels_per_point,
-        };
-        for (id, deltas) in &output.textures_delta.set {
-            for delta in deltas {
-                self.renderer.update_texture(device, queue, *id, delta);
-            }
+            .handle_platform_output(window, std::mem::take(&mut output.platform_output));
+        paint_ui(
+            &mut self.renderer,
+            &self.context,
+            device,
+            queue,
+            target,
+            output,
+        );
+    }
+}
+
+fn paint_ui(
+    renderer: &mut egui_wgpu::Renderer,
+    context: &egui::Context,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    target: &wgpu::TextureView,
+    mut output: egui::FullOutput,
+) {
+    let jobs = context.tessellate(output.shapes, output.pixels_per_point);
+    // Window size changes can arrive before the surface's resize event.
+    // Clip and project against the acquired target for this frame, including
+    // egui's final full-target scissor reset.
+    let screen = egui_wgpu::ScreenDescriptor {
+        size_in_pixels: [target.texture().width(), target.texture().height()],
+        pixels_per_point: output.pixels_per_point,
+    };
+    // Consume each applied update: egui checks for pending deltas on drop in
+    // debug builds, even when the renderer has already uploaded their data.
+    for (id, deltas) in output.textures_delta.set.drain() {
+        for delta in deltas {
+            renderer.update_texture(device, queue, id, &delta);
         }
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+    }
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("desktop UI"),
+    });
+    let commands = renderer.update_buffers(device, queue, &mut encoder, &jobs, &screen);
+    {
+        let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("desktop UI"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            ..Default::default()
         });
-        let commands = self
-            .renderer
-            .update_buffers(device, queue, &mut encoder, &jobs, &screen);
-        {
-            let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("desktop UI"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: target,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                ..Default::default()
-            });
-            self.renderer
-                .render(&mut pass.forget_lifetime(), &jobs, &screen);
-        }
-        queue.submit(commands.into_iter().chain([encoder.finish()]));
-        for id in &output.textures_delta.free {
-            self.renderer.free_texture(id);
-        }
-        output.textures_delta.clear();
+        renderer.render(&mut pass.forget_lifetime(), &jobs, &screen);
+    }
+    queue.submit(commands.into_iter().chain([encoder.finish()]));
+    for id in output.textures_delta.free.drain() {
+        renderer.free_texture(&id);
     }
 }
 
@@ -207,6 +224,88 @@ impl Ui {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn ui_renders_while_window_and_target_sizes_disagree() {
+        let instance = crate::instance(None);
+        let (adapter, device, queue) = match pollster::block_on(crate::device(&instance, None)) {
+            Ok(gpu) => gpu,
+            Err(error) if std::env::var_os("RUSTARIO64_REQUIRE_GPU").is_none() => {
+                eprintln!("skipping GPU test: {error}");
+                return;
+            }
+            Err(error) => panic!("GPU required: {error}"),
+        };
+        eprintln!("UI resize regression on {}", adapter.get_info().name);
+        let context = egui::Context::default();
+        let mut temporary_texture = Some(context.load_texture(
+            "UI texture lifecycle regression",
+            egui::ColorImage::new([1, 1], vec![egui::Color32::WHITE]),
+            egui::TextureOptions::default(),
+        ));
+        let temporary_id = temporary_texture.as_ref().unwrap().id();
+        let mut renderer = egui_wgpu::Renderer::new(
+            &device,
+            crate::CAPTURE_FORMAT,
+            egui_wgpu::RendererOptions::default(),
+        );
+        // Launcher -> game, game -> launcher, fullscreen-style growth, and
+        // fractional/integer display scaling. Render real egui draw commands.
+        for (window, target, scale) in [
+            ([1280, 960], [800, 720], 1.0),
+            ([800, 720], [1280, 960], 1.0),
+            ([1920, 1080], [800, 720], 1.25),
+            ([2560, 1440], [800, 720], 2.0),
+        ] {
+            context.set_pixels_per_point(scale);
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("UI resize regression target"),
+                size: wgpu::Extent3d {
+                    width: target[0],
+                    height: target[1],
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: crate::CAPTURE_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let output = context.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(window[0] as f32 / scale, window[1] as f32 / scale),
+                    )),
+                    ..Default::default()
+                },
+                |root| {
+                    egui::CentralPanel::default().show(root, |ui| {
+                        ui.heading("Rustario64 launcher / pause");
+                        ui.label("A resize is pending while this frame is drawn.");
+                    });
+                },
+            );
+            assert!(!output.shapes.is_empty());
+            if temporary_texture.is_some() {
+                assert!(output.textures_delta.set.contains_key(&temporary_id));
+            } else if window == [800, 720] {
+                assert!(output.textures_delta.free.contains(&temporary_id));
+            }
+            paint_ui(
+                &mut renderer,
+                &context,
+                &device,
+                &queue,
+                &texture.create_view(&wgpu::TextureViewDescriptor::default()),
+                output,
+            );
+            device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+            // The following frame must consume the corresponding free command.
+            drop(temporary_texture.take());
+        }
+    }
 
     #[test]
     fn pause_focus_and_inspection_discard_time_and_backlog() {

@@ -9,6 +9,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Project version and change counters
+        run: |
+          python3 tools/project_version.py check --history
+          python3 tools/test_project_version.py
       - name: Install pinned Rust
         run: rustup show active-toolchain # installs rust-toolchain.toml and its components
       - name: Install controller build dependencies and software Vulkan
@@ -30,7 +36,7 @@ jobs:
       - name: Desktop packaging allowlist
         run: python3 tools/test_package_desktop.py
       - name: Optimized camera, shadow and object comparisons
-        run: cargo test --locked --release -p rustario64-oracle --test camera --test lakitu --test radial --test camera_tick --test shadow --test objects --test object_motion
+        run: cargo test --locked --release -p rustario64-oracle --test camera --test lakitu --test radial --test camera_tick --test shadow --test objects --test bobombs --test object_motion --test standard_motion --test grab
   desktop:
     name: Desktop runtime (${{ matrix.target }})
     strategy:

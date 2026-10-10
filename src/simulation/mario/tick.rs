@@ -15,7 +15,7 @@
 //! render pass's presentation-only writes (matrices, torso and head angles,
 //! the hand-scale counter).
 use super::{
-    MarioObject, MarioState, SaveInputs, StepWorld, SurfaceRef,
+    MarioObject, MarioState, ObjectId, SaveInputs, StepWorld, SurfaceRef, ThrowMatrix,
     animation::update_animation_frame,
     constants::*,
     core::{
@@ -23,7 +23,10 @@ use super::{
     },
 };
 use crate::{
-    content::{ImportedLevel, animation::MarioAnimations},
+    content::{
+        ImportedLevel,
+        animation::{MarioAnimations, ObjectAnimations},
+    },
     simulation::{
         TickInput,
         collision::CollisionWorld,
@@ -103,20 +106,26 @@ impl LevelEntry {
 }
 
 /// What a level's objects come from: the behavior segment, the loaded
-/// models, and the entered area's placements.
+/// models and object animations, and the entered area's placements.
 #[derive(Debug, Clone)]
 pub struct LevelObjects<'a> {
     pub scripts: &'a BehaviorScripts,
     pub models: &'a ObjectModels,
+    pub animations: &'a ObjectAnimations,
     pub area: AreaObjects,
 }
 
 impl<'a> LevelObjects<'a> {
     /// A level whose area places no objects: Mario alone.
-    pub fn mario_only(scripts: &'a BehaviorScripts, models: &'a ObjectModels) -> Self {
+    pub fn mario_only(
+        scripts: &'a BehaviorScripts,
+        models: &'a ObjectModels,
+        animations: &'a ObjectAnimations,
+    ) -> Self {
         Self {
             scripts,
             models,
+            animations,
             area: AreaObjects::default(),
         }
     }
@@ -165,6 +174,7 @@ pub fn enter_level_with<'a>(
     w.save = entry.save;
     w.behaviors = objects.scripts;
     w.models = objects.models;
+    w.object_anims = objects.animations;
     w.area = objects.area.clone();
     // load_mario_area renders the spawn's area.
     w.area_index = entry.spawn.area_index;
@@ -285,13 +295,21 @@ pub struct RenderedFrame {
     /// The floor-alignment matrix (`StepWorld::floor_align_matrix` index)
     /// that replaced the object's position and angles, which the pass clears.
     pub throw_matrix: Option<usize>,
+    /// The object the pass drew in his hand (`mario::render`).
+    pub held: Option<ObjectId>,
 }
 
 /// What the render pass changes in Mario's object: geo_process_node_and_siblings
 /// and geo_process_object. Advancing the animation is authoritative (actions
 /// read the frame); the matrices and camera-relative position are not.
 pub fn render_mario_object(obj: &mut MarioObject, w: &StepWorld<'_>) -> RenderedFrame {
-    let throw_matrix = obj.gfx.throw_matrix;
+    let throw_matrix = match obj.gfx.throw_matrix {
+        Some(ThrowMatrix::FloorAlign(index)) => Some(index),
+        Some(ThrowMatrix::Terrain(_)) => {
+            panic!("Mario's throw matrix is always a floor-align matrix")
+        }
+        None => None,
+    };
     if obj.gfx.node_flags & GRAPH_RENDER_ACTIVE == 0 {
         obj.gfx.throw_matrix = None;
         return RenderedFrame::default();
@@ -302,6 +320,7 @@ pub fn render_mario_object(obj: &mut MarioObject, w: &StepWorld<'_>) -> Rendered
         return RenderedFrame {
             processed: true,
             throw_matrix,
+            held: None,
         };
     }
     RenderedFrame::default()

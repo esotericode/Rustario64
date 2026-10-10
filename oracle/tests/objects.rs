@@ -9,7 +9,9 @@
 //! formation type; the ignored test uses BOB's coins with the owner's ROM.
 #[path = "support/playground.rs"]
 mod playground;
-use playground::{Builder, Lcg, MODELS, SCRIPTS, authored_animations, computed_tables, world};
+use playground::{
+    ANIMATIONS, Builder, Lcg, MODELS, SCRIPTS, authored_animations, computed_tables, world,
+};
 use rustario64::simulation::{
     TickInput,
     camera::{D_CBUTTONS, L_CBUTTONS, R_CBUTTONS, U_CBUTTONS, system::GeoCamera},
@@ -156,6 +158,7 @@ fn scenario<'a>(
         objects: LevelObjects {
             scripts: &SCRIPTS,
             models: &MODELS,
+            animations: &ANIMATIONS,
             area: placements(),
         },
         entry: GameEntry {
@@ -467,7 +470,7 @@ fn drawing_bob_coins_and_sparkles_preserves_every_authoritative_word() {
         content::Act,
         import::{animation, bob, engine, objects, rom::Rom},
         play::{Pad, Session},
-        presentation::objects::{BillboardBasis, ObjectDrawer},
+        presentation::objects::{BillboardBasis, LevelModels, ObjectDrawer},
         simulation::object::render::visible_objects,
     };
     let path = std::env::var_os("RUSTARIO64_ROM").expect("set RUSTARIO64_ROM");
@@ -490,7 +493,15 @@ fn drawing_bob_coins_and_sparkles_preserves_every_authoritative_word() {
     entry.mario.spawn =
         rustario64::simulation::mario::core::SpawnPoint::from_level_script(1, 1, 0, coin.pos);
     let mut session = Session::new(&world, &trig, &anims, content.level_objects(), entry);
-    let mut drawer = ObjectDrawer::new(&content.content, &trig);
+    let mut drawer = ObjectDrawer::for_level(
+        &content.content,
+        LevelModels {
+            segments: &content.level_segments,
+            registrations: &content.level_models,
+            animations: &content.animations,
+        },
+        &trig,
+    );
     let basis = BillboardBasis {
         right: [1.0, 0.0, 0.0],
         up: [0.0, 1.0, 0.0],
@@ -500,7 +511,11 @@ fn drawing_bob_coins_and_sparkles_preserves_every_authoritative_word() {
     for tick in 0..120 {
         assert!(session.step(&Pad::default()), "{:?}", session.stopped());
         let before = rustario64_oracle::camera_trace::capture_game(session.game());
-        let objects = visible_objects(session.world(), &session.game().camera.graph);
+        let objects = visible_objects(
+            session.world(),
+            &session.game().camera.graph,
+            &session.game().rendered_matrices,
+        );
         visible += objects.len();
         drawer.update(objects).unwrap();
         for alpha in [0.0, 0.25, 0.5, 0.75, 1.0] {

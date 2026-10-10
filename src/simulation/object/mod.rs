@@ -2,7 +2,8 @@
 //! the object pool and its lists (spawn_object.c, object_list_processor.c),
 //! the behavior-script interpreter (behavior_script.c), object collision
 //! detection (object_collision.c), the object helpers the ported behaviors
-//! use (object_helpers.c), those behaviors (`coin`) and enemy motion (`motion`).
+//! use (object_helpers.c), object animations (`animation`), those behaviors
+//! (`coin`) and enemy motion (`motion`).
 //! Behavior scripts are
 //! the ROM's own (segment 0x13), interpreted from their bytes; their native
 //! functions resolve through the version adapter to Rust translations.
@@ -11,14 +12,22 @@
 //! that updates him reads `m->marioObj` constantly); the pool's slot for it
 //! holds only its list links. [`object`] and [`object_mut`] resolve any
 //! handle, including Mario's and gMacroObjectDefaultParent.
+pub mod animation;
+pub mod bobomb;
 pub mod coin;
 pub mod collision;
+pub mod explosion;
+pub mod held;
 pub mod helpers;
 pub mod motion;
+pub mod moving_coin;
+pub mod obj_behaviors;
 pub mod processor;
 pub mod render;
 pub mod script;
+pub mod sound;
 pub mod spawn;
+pub mod standard_motion;
 
 use crate::simulation::mario::{Mat4, constants::*};
 
@@ -111,10 +120,13 @@ impl ObjectId {
 }
 
 /// What `animInfo.curAnim` points to. Mario's animations live in one DMA
-/// buffer whose content is `StepWorld::anim_dma_loaded`.
+/// buffer whose content is `StepWorld::anim_dma_loaded`; other objects'
+/// point at a struct Animation in a loaded segment, named by its segmented
+/// address (`StepWorld::object_anims`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnimRef {
     MarioDmaBuffer,
+    Object(u32),
 }
 
 /// struct AnimInfo. The frame advance is part of the authoritative tick
@@ -130,6 +142,19 @@ pub struct AnimInfo {
     pub anim_accel: i32,
 }
 
+/// What header.gfx.throwMatrix points to. The render pass places the object
+/// with it (and clears it after the object's node), so it feeds the view test
+/// and drawing; gameplay sets it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ThrowMatrix {
+    /// One of mario_actions_moving.c's sFloorAlignMatrix, by index into
+    /// `StepWorld::floor_align_matrix`.
+    FloorAlign(usize),
+    /// A matrix obj_orient_graph built for this frame in display-list memory
+    /// (object_step's floor alignment).
+    Terrain(Mat4),
+}
+
 /// The header.gfx fields (struct GraphNodeObject) that gameplay code writes.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct GfxState {
@@ -143,9 +168,8 @@ pub struct GfxState {
     pub pos: [f32; 3],
     pub scale: [f32; 3],
     pub anim: AnimInfo,
-    /// throwMatrix: an index into `StepWorld::floor_align_matrix` or NULL.
-    /// Other objects' render-pass matrices are not authoritative and stay NULL.
-    pub throw_matrix: Option<usize>,
+    /// throwMatrix: replaces the position and angles in the render pass.
+    pub throw_matrix: Option<ThrowMatrix>,
 }
 
 /// The object field union (rawData): 0x50 words viewed as s32, u32 or f32.
@@ -163,6 +187,16 @@ impl Default for ObjectFields {
 }
 
 impl ObjectFields {
+    /// N64 big-endian halfword: 0 is the high half, 1 is the low half.
+    pub fn s16(&self, index: usize, half: usize) -> i16 {
+        assert!(half < 2);
+        (self.0[index] >> (16 * (1 - half))) as i16
+    }
+    pub fn set_s16(&mut self, index: usize, half: usize, value: i16) {
+        assert!(half < 2);
+        let shift = 16 * (1 - half);
+        self.0[index] = (self.0[index] & !(0xFFFF << shift)) | (u32::from(value as u16) << shift);
+    }
     pub fn s32(&self, index: usize) -> i32 {
         self.0[index] as i32
     }
@@ -263,6 +297,20 @@ impl Default for Object {
 }
 
 impl Object {
+    /// oFloor: a stable surface index plus one in its original raw word;
+    /// zero is NULL. It never contains a host or ROM pointer.
+    pub fn floor(&self) -> Option<crate::simulation::collision::SurfaceIndex> {
+        self.raw
+            .u32(O_FLOOR)
+            .checked_sub(1)
+            .map(|index| u16::try_from(index).expect("invalid object floor handle"))
+    }
+
+    pub fn set_floor(&mut self, floor: Option<crate::simulation::collision::SurfaceIndex>) {
+        self.raw
+            .set_u32(O_FLOOR, floor.map_or(0, |index| u32::from(index) + 1));
+    }
+
     /// geo_reset_object_node, as clear_objects leaves every pool slot:
     /// init_graph_node_object with no model at the origin, then inactive.
     pub fn reset_node(&mut self) {

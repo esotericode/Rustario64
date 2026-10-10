@@ -9,6 +9,7 @@
 #include "engine/math_util.h"
 #include "engine/surface_collision.h"
 #include "game/area.h"
+#include "game/interaction.h"
 #include "game/object_helpers.h"
 #include "game/object_list_processor.h"
 #include "game/rendering_graph_node.h"
@@ -480,4 +481,237 @@ void bhv_init_room(void) {
     } else {
         o->oRoom = -1;
     }
+}
+
+/* src/game/object_helpers.c: approach_s16_symmetric */
+s16 approach_s16_symmetric(s16 value, s16 target, s16 increment) {
+    s16 dist = target - value;
+
+    if (dist >= 0) {
+        if (dist > increment) {
+            value += increment;
+        } else {
+            value = target;
+        }
+    } else {
+        if (dist < -increment) {
+            value -= increment;
+        } else {
+            value = target;
+        }
+    }
+
+    return value;
+}
+
+/* src/game/object_helpers.c: obj_turn_toward_object */
+s16 obj_turn_toward_object(struct Object *obj, struct Object *target, s16 angleIndex, s16 turnAmount) {
+    f32 a, b, c, d;
+    UNUSED u8 filler[4];
+    s16 targetAngle, startAngle;
+
+    switch (angleIndex) {
+        case O_MOVE_ANGLE_PITCH_INDEX:
+        case O_FACE_ANGLE_PITCH_INDEX:
+            a = target->oPosX - obj->oPosX;
+            c = target->oPosZ - obj->oPosZ;
+            a = sqrtf(a * a + c * c);
+
+            b = -obj->oPosY;
+            d = -target->oPosY;
+
+            targetAngle = atan2s(a, d - b);
+            break;
+
+        case O_MOVE_ANGLE_YAW_INDEX:
+        case O_FACE_ANGLE_YAW_INDEX:
+            a = obj->oPosZ;
+            c = target->oPosZ;
+            b = obj->oPosX;
+            d = target->oPosX;
+
+            targetAngle = atan2s(c - a, d - b);
+            break;
+    }
+
+    startAngle = o->rawData.asU32[angleIndex];
+    o->rawData.asU32[angleIndex] = approach_s16_symmetric(startAngle, targetAngle, turnAmount);
+    return targetAngle;
+}
+
+/* src/game/object_helpers.c: obj_scale_xyz */
+void obj_scale_xyz(struct Object *obj, f32 xScale, f32 yScale, f32 zScale) {
+    obj->header.gfx.scale[0] = xScale;
+    obj->header.gfx.scale[1] = yScale;
+    obj->header.gfx.scale[2] = zScale;
+}
+
+/* src/game/object_helpers.c: cur_obj_init_animation */
+void cur_obj_init_animation(s32 animIndex) {
+    struct Animation **anims = o->oAnimations;
+    geo_obj_init_animation(&o->header.gfx, &anims[animIndex]);
+}
+
+/* src/game/object_helpers.c: cur_obj_set_pos_relative */
+void cur_obj_set_pos_relative(struct Object *other, f32 dleft, f32 dy, f32 dforward) {
+    f32 facingZ = coss(other->oMoveAngleYaw);
+    f32 facingX = sins(other->oMoveAngleYaw);
+
+    f32 dz = dforward * facingZ - dleft * facingX;
+    f32 dx = dforward * facingX + dleft * facingZ;
+
+    o->oMoveAngleYaw = other->oMoveAngleYaw;
+
+    o->oPosX = other->oPosX + dx;
+    o->oPosY = other->oPosY + dy;
+    o->oPosZ = other->oPosZ + dz;
+}
+
+/* src/game/object_helpers.c: cur_obj_enable_rendering_2 */
+void cur_obj_enable_rendering_2(void) {
+    cur_obj_enable_rendering();
+}
+
+/* src/game/object_helpers.c: cur_obj_move_after_thrown_or_dropped */
+static void cur_obj_move_after_thrown_or_dropped(f32 forwardVel, f32 velY) {
+    o->oMoveFlags = 0;
+    o->oFloorHeight = find_floor_height(o->oPosX, o->oPosY + 160.0f, o->oPosZ);
+
+    if (o->oFloorHeight > o->oPosY) {
+        o->oPosY = o->oFloorHeight;
+    } else if (o->oFloorHeight < FLOOR_LOWER_LIMIT_MISC) {
+        //! OoB failsafe
+        obj_copy_pos(o, gMarioObject);
+        o->oFloorHeight = find_floor_height(o->oPosX, o->oPosY, o->oPosZ);
+    }
+
+    o->oForwardVel = forwardVel;
+    o->oVelY = velY;
+
+    if (o->oForwardVel != 0) {
+        cur_obj_move_y(/*gravity*/ -4.0f, /*bounciness*/ -0.1f, /*buoyancy*/ 2.0f);
+    }
+}
+
+/* src/game/object_helpers.c: cur_obj_get_dropped */
+void cur_obj_get_dropped(void) {
+    cur_obj_become_tangible();
+    cur_obj_enable_rendering();
+
+    o->oHeldState = HELD_FREE;
+    cur_obj_move_after_thrown_or_dropped(0.0f, 0.0f);
+}
+
+/* src/game/object_helpers.c: bhv_dust_smoke_loop */
+void bhv_dust_smoke_loop(void) {
+    o->oPosX += o->oVelX;
+    o->oPosY += o->oVelY;
+    o->oPosZ += o->oVelZ;
+
+    if (o->oSmokeTimer == 10) {
+        obj_mark_for_deletion(o);
+    }
+
+    o->oSmokeTimer++;
+}
+
+/* src/game/object_helpers.c: obj_attack_collided_from_other_object */
+s32 obj_attack_collided_from_other_object(struct Object *obj) {
+    s32 numCollidedObjs;
+    struct Object *other;
+    s32 touchedOtherObject = FALSE;
+
+    numCollidedObjs = obj->numCollidedObjs;
+    if (numCollidedObjs != 0) {
+        other = obj->collidedObjs[0];
+
+        if (other != gMarioObject) {
+            other->oInteractStatus |= ATTACK_PUNCH | INT_STATUS_WAS_ATTACKED | INT_STATUS_INTERACTED
+                                      | INT_STATUS_TOUCHED_BOB_OMB;
+            touchedOtherObject = TRUE;
+        }
+    }
+
+    return touchedOtherObject;
+}
+
+/* src/game/object_helpers.c: obj_update_pos_from_parent_transformation */
+void obj_update_pos_from_parent_transformation(Mat4 a0, struct Object *a1) {
+    f32 spC = a1->oParentRelativePosX;
+    f32 sp8 = a1->oParentRelativePosY;
+    f32 sp4 = a1->oParentRelativePosZ;
+
+    a1->oPosX = spC * a0[0][0] + sp8 * a0[1][0] + sp4 * a0[2][0] + a0[3][0];
+    a1->oPosY = spC * a0[0][1] + sp8 * a0[1][1] + sp4 * a0[2][1] + a0[3][1];
+    a1->oPosZ = spC * a0[0][2] + sp8 * a0[1][2] + sp4 * a0[2][2] + a0[3][2];
+}
+
+/* src/game/object_helpers.c: create_transformation_from_matrices */
+void create_transformation_from_matrices(Mat4 a0, Mat4 a1, Mat4 a2) {
+    f32 spC, sp8, sp4;
+
+    spC = a2[3][0] * a2[0][0] + a2[3][1] * a2[0][1] + a2[3][2] * a2[0][2];
+    sp8 = a2[3][0] * a2[1][0] + a2[3][1] * a2[1][1] + a2[3][2] * a2[1][2];
+    sp4 = a2[3][0] * a2[2][0] + a2[3][1] * a2[2][1] + a2[3][2] * a2[2][2];
+
+    a0[0][0] = a1[0][0] * a2[0][0] + a1[0][1] * a2[0][1] + a1[0][2] * a2[0][2];
+    a0[0][1] = a1[0][0] * a2[1][0] + a1[0][1] * a2[1][1] + a1[0][2] * a2[1][2];
+    a0[0][2] = a1[0][0] * a2[2][0] + a1[0][1] * a2[2][1] + a1[0][2] * a2[2][2];
+
+    a0[1][0] = a1[1][0] * a2[0][0] + a1[1][1] * a2[0][1] + a1[1][2] * a2[0][2];
+    a0[1][1] = a1[1][0] * a2[1][0] + a1[1][1] * a2[1][1] + a1[1][2] * a2[1][2];
+    a0[1][2] = a1[1][0] * a2[2][0] + a1[1][1] * a2[2][1] + a1[1][2] * a2[2][2];
+
+    a0[2][0] = a1[2][0] * a2[0][0] + a1[2][1] * a2[0][1] + a1[2][2] * a2[0][2];
+    a0[2][1] = a1[2][0] * a2[1][0] + a1[2][1] * a2[1][1] + a1[2][2] * a2[1][2];
+    a0[2][2] = a1[2][0] * a2[2][0] + a1[2][1] * a2[2][1] + a1[2][2] * a2[2][2];
+
+    a0[3][0] = a1[3][0] * a2[0][0] + a1[3][1] * a2[0][1] + a1[3][2] * a2[0][2] - spC;
+    a0[3][1] = a1[3][0] * a2[1][0] + a1[3][1] * a2[1][1] + a1[3][2] * a2[1][2] - sp8;
+    a0[3][2] = a1[3][0] * a2[2][0] + a1[3][1] * a2[2][1] + a1[3][2] * a2[2][2] - sp4;
+
+    a0[0][3] = 0.0f;
+    a0[1][3] = 0.0f;
+    a0[2][3] = 0.0f;
+    a0[3][3] = 1.0f;
+}
+
+/* src/game/object_helpers.c: obj_set_held_state */
+void obj_set_held_state(struct Object *obj, const BehaviorScript *heldBehavior) {
+    obj->parentObj = o;
+
+    if (obj->oFlags & OBJ_FLAG_HOLDABLE) {
+        if (heldBehavior == bhvCarrySomething3) {
+            obj->oHeldState = HELD_HELD;
+        }
+
+        if (heldBehavior == bhvCarrySomething5) {
+            obj->oHeldState = HELD_THROWN;
+        }
+
+        if (heldBehavior == bhvCarrySomething4) {
+            obj->oHeldState = HELD_DROPPED;
+        }
+    } else {
+        obj->curBhvCommand = segmented_to_virtual(heldBehavior);
+        obj->bhvStackIndex = 0;
+    }
+}
+
+/* src/game/object_helpers.c: obj_set_gfx_pos_from_pos */
+void obj_set_gfx_pos_from_pos(struct Object *obj) {
+    obj->header.gfx.pos[0] = obj->oPosX;
+    obj->header.gfx.pos[1] = obj->oPosY;
+    obj->header.gfx.pos[2] = obj->oPosZ;
+}
+
+/* src/game/object_helpers.c: obj_set_gfx_pos_at_obj_pos */
+void obj_set_gfx_pos_at_obj_pos(struct Object *obj1, struct Object *obj2) {
+    obj1->header.gfx.pos[0] = obj2->oPosX;
+    obj1->header.gfx.pos[1] = obj2->oPosY + obj2->oGraphYOffset;
+    obj1->header.gfx.pos[2] = obj2->oPosZ;
+
+    obj1->header.gfx.angle[0] = obj2->oMoveAnglePitch & 0xFFFF;
+    obj1->header.gfx.angle[1] = obj2->oMoveAngleYaw & 0xFFFF;
+    obj1->header.gfx.angle[2] = obj2->oMoveAngleRoll & 0xFFFF;
 }

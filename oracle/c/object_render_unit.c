@@ -2,8 +2,9 @@
  * state for objects other than Mario, around verbatim functions: the camera
  * node's transform (mtxf_lookat with the node's roll, applied to the root's
  * identity, as geo_process_camera does), geo_process_object's matrix
- * (mtxf_billboard or mtxf_rotate_zxy_and_translate, mtxf_mul,
- * mtxf_scale_vec3f), the verbatim obj_is_in_view (excerpts/rendering_view.c)
+ * (the throw matrix, mtxf_billboard or mtxf_rotate_zxy_and_translate,
+ * mtxf_mul, mtxf_scale_vec3f), the verbatim geo_set_animation_globals for
+ * animated objects, the verbatim obj_is_in_view (excerpts/rendering_view.c)
  * and, for objects in view, the model's switch callbacks (the verbatim
  * geo_switch_anim_state) with geo_process_switch's child selection. The
  * models' node trees come from the Rust importer's ROM decode
@@ -22,6 +23,7 @@ struct GraphNodePerspective *gCurGraphNodeCamFrustum;
 #include "excerpts/rendering_view.c"
 
 Gfx *geo_switch_anim_state(s32 callContext, struct GraphNode *node, void *context);
+void geo_set_animation_globals(struct AnimInfo *node, s32 hasAnimation);
 void oracle_camera_graph_nodes(struct GraphNodeCamera **camera, struct GraphNodePerspective **perspective);
 extern struct GraphNode **gLoadedGraphNodes;
 
@@ -103,18 +105,82 @@ void oracle_render_set_models(const OracleModel *models, s32 count) {
     }
 }
 
+/* The graph nodes under each model root: the traversal a held object's model
+ * takes inside Mario's hand (mario_render_unit.c's verbatim traversal).
+ * Nodes without callbacks are plain start nodes (their matrices and display
+ * lists change nothing the simulation keeps); anim-state switches carry the
+ * verbatim geo_switch_anim_state; an unaudited node aborts when reached. */
+static void *sModelGraph[8192];
+static s32 sModelGraphCount;
+
+static Gfx *unaudited_node(s32 callContext, struct GraphNode *node, void *context) {
+    (void) node;
+    (void) context;
+    if (callContext == GEO_CONTEXT_RENDER) {
+        fail("the render pass reaches an unaudited node");
+    }
+    return NULL;
+}
+
+static void *graph_alloc(size_t size) {
+    void *p = calloc(1, size);
+    if (sModelGraphCount >= (s32) (sizeof(sModelGraph) / sizeof(sModelGraph[0]))) {
+        fail("too many model graph nodes");
+    }
+    sModelGraph[sModelGraphCount++] = p;
+    return p;
+}
+
+static void build_children(RenderModel *m, s32 node, struct GraphNode *parent) {
+    s32 i;
+    for (i = 0; i < m->childCount[node]; i++) {
+        s32 c = m->children[m->childStart[node] + i];
+        struct GraphNode *child;
+        switch (m->kinds[c]) {
+            case NODE_PLAIN:
+                child = &init_graph_node_start(NULL, graph_alloc(sizeof(struct GraphNodeStart)))->node;
+                break;
+            case NODE_ANIM_STATE_SWITCH:
+                child = &init_graph_node_switch_case(NULL, graph_alloc(sizeof(struct GraphNodeSwitchCase)),
+                                                     (s16) m->params[c], 0,
+                                                     (GraphNodeFunc) geo_switch_anim_state, 0)->fnNode.node;
+                break;
+            case NODE_CULLING_RADIUS:
+                child = &init_graph_node_culling_radius(NULL,
+                                                        graph_alloc(sizeof(struct GraphNodeCullingRadius)),
+                                                        (s16) m->params[c])->node;
+                break;
+            default:
+                child = &init_graph_node_generated(NULL, graph_alloc(sizeof(struct GraphNodeGenerated)),
+                                                   unaudited_node, 0)->fnNode.node;
+                break;
+        }
+        geo_add_child(parent, child);
+        build_children(m, c, child);
+    }
+}
+
 /* level_main_scripts_entry and the level script's registrations. */
 void oracle_render_load_models(void) {
     s32 i;
+    for (i = 0; i < sModelGraphCount; i++) {
+        free(sModelGraph[i]);
+    }
+    sModelGraphCount = 0;
     memset(sModelRoots, 0, sizeof(sModelRoots));
     for (i = 0; i < 0x100; i++) {
         gLoadedGraphNodes[i] = NULL;
         if (sModels[i].loaded) {
             struct GraphNodeCullingRadius *root = &sModelRoots[i];
             s32 cull = sModels[i].nodeCount > 0 && sModels[i].kinds[sModels[i].root] == NODE_CULLING_RADIUS;
-            root->node.type = cull ? GRAPH_NODE_TYPE_CULLING_RADIUS : GRAPH_NODE_TYPE_START;
-            root->node.flags = GRAPH_RENDER_ACTIVE;
-            root->cullingRadius = cull ? (s16) sModels[i].params[sModels[i].root] : 0;
+            if (cull) {
+                init_graph_node_culling_radius(NULL, root, (s16) sModels[i].params[sModels[i].root]);
+            } else {
+                init_graph_node_start(NULL, (struct GraphNodeStart *) root);
+            }
+            if (sModels[i].nodeCount > 0) {
+                build_children(&sModels[i], sModels[i].root, &root->node);
+            }
             gLoadedGraphNodes[i] = &root->node;
         }
     }
@@ -178,6 +244,7 @@ static void process_node(struct Object *obj, RenderModel *m, s32 node) {
 /* geo_process_object's state changes for one object other than Mario. */
 void oracle_render_object(struct Object *obj, s8 rootAreaIndex) {
     struct GraphNodeObject *node = &obj->header.gfx;
+    s32 hasAnimation = (node->node.flags & GRAPH_RENDER_HAS_ANIMATION) != 0;
     Mat4 placed, matrix;
     if (!(node->node.flags & GRAPH_RENDER_ACTIVE)) {
         node->throwMatrix = NULL;
@@ -187,9 +254,8 @@ void oracle_render_object(struct Object *obj, s8 rootAreaIndex) {
         return;
     }
     if (node->throwMatrix != NULL) {
-        fail("object throw matrices are not modelled");
-    }
-    if (node->node.flags & GRAPH_RENDER_BILLBOARD) {
+        mtxf_mul(placed, *node->throwMatrix, sCameraMatrix);
+    } else if (node->node.flags & GRAPH_RENDER_BILLBOARD) {
         struct GraphNodeCamera *camera;
         struct GraphNodePerspective *perspective;
         oracle_camera_graph_nodes(&camera, &perspective);
@@ -201,7 +267,7 @@ void oracle_render_object(struct Object *obj, s8 rootAreaIndex) {
     }
     mtxf_scale_vec3f(matrix, placed, node->scale);
     if (node->animInfo.curAnim != NULL) {
-        fail("object animations are not modelled");
+        geo_set_animation_globals(&node->animInfo, hasAnimation);
     }
     if (obj_is_in_view(node, matrix) && node->sharedChild != NULL) {
         s32 model = oracle_render_model_of(node->sharedChild);

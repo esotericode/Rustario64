@@ -316,6 +316,7 @@ pub const MODEL_CANNON_BASE: i32 = 128;
 pub const O_SCUTTLEBUG_UNK_F8: usize = 0x1C;
 pub const O_SUB_ACTION: usize = 0x32;
 pub const SOUND_GENERAL_EXPLOSION6: u32 = 0x30310001;
+pub const BOBOMB_ACT_PATROL: i32 = 0;
 pub const MODEL_BITDW_FERRIS_WHEEL_AXLE: i32 = 57;
 pub const O_GOOMBA_BLINK_TIMER: usize = 0x1F;
 pub const SURFACE_WARP: i16 = 50;
@@ -393,6 +394,7 @@ pub const ACT_HOLD_METAL_WATER_FALL_LAND: u32 = 0x42F7;
 pub const OBJ_MOVE_UNDERWATER_OFF_GROUND: u32 = 0x20;
 pub const PARTICLE_SHALLOW_WATER_SPLASH: u32 = 0x1000;
 pub const SOUND_OBJ_WIGGLER_LOW_PITCH: u32 = 0x50712081;
+pub const ATTACK_KICK_OR_TRIP: u32 = 0x2;
 pub const SOUND_ACTION_METAL_STEP_WATER: u32 = 0x4529081;
 pub const SURFACE_PAINTING_WARP_D8: i16 = 216;
 pub const MARIO_SPAWN_AIRBORNE: u32 = 0x12;
@@ -401,6 +403,7 @@ pub const MODEL_FLYGUY: i32 = 220;
 pub const SOUND_MENU_HAND_APPEAR: u32 = 0x700A0081;
 pub const INPUT_OFF_FLOOR: u16 = 0x4;
 pub const ACT_FORWARD_AIR_KB: u32 = 0x10208B1;
+pub const ATTACK_FROM_ABOVE: u32 = 0x3;
 pub const SOUND_GENERAL_GRAND_STAR_JUMP: u32 = 0x30740081;
 pub const SOUND_GENERAL_SWITCH_DOOR_OPEN: u32 = 0x3067A081;
 pub const MODEL_VCUTM_SEESAW_PLATFORM: i32 = 54;
@@ -502,6 +505,7 @@ pub const ACT_WATER_IDLE: u32 = 0x380022C0;
 pub const O_MIPS_FORWARD_VELOCITY: usize = 0x49;
 pub const ACT_INTRO_CUTSCENE: u32 = 0x4001301;
 pub const MODEL_LEVEL_GEOMETRY_0A: i32 = 10;
+pub const OBJ_ACT_VERTICAL_KNOCKBACK: i32 = 101;
 pub const SAVE_FLAG_COLLECTED_MIPS_STAR_1: u32 = 0x8000000;
 pub const O_KOOPA_TURNING_AWAY_FROM_WALL: usize = 0x1F;
 pub const SOUND_GENERAL_EXPLOSION7: u32 = 0x30490001;
@@ -839,6 +843,7 @@ pub const O_PLATFORM_ON_TRACK_OFFSET_Y: usize = 0x22;
 pub const MODEL_CASTLE_STAR_DOOR_30_STARS: i32 = 208;
 pub const O_KLEPTO_START_POS_Z: usize = 0x21;
 pub const SOUND_MENU_CAMERA_ZOOM_OUT: u32 = 0x70070081;
+pub const ATTACK_FROM_BELOW: u32 = 0x6;
 pub const COIN_FORMATION_BP_FLAG_MASK: i32 = 7;
 pub const O_CHUCKYA_UNK100: usize = 0x1E;
 pub const O_HIDDEN_OBJECT_PURPLE_SWITCH: usize = 0x1B;
@@ -1022,7 +1027,9 @@ pub const SOUND_ACTION_TERRAIN_HEAVY_LANDING: u32 = 0x4608081;
 pub const O_T_T_C_TREADMILL_TARGET_SPEED: usize = 0x1E;
 pub const O_WATER_CANNON_UNK_F_C: usize = 0x1D;
 pub const O_DOOR_UNK88: usize = 0x0;
+pub const MOV_YCOIN_ACT_DEATH_PLANE_DEATH: i32 = 101;
 pub const MODEL_CAP_SWITCH_BASE: i32 = 86;
+pub const ATTACK_PUNCH: u32 = 0x1;
 pub const CUTSCENE_ENTER_CANNON: u8 = 0x85;
 pub const MARIO_SPAWN_UNKNOWN_02: u32 = 0x2;
 pub const MARIO_SPAWN_PAINTING_STAR_COLLECT: u32 = 0x20;
@@ -1058,6 +1065,7 @@ pub const ACT_HANG_MOVING: u32 = 0x20054A;
 pub const O_EYEROK_BOSS_UNK110: usize = 0x22;
 pub const O_FLAGS: usize = 0x1;
 pub const CAM_MOVE_PAUSE_SCREEN: u16 = 0x8000;
+pub const BOBOMB_ACT_EXPLODE: i32 = 3;
 pub const MODEL_HMC_METAL_PLATFORM: i32 = 54;
 pub const SOUND_MENU_MARIO_CASTLE_WARP2: u32 = 0x70222081;
 pub const SOUND_MARIO_HAHA_2: u32 = 0x2411F081;
@@ -1181,6 +1189,7 @@ pub const MODEL_BBH_MESH_ELEVATOR: i32 = 58;
 pub const AREA_CASTLE_BASEMENT: i32 = 99;
 pub const ACT_WAKING_UP: u32 = 0xC000204;
 pub const CAM_ANGLE_MARIO: i32 = 1;
+pub const ATTACK_FAST_ATTACK: u32 = 0x5;
 pub const O_BACK_AND_FORTH_PLATFORM_VEL: usize = 0x1E;
 pub const SURFACE_INSTANT_WARP_1D: i16 = 29;
 pub const CUTSCENE_END_WAVING: u8 = 0xB1;
@@ -1193,6 +1202,7 @@ pub const SOUND_OBJ_CANNON2: u32 = 0x500EF081;
 pub const SURFACE_MGR_MUSIC: i16 = 26;
 pub const SOUND_PEACH_POWER_OF_THE_STARS: u32 = 0x2439FF81;
 pub const ACT_CAUGHT_IN_WHIRLPOOL: u32 = 0x300222E3;
+pub const BOBOMB_ACT_CHASE_MARIO: i32 = 2;
 pub const SOUND_OBJ_BOWSER_LAUGH: u32 = 0x50388081;
 pub const CAM_FOV_SET_45: u8 = 0x1;
 pub const O_INTERACTION_SUBTYPE: usize = 0x42;
@@ -1242,6 +1252,7 @@ pub const ACT_PUSHING_DOOR: u32 = 0x1321;
 pub const SOUND_ENV_MERRY_GO_ROUND_CREAKING: u32 = 0x400F4001;
 pub const SOUND_GENERAL_CLAM_SHELL3: u32 = 0x30274081;
 pub const SOUND_OBJ_PIRANHA_PLANT_SHRINK: u32 = 0x50334081;
+pub const MOV_YCOIN_ACT_LAVA_DEATH: i32 = 100;
 pub const SOUND_MENU_POWER_METER: u32 = 0x700D0081;
 pub const MARIO_SPAWN_FLYING: u32 = 0x17;
 pub const SOUND_GENERAL_BIG_CLOCK: u32 = 0x30170081;
@@ -1390,6 +1401,7 @@ pub const MODEL_CASTLE_STAR_DOOR_70_STARS: i32 = 214;
 pub const SURFACE_PAINTING_WARP_E4: i16 = 228;
 pub const MODEL_VCUTM_WARP_PIPE: i32 = 22;
 pub const SURFACE_PAINTING_WARP_E6: i16 = 230;
+pub const OBJ_ACT_DEATH_PLANE_DEATH: i32 = 101;
 pub const O_B_BALL_SPAWNER_PERIOD_MINUS1: usize = 0x1D;
 pub const SOUND_MARIO_DOH: u32 = 0x24308081;
 pub const SURFACE_NOISE_VERY_SLIPPERY_74: i16 = 116;
@@ -1702,6 +1714,7 @@ pub const OBJ_MOVE_OUT_SCOPE: u32 = 0x100;
 pub const ACT_GROUP_AIRBORNE: u32 = 0x80;
 pub const O_WATER_CANNON_UNK_F8: usize = 0x1C;
 pub const MODEL_DL_WHIRLPOOL: i32 = 87;
+pub const BOBOMB_ACT_DEATH_PLANE_DEATH: i32 = 101;
 pub const MODEL_LLL_LARGE_FALLING_PLATFORM: i32 = 61;
 pub const ACT_HOLD_METAL_WATER_WALKING: u32 = 0x44F3;
 pub const O_T_T_C_MOVING_BAR_DELAY: usize = 0x1B;
@@ -1851,7 +1864,9 @@ pub const O_CHAIN_CHOMP_RESTRICTED_BY_CHAIN: usize = 0x20;
 pub const MODEL_TREASURE_CHEST_BASE: i32 = 101;
 pub const SOUND_ACTION_TERRAIN_STEP: u32 = 0x6108081;
 pub const O_BETA_TRAMPOLINE_MARIO_ON_TRAMPOLINE: usize = 0x22;
+pub const OBJ_ACT_SQUISHED: i32 = 102;
 pub const O_UP_VEL: usize = 0xE;
+pub const BOBOMB_BP_STYPE_GENERIC: i32 = 0;
 pub const MODEL_LLL_BOWSER_PIECE_1: i32 = 67;
 pub const MODEL_MARIOS_WINGED_METAL_CAP: i32 = 133;
 pub const SOUND_GENERAL_QUIET_POUND2: u32 = 0x30430081;
@@ -1876,6 +1891,7 @@ pub const ACT_GROUP_AUTOMATIC: u32 = 0x140;
 pub const SOUND_ACTION_UNKNOWN431: u32 = 0x4316081;
 pub const O_BOOKEND_UNK_F8: usize = 0x1C;
 pub const SOUND_MENU_YOSHI_GAIN_LIVES: u32 = 0x70150081;
+pub const BOBOMB_ACT_LAVA_DEATH: i32 = 100;
 pub const SURFACE_PAINTING_WARP_FC: i16 = 252;
 pub const MODEL_TTC_ROTATING_HEXAGON: i32 = 60;
 pub const O_PLATFORM_ON_TRACK_PITCH: usize = 0x20;
@@ -1889,6 +1905,7 @@ pub const MODEL_BITDW_STAIRCASE_FRAME3: i32 = 60;
 pub const MODEL_BITDW_STAIRCASE_FRAME4: i32 = 59;
 pub const O_SMALL_PENGUIN_UNK88: usize = 0x0;
 pub const MODEL_CASTLE_CASTLE_DOOR: i32 = 38;
+pub const ATTACK_GROUND_POUND_OR_TWIRL: u32 = 0x4;
 pub const O_J_R_B_SLIDING_BOX_UNK_F_C: usize = 0x1D;
 pub const O_BACK_AND_FORTH_PLATFORM_DISTANCE: usize = 0x1D;
 pub const O_CHAIN_CHOMP_NUM_LUNGES: usize = 0x22;
@@ -1965,6 +1982,7 @@ pub const MODEL_TRAJECTORY_MARKER_BALL: i32 = 225;
 pub const MODEL_MAIN_MENU_YELLOW_FILE_BUTTON: i32 = 6;
 pub const ACT_TWIRL_LAND: u32 = 0x18800238;
 pub const MARIO_CAPS: u32 = 0xF;
+pub const OBJ_ACT_HORIZONTAL_KNOCKBACK: i32 = 100;
 pub const SOUND_OBJ_DIVING_IN_WATER: u32 = 0x5029A081;
 pub const O_MOVE_ANGLE_ROLL: usize = 0x11;
 pub const ACT_METAL_WATER_FALLING: u32 = 0x42F4;
@@ -2013,6 +2031,7 @@ pub const WARP_OP_WARP_OBJECT: i32 = 4;
 pub const SOUND_GENERAL_CANNON_UP: u32 = 0x30478081;
 pub const ACT_ELECTROCUTION: u32 = 0x21313;
 pub const O_WATER_BOMB_STRETCH_SPEED: usize = 0x1D;
+pub const MOV_YCOIN_ACT_BLINKING: i32 = 1;
 pub const MODEL_EYEROK_RIGHT_HAND: i32 = 89;
 pub const O_KOOPA_DISTANCE_TO_MARIO: usize = 0x20;
 pub const O_SKEETER_UNK1_A_C: usize = 0x49;
@@ -2122,6 +2141,7 @@ pub const O_T_T_C_PENDULUM_ANGLE: usize = 0x1C;
 pub const TERRAIN_SNOW: u16 = 0x2;
 pub const O_CANNON_UNK10_C: usize = 0x21;
 pub const MODEL_LAKITU: i32 = 102;
+pub const OBJ_ACT_LAVA_DEATH: i32 = 100;
 pub const MODEL_BOWSER_KEY: i32 = 204;
 pub const MODEL_TTC_ROTATING_PRISM: i32 = 55;
 pub const MODEL_PEACH: i32 = 222;
@@ -2227,6 +2247,7 @@ pub const ACT_SPECIAL_EXIT_AIRBORNE: u32 = 0x192B;
 pub const SOUND_MOVING_LAVA_BURN: u32 = 0x14100001;
 pub const MODEL_WF_BREAKABLE_WALL_LEFT: i32 = 55;
 pub const SOUND_CONSTANT_FREQUENCY: u32 = 0x8000000;
+pub const BOBOMB_BP_STYPE_STATIONARY: i32 = 1;
 pub const CAM_FLAG_CHANGED_PARTRACK_INDEX: i16 = 8;
 pub const SOUND_ACTION_HIT: u32 = 0x444C081;
 pub const ACT_CROUCH_SLIDE: u32 = 0x4808459;
@@ -2344,6 +2365,7 @@ pub const WARP_OP_TRIGGERS_LEVEL_SELECT: i32 = 16;
 pub const MODEL_TREASURE_CHEST_LID: i32 = 102;
 pub const INT_STATUS_HIT_MINE: u32 = 0x200000;
 pub const ACT_TOP_OF_POLE: u32 = 0x100345;
+pub const MOV_YCOIN_ACT_IDLE: i32 = 0;
 pub const O_ACTIVATED_BACK_AND_FORTH_PLATFORM_OFFSET: usize = 0x1C;
 pub const O_CLAM_UNK_F4: usize = 0x1B;
 pub const MODEL_LEVEL_GEOMETRY_0D: i32 = 13;
@@ -2586,6 +2608,7 @@ pub const O_SNUFIT_BULLETS: usize = 0x21;
 pub const O_BOWSER_DIST_TO_CENTER: usize = 0x1D;
 pub const MARIO_SPAWN_DOOR_WARP: u32 = 0x1;
 pub const MODEL_LLL_SINKING_SQUARE_PLATFORMS: i32 = 64;
+pub const BOBOMB_ACT_LAUNCHED: i32 = 1;
 pub const O_YOSHI_CHOSEN_HOME: usize = 0x1D;
 pub const ACTIVE_FLAG_UNK10: i16 = 1024;
 pub const O_MR_BLIZZARD_CHANGE_IN_DIZZINESS: usize = 0x20;
@@ -2927,7 +2950,7 @@ pub const OBJ_LIST_SPAWNER: i32 = 11;
 pub const OBJ_LIST_UNIMPORTANT: i32 = 12;
 
 /// Every generated constant by original name, for the oracle consistency test.
-pub static ALL: [(&str, i64); 2921] = [
+pub static ALL: [(&str, i64); 2944] = [
     ("oBowserKeyScale", O_BOWSER_KEY_SCALE as i64),
     ("SOUND_BANK_MOVING", SOUND_BANK_MOVING as i64),
     ("ACTIVE_PARTICLE_H_STAR", ACTIVE_PARTICLE_H_STAR as i64),
@@ -3510,6 +3533,7 @@ pub static ALL: [(&str, i64); 2921] = [
     ("oScuttlebugUnkF8", O_SCUTTLEBUG_UNK_F8 as i64),
     ("oSubAction", O_SUB_ACTION as i64),
     ("SOUND_GENERAL_EXPLOSION6", SOUND_GENERAL_EXPLOSION6 as i64),
+    ("BOBOMB_ACT_PATROL", BOBOMB_ACT_PATROL as i64),
     (
         "MODEL_BITDW_FERRIS_WHEEL_AXLE",
         MODEL_BITDW_FERRIS_WHEEL_AXLE as i64,
@@ -3647,6 +3671,7 @@ pub static ALL: [(&str, i64); 2921] = [
         "SOUND_OBJ_WIGGLER_LOW_PITCH",
         SOUND_OBJ_WIGGLER_LOW_PITCH as i64,
     ),
+    ("ATTACK_KICK_OR_TRIP", ATTACK_KICK_OR_TRIP as i64),
     (
         "SOUND_ACTION_METAL_STEP_WATER",
         SOUND_ACTION_METAL_STEP_WATER as i64,
@@ -3658,6 +3683,7 @@ pub static ALL: [(&str, i64); 2921] = [
     ("SOUND_MENU_HAND_APPEAR", SOUND_MENU_HAND_APPEAR as i64),
     ("INPUT_OFF_FLOOR", INPUT_OFF_FLOOR as i64),
     ("ACT_FORWARD_AIR_KB", ACT_FORWARD_AIR_KB as i64),
+    ("ATTACK_FROM_ABOVE", ATTACK_FROM_ABOVE as i64),
     (
         "SOUND_GENERAL_GRAND_STAR_JUMP",
         SOUND_GENERAL_GRAND_STAR_JUMP as i64,
@@ -3846,6 +3872,10 @@ pub static ALL: [(&str, i64); 2921] = [
     ("oMipsForwardVelocity", O_MIPS_FORWARD_VELOCITY as i64),
     ("ACT_INTRO_CUTSCENE", ACT_INTRO_CUTSCENE as i64),
     ("MODEL_LEVEL_GEOMETRY_0A", MODEL_LEVEL_GEOMETRY_0A as i64),
+    (
+        "OBJ_ACT_VERTICAL_KNOCKBACK",
+        OBJ_ACT_VERTICAL_KNOCKBACK as i64,
+    ),
     (
         "SAVE_FLAG_COLLECTED_MIPS_STAR_1",
         SAVE_FLAG_COLLECTED_MIPS_STAR_1 as i64,
@@ -4558,6 +4588,7 @@ pub static ALL: [(&str, i64); 2921] = [
         "SOUND_MENU_CAMERA_ZOOM_OUT",
         SOUND_MENU_CAMERA_ZOOM_OUT as i64,
     ),
+    ("ATTACK_FROM_BELOW", ATTACK_FROM_BELOW as i64),
     (
         "COIN_FORMATION_BP_FLAG_MASK",
         COIN_FORMATION_BP_FLAG_MASK as i64,
@@ -4888,7 +4919,12 @@ pub static ALL: [(&str, i64); 2921] = [
     ),
     ("oWaterCannonUnkFC", O_WATER_CANNON_UNK_F_C as i64),
     ("oDoorUnk88", O_DOOR_UNK88 as i64),
+    (
+        "MOV_YCOIN_ACT_DEATH_PLANE_DEATH",
+        MOV_YCOIN_ACT_DEATH_PLANE_DEATH as i64,
+    ),
     ("MODEL_CAP_SWITCH_BASE", MODEL_CAP_SWITCH_BASE as i64),
+    ("ATTACK_PUNCH", ATTACK_PUNCH as i64),
     ("CUTSCENE_ENTER_CANNON", CUTSCENE_ENTER_CANNON as i64),
     ("MARIO_SPAWN_UNKNOWN_02", MARIO_SPAWN_UNKNOWN_02 as i64),
     (
@@ -4966,6 +5002,7 @@ pub static ALL: [(&str, i64); 2921] = [
     ("oEyerokBossUnk110", O_EYEROK_BOSS_UNK110 as i64),
     ("oFlags", O_FLAGS as i64),
     ("CAM_MOVE_PAUSE_SCREEN", CAM_MOVE_PAUSE_SCREEN as i64),
+    ("BOBOMB_ACT_EXPLODE", BOBOMB_ACT_EXPLODE as i64),
     ("MODEL_HMC_METAL_PLATFORM", MODEL_HMC_METAL_PLATFORM as i64),
     (
         "SOUND_MENU_MARIO_CASTLE_WARP2",
@@ -5203,6 +5240,7 @@ pub static ALL: [(&str, i64); 2921] = [
     ("AREA_CASTLE_BASEMENT", AREA_CASTLE_BASEMENT as i64),
     ("ACT_WAKING_UP", ACT_WAKING_UP as i64),
     ("CAM_ANGLE_MARIO", CAM_ANGLE_MARIO as i64),
+    ("ATTACK_FAST_ATTACK", ATTACK_FAST_ATTACK as i64),
     (
         "oBackAndForthPlatformVel",
         O_BACK_AND_FORTH_PLATFORM_VEL as i64,
@@ -5233,6 +5271,7 @@ pub static ALL: [(&str, i64); 2921] = [
         SOUND_PEACH_POWER_OF_THE_STARS as i64,
     ),
     ("ACT_CAUGHT_IN_WHIRLPOOL", ACT_CAUGHT_IN_WHIRLPOOL as i64),
+    ("BOBOMB_ACT_CHASE_MARIO", BOBOMB_ACT_CHASE_MARIO as i64),
     ("SOUND_OBJ_BOWSER_LAUGH", SOUND_OBJ_BOWSER_LAUGH as i64),
     ("CAM_FOV_SET_45", CAM_FOV_SET_45 as i64),
     ("oInteractionSubtype", O_INTERACTION_SUBTYPE as i64),
@@ -5327,6 +5366,7 @@ pub static ALL: [(&str, i64); 2921] = [
         "SOUND_OBJ_PIRANHA_PLANT_SHRINK",
         SOUND_OBJ_PIRANHA_PLANT_SHRINK as i64,
     ),
+    ("MOV_YCOIN_ACT_LAVA_DEATH", MOV_YCOIN_ACT_LAVA_DEATH as i64),
     ("SOUND_MENU_POWER_METER", SOUND_MENU_POWER_METER as i64),
     ("MARIO_SPAWN_FLYING", MARIO_SPAWN_FLYING as i64),
     ("SOUND_GENERAL_BIG_CLOCK", SOUND_GENERAL_BIG_CLOCK as i64),
@@ -5613,6 +5653,10 @@ pub static ALL: [(&str, i64); 2921] = [
     ("SURFACE_PAINTING_WARP_E4", SURFACE_PAINTING_WARP_E4 as i64),
     ("MODEL_VCUTM_WARP_PIPE", MODEL_VCUTM_WARP_PIPE as i64),
     ("SURFACE_PAINTING_WARP_E6", SURFACE_PAINTING_WARP_E6 as i64),
+    (
+        "OBJ_ACT_DEATH_PLANE_DEATH",
+        OBJ_ACT_DEATH_PLANE_DEATH as i64,
+    ),
     (
         "oBBallSpawnerPeriodMinus1",
         O_B_BALL_SPAWNER_PERIOD_MINUS1 as i64,
@@ -6214,6 +6258,10 @@ pub static ALL: [(&str, i64); 2921] = [
     ("oWaterCannonUnkF8", O_WATER_CANNON_UNK_F8 as i64),
     ("MODEL_DL_WHIRLPOOL", MODEL_DL_WHIRLPOOL as i64),
     (
+        "BOBOMB_ACT_DEATH_PLANE_DEATH",
+        BOBOMB_ACT_DEATH_PLANE_DEATH as i64,
+    ),
+    (
         "MODEL_LLL_LARGE_FALLING_PLATFORM",
         MODEL_LLL_LARGE_FALLING_PLATFORM as i64,
     ),
@@ -6497,7 +6545,9 @@ pub static ALL: [(&str, i64); 2921] = [
         "oBetaTrampolineMarioOnTrampoline",
         O_BETA_TRAMPOLINE_MARIO_ON_TRAMPOLINE as i64,
     ),
+    ("OBJ_ACT_SQUISHED", OBJ_ACT_SQUISHED as i64),
     ("oUpVel", O_UP_VEL as i64),
+    ("BOBOMB_BP_STYPE_GENERIC", BOBOMB_BP_STYPE_GENERIC as i64),
     ("MODEL_LLL_BOWSER_PIECE_1", MODEL_LLL_BOWSER_PIECE_1 as i64),
     (
         "MODEL_MARIOS_WINGED_METAL_CAP",
@@ -6537,6 +6587,7 @@ pub static ALL: [(&str, i64); 2921] = [
         "SOUND_MENU_YOSHI_GAIN_LIVES",
         SOUND_MENU_YOSHI_GAIN_LIVES as i64,
     ),
+    ("BOBOMB_ACT_LAVA_DEATH", BOBOMB_ACT_LAVA_DEATH as i64),
     ("SURFACE_PAINTING_WARP_FC", SURFACE_PAINTING_WARP_FC as i64),
     (
         "MODEL_TTC_ROTATING_HEXAGON",
@@ -6568,6 +6619,10 @@ pub static ALL: [(&str, i64); 2921] = [
     ),
     ("oSmallPenguinUnk88", O_SMALL_PENGUIN_UNK88 as i64),
     ("MODEL_CASTLE_CASTLE_DOOR", MODEL_CASTLE_CASTLE_DOOR as i64),
+    (
+        "ATTACK_GROUND_POUND_OR_TWIRL",
+        ATTACK_GROUND_POUND_OR_TWIRL as i64,
+    ),
     ("oJRBSlidingBoxUnkFC", O_J_R_B_SLIDING_BOX_UNK_F_C as i64),
     (
         "oBackAndForthPlatformDistance",
@@ -6714,6 +6769,10 @@ pub static ALL: [(&str, i64); 2921] = [
     ("ACT_TWIRL_LAND", ACT_TWIRL_LAND as i64),
     ("MARIO_CAPS", MARIO_CAPS as i64),
     (
+        "OBJ_ACT_HORIZONTAL_KNOCKBACK",
+        OBJ_ACT_HORIZONTAL_KNOCKBACK as i64,
+    ),
+    (
         "SOUND_OBJ_DIVING_IN_WATER",
         SOUND_OBJ_DIVING_IN_WATER as i64,
     ),
@@ -6794,6 +6853,7 @@ pub static ALL: [(&str, i64); 2921] = [
     ("SOUND_GENERAL_CANNON_UP", SOUND_GENERAL_CANNON_UP as i64),
     ("ACT_ELECTROCUTION", ACT_ELECTROCUTION as i64),
     ("oWaterBombStretchSpeed", O_WATER_BOMB_STRETCH_SPEED as i64),
+    ("MOV_YCOIN_ACT_BLINKING", MOV_YCOIN_ACT_BLINKING as i64),
     ("MODEL_EYEROK_RIGHT_HAND", MODEL_EYEROK_RIGHT_HAND as i64),
     ("oKoopaDistanceToMario", O_KOOPA_DISTANCE_TO_MARIO as i64),
     ("oSkeeterUnk1AC", O_SKEETER_UNK1_A_C as i64),
@@ -7002,6 +7062,7 @@ pub static ALL: [(&str, i64); 2921] = [
     ("TERRAIN_SNOW", TERRAIN_SNOW as i64),
     ("oCannonUnk10C", O_CANNON_UNK10_C as i64),
     ("MODEL_LAKITU", MODEL_LAKITU as i64),
+    ("OBJ_ACT_LAVA_DEATH", OBJ_ACT_LAVA_DEATH as i64),
     ("MODEL_BOWSER_KEY", MODEL_BOWSER_KEY as i64),
     ("MODEL_TTC_ROTATING_PRISM", MODEL_TTC_ROTATING_PRISM as i64),
     ("MODEL_PEACH", MODEL_PEACH as i64),
@@ -7231,6 +7292,10 @@ pub static ALL: [(&str, i64); 2921] = [
     ),
     ("SOUND_CONSTANT_FREQUENCY", SOUND_CONSTANT_FREQUENCY as i64),
     (
+        "BOBOMB_BP_STYPE_STATIONARY",
+        BOBOMB_BP_STYPE_STATIONARY as i64,
+    ),
+    (
         "CAM_FLAG_CHANGED_PARTRACK_INDEX",
         CAM_FLAG_CHANGED_PARTRACK_INDEX as i64,
     ),
@@ -7458,6 +7523,7 @@ pub static ALL: [(&str, i64); 2921] = [
     ("MODEL_TREASURE_CHEST_LID", MODEL_TREASURE_CHEST_LID as i64),
     ("INT_STATUS_HIT_MINE", INT_STATUS_HIT_MINE as i64),
     ("ACT_TOP_OF_POLE", ACT_TOP_OF_POLE as i64),
+    ("MOV_YCOIN_ACT_IDLE", MOV_YCOIN_ACT_IDLE as i64),
     (
         "oActivatedBackAndForthPlatformOffset",
         O_ACTIVATED_BACK_AND_FORTH_PLATFORM_OFFSET as i64,
@@ -7925,6 +7991,7 @@ pub static ALL: [(&str, i64); 2921] = [
         "MODEL_LLL_SINKING_SQUARE_PLATFORMS",
         MODEL_LLL_SINKING_SQUARE_PLATFORMS as i64,
     ),
+    ("BOBOMB_ACT_LAUNCHED", BOBOMB_ACT_LAUNCHED as i64),
     ("oYoshiChosenHome", O_YOSHI_CHOSEN_HOME as i64),
     ("ACTIVE_FLAG_UNK10", ACTIVE_FLAG_UNK10 as i64),
     (

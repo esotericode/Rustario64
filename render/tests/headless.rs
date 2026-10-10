@@ -272,7 +272,7 @@ fn rom_coins_and_sparkles_draw_as_camera_facing_textured_cutouts() {
     let path = std::env::var_os("RUSTARIO64_ROM").expect("set RUSTARIO64_ROM");
     let rom = Rom::open(std::path::Path::new(&path)).unwrap();
     let content = objects::import(&rom).unwrap();
-    let models = content.models(&[]);
+    let models = content.models(&[], None);
     let trig = engine::trig_tables(&rom).unwrap();
     let mut drawer = ObjectDrawer::new(&content, &trig);
     let mut view = ObjectModelView::default();
@@ -299,6 +299,8 @@ fn rom_coins_and_sparkles_draw_as_camera_facing_textured_cutouts() {
                     angle: [0; 3],
                     scale: [1.0; 3],
                     billboard: true,
+                    throw_matrix: None,
+                    animation: None,
                     cases: vec![(node, child)],
                 }])
                 .unwrap();

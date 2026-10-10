@@ -8,10 +8,12 @@
 //! queries, those traces become the authority and this harness can be retired.
 pub mod camera;
 pub mod camera_trace;
+pub mod grab;
 pub mod input_trace;
 pub mod object_motion;
 pub mod object_trace;
 pub mod shadow;
+pub mod standard_motion;
 pub mod tick_trace;
 
 use rustario64::{content::animation::MarioAnimations, simulation::TickInput};
@@ -19,6 +21,22 @@ use std::{
     collections::BTreeMap,
     sync::{Mutex, MutexGuard},
 };
+
+/// c/object_anims_unit.c's OracleAnimation.
+#[repr(C)]
+struct OracleAnimation {
+    segmented: u32,
+    flags: i16,
+    y_trans_divisor: i16,
+    start_frame: i16,
+    loop_start: i16,
+    loop_end: i16,
+    bone_count: i16,
+    index: *const u16,
+    index_count: i32,
+    values: *const i16,
+    value_count: i32,
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
@@ -98,6 +116,8 @@ unsafe extern "C" {
         preset_params: *const i16,
     );
     fn oracle_tick_set_spawn_infos(infos: *const OracleSpawnInfo, count: i32);
+    fn oracle_set_bobomb_animations(table: u32, anims: *const OracleAnimation, count: i32);
+    fn oracle_render_set_mario_model(nodes: *const OracleGeoNode, count: i32, root: i32);
     fn oracle_tick_run(input: *const OracleTickInput);
     fn oracle_tick_snapshot(
         names: *mut *const *const std::ffi::c_char,
@@ -150,6 +170,27 @@ struct OracleModel {
     child_start: *const i32,
     child_count: *const i32,
     children: *const i32,
+}
+
+/// One node of MODEL_MARIO's graph (layout matches `OracleGeoNode` in
+/// c/mario_render_unit.c), from which the oracle builds the node with the
+/// verbatim graph_node.c constructor.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OracleGeoNode {
+    pub kind: i32,
+    pub parent: i32,
+    pub layer: i32,
+    pub has_display_list: i32,
+    /// `MarioCallback` role (its declaration order), or -1.
+    pub callback: i32,
+    pub param: i32,
+    pub param2: i32,
+    pub param3: i32,
+    pub a: [i16; 3],
+    pub b: [i16; 3],
+    pub scale: u32,
+    pub flags: i32,
 }
 
 /// One area spawn info (layout matches `OracleSpawnInfo` in c/tick.c).
@@ -561,6 +602,36 @@ impl Oracle {
             );
             oracle_tick_set_spawn_infos(o.spawn_infos.as_ptr(), o.spawn_infos.len() as i32);
         }
+        let animations: Vec<OracleAnimation> = o
+            .bobomb_animations
+            .iter()
+            .map(|a| OracleAnimation {
+                segmented: a.segmented,
+                flags: a.flags,
+                y_trans_divisor: a.y_trans_divisor,
+                start_frame: a.start_frame,
+                loop_start: a.loop_start,
+                loop_end: a.loop_end,
+                bone_count: a.bone_count,
+                index: a.index.as_ptr(),
+                index_count: a.index.len() as i32,
+                values: a.values.as_ptr(),
+                value_count: a.values.len() as i32,
+            })
+            .collect();
+        // SAFETY: as above; the C side copies the arrays.
+        unsafe {
+            oracle_set_bobomb_animations(
+                o.bobomb_table,
+                animations.as_ptr(),
+                animations.len() as i32,
+            );
+            oracle_render_set_mario_model(
+                o.mario_model.as_ptr(),
+                o.mario_model.len() as i32,
+                o.mario_root,
+            );
+        };
     }
 
     /// Enter a level as c/tick.c's oracle_tick_begin does. Requires the

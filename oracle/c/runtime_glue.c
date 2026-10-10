@@ -136,9 +136,12 @@ const BehaviorScript bhvNormalCap[1];
 const BehaviorScript bhvTree[1];
 const BehaviorScript bhvBowser[1];
 const BehaviorScript bhvKoopaShellUnderwater[1];
-const BehaviorScript bhvCarrySomething3[1];
-const BehaviorScript bhvCarrySomething4[1];
-const BehaviorScript bhvCarrySomething5[1];
+/* Water particles (obj_splash's waves and bubbles, underwater explosions'
+ * bubbles) are not ported; the Rust side stops before spawning one, so the
+ * native frames never run them. */
+const BehaviorScript bhvObjectWaterWave[1];
+const BehaviorScript bhvObjectBubble[1];
+const BehaviorScript bhvBobombExplosionBubble[1];
 /* Referenced by the vendored special preset table. */
 const BehaviorScript bhvBetaChestBottom[1];
 const BehaviorScript bhvBigBully[1];
@@ -262,6 +265,14 @@ void set_camera_shake_from_hit(s16 shake) {
     }
 }
 
+/* Objects' environmental shakes (explosions), recorded like Mario's. */
+void set_environmental_camera_shake(s16 shake) {
+    oracle_event(ORACLE_EVENT_ENV_CAMERA_SHAKE, shake, 0);
+    if (gOracleCameraLinked) {
+        oracle_camera_native_env_shake(shake);
+    }
+}
+
 /* Dialog boundary: no dialog system runs, so no dialog is ever open. */
 s16 get_dialog_id(void) {
     return DIALOG_NONE;
@@ -300,12 +311,6 @@ s32 mario_execute_submerged_action(struct MarioState *m) {
 }
 
 /* ---- Unreachable without objects ---- */
-void obj_set_held_state(struct Object *obj, const BehaviorScript *heldBehavior) {
-    (void) obj;
-    (void) heldBehavior;
-    unreachable_without_objects("obj_set_held_state");
-}
-
 void stop_shell_music(void) {
     unreachable_without_objects("stop_shell_music (shell object)");
 }
@@ -324,10 +329,38 @@ u16 level_control_timer(s32 timerOp) {
     return 0;
 }
 
+/* memory.c under NO_SEGMENTED_MEMORY: host pointers are their own segmented
+ * form, as segmented_to_virtual's are (behaviors compare as pointers). */
 void *virtual_to_segmented(u32 segment, const void *addr) {
     (void) segment;
-    (void) addr;
-    unreachable_without_objects("virtual_to_segmented (object behavior)");
+    return (void *) addr;
+}
+
+/* The display list's per-frame arena (alloc_display_list in game_init.c) as
+ * obj_orient_graph uses it: Mat4-sized blocks, reset when each frame starts.
+ * Exhausting the original's pool is not modelled. */
+#define ORACLE_FRAME_MATRICES 1024
+static Mat4 sFrameMatrices[ORACLE_FRAME_MATRICES];
+static s32 sFrameMatrixCount;
+
+void *oracle_frame_alloc_display_list(u32 size) {
+    if (size != sizeof(Mat4) || sFrameMatrixCount >= ORACLE_FRAME_MATRICES) {
+        fprintf(stderr, "oracle: unexpected display-list allocation\n");
+        abort();
+    }
+    return &sFrameMatrices[sFrameMatrixCount++];
+}
+
+void oracle_frame_arena_reset(void) {
+    sFrameMatrixCount = 0;
+}
+
+/* A matrix in the frame arena, or NULL. */
+const f32 *oracle_frame_matrix(const void *p) {
+    const Mat4 *m = (const Mat4 *) p;
+    if (m >= &sFrameMatrices[0] && m < &sFrameMatrices[ORACLE_FRAME_MATRICES]) {
+        return &(*m)[0][0];
+    }
     return NULL;
 }
 
@@ -359,13 +392,11 @@ UNREACHABLE_HANDLER(interact_mr_blizzard)
 UNREACHABLE_HANDLER(interact_hit_from_below)
 UNREACHABLE_HANDLER(interact_bounce_top)
 UNREACHABLE_HANDLER(interact_unknown_08)
-UNREACHABLE_HANDLER(interact_damage)
 UNREACHABLE_HANDLER(interact_breakable)
 UNREACHABLE_HANDLER(interact_koopa_shell)
 UNREACHABLE_HANDLER(interact_pole)
 UNREACHABLE_HANDLER(interact_hoot)
 UNREACHABLE_HANDLER(interact_cap)
-UNREACHABLE_HANDLER(interact_grabbable)
 UNREACHABLE_HANDLER(interact_text)
 
 /* ---- Object-system boundaries ---- */
@@ -541,9 +572,22 @@ void spawn_macro_abs_special(s32 model, const BehaviorScript *behavior, s16 x, s
     (void) unkC;
 }
 
+/* libultra's float-to-fixed matrix conversion (authored from its documented
+ * layout: the 16 integer halves of the 16.16 values first, then the 16
+ * fraction halves, two per word). The level-of-detail node reads the integer
+ * half of the translation's z. */
 void guMtxF2L(float mf[4][4], Mtx *m) {
-    (void) mf;
-    (void) m;
+    s32 r, c;
+    for (r = 0; r < 4; r++) {
+        for (c = 0; c < 2; c++) {
+            s32 first = (s32) (mf[r][2 * c] * 65536.0f);
+            s32 second = (s32) (mf[r][2 * c + 1] * 65536.0f);
+            m->m[r / 2][(r % 2) * 2 + c] =
+                (s32) (((u32) first & 0xFFFF0000u) | (((u32) second >> 16) & 0xFFFFu));
+            m->m[2 + r / 2][(r % 2) * 2 + c] =
+                (s32) ((((u32) first << 16) & 0xFFFF0000u) | ((u32) second & 0xFFFFu));
+        }
+    }
 }
 
 /* ---- Mario animation DMA (memory.c boundary) ----

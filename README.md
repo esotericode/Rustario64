@@ -3,7 +3,8 @@
 A new Rust engine that imports Super Mario 64 content from a user-supplied ROM.
 Bob-omb Battlefield is the first playable **target**; today it is an imported,
 viewable level where Mario, with his model and animations from your ROM, can be
-moved around by the compared simulation; it is not yet a playable course. Read
+moved around by the compared simulation among its coins and Bob-ombs; it is not
+yet a playable course (no missions, stars or King Bob-omb). Read
 [PROJECT_PLAN.md](PROJECT_PLAN.md) for scope, milestones, and the live status.
 
 What works now:
@@ -59,17 +60,39 @@ What works now:
   (5,400 authored frames in CI, 9,600 on BOB's coins with your ROM). In the
   viewer, Mario sees and collects BOB's act-1 coins with their ROM models,
   animated sparkles and a coin counter.
+- **BOB's Bob-ombs**: the ROM's Bob-omb script and animation table run the
+  original patrol, blink, fuse, chase, kick launch, explosion (with its camera
+  shake and death smoke), lava and death-plane deaths, yellow-coin loot and
+  respawner, with the original `object_step` movement and Mario's damage
+  knockback. Mario picks them up with a punch or a dive, carries them, throws
+  them (also in the air), sets them down, or holds one until its fuse runs
+  out: his holding actions and the hand position the original render pass
+  writes through his ROM model (`simulation::mario::render`). **Complete frames
+  with Bob-ombs and holding match the decomp word for word** (9,000 authored
+  frames and 3,203 kick and holding encounter frames in CI, 30,511 on BOB's
+  twelve Bob-ombs with your ROM). The viewer draws them with their skinned,
+  animated ROM model, fuse smoke and explosions, and in Mario's hands while
+  he carries one.
 - A fixed 30 Hz scheduler and exact trace comparison, with exportable native-C/Rust
   **full-tick** and input-stage trace pairs.
-- The original enemy `object_step` physics, ready for actor integration:
-  wall reflection, slopes/friction, bouncing, water motion and terrain alignment.
-  63,174 authored and 123,200 local BOB component calls match native C bit for bit.
-  This does not yet spawn Bob-ombs or run their behaviors.
+- The original enemy `object_step` physics (wall reflection, slopes/friction,
+  bouncing, water motion and terrain alignment): 63,174 authored and 123,200
+  local BOB component calls match native C bit for bit, and Bob-ombs use it.
+- King Bob-omb's **standard movement foundation**: floor/wall queries, drag,
+  slope/edge avoidance, ground/air/water transitions, return-home arc movement
+  and moving throw/drop release. 537,435 component comparisons match the native
+  decomp exactly, including BOB collision/trig data. The boss itself is still
+  disabled pending behavior, animated anchors, dialogs and cutscenes.
+- Shared boss **grab/release interactions**: enemy grabs, Mario's thrown action
+  transition, anchor placement, escape controls and non-Bowser object release.
+  2,860 component calls match native C, including heavy pickup/walk/throw with
+  the ROM's original Mario animations and the 13th-tick release. These helpers
+  do not enable King Bob-omb's placement.
 
 This is level exploration with Mario's movement and camera, not mission
-support: of the objects only the coins are simulated. Enemies, trees, signs,
-red coins, the cannon lid and every other placement are recorded as unported
-and not spawned. There are no camera cutscenes, original pause behavior, cutscene or water
+support: of the objects only the coins and Bob-ombs are simulated. King
+Bob-omb, other enemies, trees, signs, red coins, the cannon lid and every other
+placement are recorded as unported and not spawned. There are no camera cutscenes, original pause behavior, cutscene or water
 actions, warps, deaths, or missions. Play stops where the port stops
 (unsupported paths, falling off the course); R re-enters.
 The comparisons are against the natively compiled decomp, not N64 execution.
@@ -88,6 +111,18 @@ The core never depends on the renderer, so simulation and replay comparisons run
 without a GPU or window.
 
 ## Build and test
+
+The current project version is **0.0.2**; the change counter started at 0.0.1.
+It appears in the running window
+title, ROM launcher, pause/settings and `--version` output of all three binaries.
+Every committed project change, including documentation, must advance it with
+`python3 tools/project_version.py bump`; the next version is 0.0.3. The tool
+updates Cargo.toml, Cargo.lock and the plan's current-version header together.
+Patch/minor roll over at 100:
+0.0.99 → 0.1.0 and 0.99.99 → 1.0.0. Run
+`python3 tools/project_version.py check --base HEAD` before committing and
+`python3 tools/project_version.py check --history` afterward; CI checks the
+history too. Rebuild after a change so the running version reflects its source.
 
 Rust 1.99.0 (current stable as of 2026-10-08) with rustfmt and Clippy is selected
 by `rust-toolchain.toml`. Linux x86_64 is the locally checked platform. CI also builds/tests the Rust
@@ -116,6 +151,11 @@ skip; set `RUSTARIO64_REQUIRE_GPU=1` to make a missing adapter fail (CI does thi
 with Mesa's software Vulkan, `mesa-vulkan-drivers`). The viewer needs a Vulkan,
 Metal, DX12, or GL driver; on Linux the windowed mode also needs X11 or Wayland
 libraries (for example `libxkbcommon-x11-0` on X11).
+
+For renderer changes, also run `RUSTARIO64_REQUIRE_GPU=1 cargo test --locked
+-p rustario64-render --all-targets` in the default debug profile. This exercises
+GPU drawing with dependency assertions enabled, as in CI; optimized tests alone
+can miss lifecycle errors such as unconsumed egui texture updates.
 
 `demo` decodes an independently authored MIO0/BOB-shaped fixture and runs a
 ten-second synthetic counter/input replay at 30, 60, 120, and 144 Hz presentation
@@ -149,7 +189,9 @@ python tools/package_desktop.py --target linux-x86_64
 python tools/test_package_desktop.py
 ```
 
-The packager includes the commit/target/compiler in `BUILD_INFO.txt` and notices
+The runtime ZIP/folder includes its project version (for example,
+`rustario64-0.0.2-linux-x86_64.zip`). The packager includes version/commit/target/compiler
+in `BUILD_INFO.txt` and notices
 from the target-filtered Cargo dependency graph. It refuses an existing ZIP;
 use a fresh `--output` directory for another build.
 
@@ -174,6 +216,7 @@ RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release --test mario_mode
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test mario_tick bob_ticks -- --ignored --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release --test objects -- --ignored --nocapture
 RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test objects -- --include-ignored --nocapture
+RUSTARIO64_ROM=/path/to/sm64.z64 cargo test --locked --release -p rustario64-oracle --test bobombs -- --include-ignored --nocapture
 ```
 
 With a clean pinned decomp checkout, two checkers re-derive the object
@@ -182,7 +225,10 @@ content the importer relies on: `python3 -I tools/check_behavior_reference.py
 `behavior_data.c` over the ROM's segment 0x13 and checks every word, the
 macro preset table and the version adapter's script and native addresses;
 `tools/check_object_model_reference.py` (same arguments) checks the coin and
-sparkle geo layouts and the object geo callback address.
+sparkle geo layouts and the object geo callback address. The Bob-omb's
+animation table and geo layout are decoded from the ROM; the ROM tests above
+assert their shape and compare their use against the decomp, but no independent
+reference checker covers them yet.
 
 The oracle tests compare BOB's real collision (about four million queries), the
 ROM's trig tables (about four million lookups), Mario's physics steps on BOB
@@ -210,13 +256,18 @@ objects, specials). In the window, C, P, and F toggle collision, placements, and
 fog. The viewer launches straight into BOB area 1 as a development entry point.
 The free camera is a presentation-only inspection camera, not the original game
 camera. The sky is a placeholder color until the skybox is imported; trees,
-enemies, and other unported objects are not drawn yet (their painted ground
+other enemies, and other unported objects are not drawn yet (their painted ground
 shadows are terrain). In Mario mode BOB's act-1 coins and collection sparkles
-are drawn from their ROM models, facing the displayed camera. Coin positions
+are drawn from their ROM models, facing the displayed camera, and Bob-ombs,
+fuse smoke, explosions and death smoke are drawn from theirs, the Bob-omb posed
+from its ROM animation each tick and interpolated between ticks. Coin positions
 interpolate between completed ticks; the original texture-frame switches stay
 at 30 Hz. The window shows the original HUD coin value in a development text
-overlay. Coin shadows and original HUD glyphs remain pending. Offscreen
-`--mario-ticks` images include coins/sparkles; the text overlay is window-only.
+overlay. Object shadows and original HUD glyphs remain pending. Offscreen
+`--mario-ticks` images include objects; the text overlay is window-only.
+`--start X,Y,Z[,YAW]` (Mario mode, window or screenshot) spawns Mario elsewhere
+in area 1 through the normal level entry, a development aid for reaching an
+object quickly; it is not an original warp.
 
 #### Move Mario
 
@@ -237,6 +288,9 @@ cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
 # Offscreen: Mario after 90 frames of holding the stick up, from the original camera
 cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
   screenshot /path/to/sm64.z64 --out private/mario.png --mario-ticks 90
+# Offscreen: the last frame of a recorded run (its tick inputs replayed)
+cargo run --locked --release -p rustario64-render --bin rustario64-viewer -- \
+  screenshot /path/to/sm64.z64 --out private/run.png --inputs private/runs/run-001.inputs.json
 ```
 
 Mario mode (`--mario`, or M in the window): WASD is the stick (hold Shift to
@@ -362,18 +416,27 @@ reuse, and dependency terms; [docs/ROM_VALIDATION.md](docs/ROM_VALIDATION.md)
 holds the owner-ROM evidence.
 
 The object system lives in `simulation::object` (pool, lists, interpreter,
-collision, processor, render-pass writes, coin behaviors) and
-`import::objects` (behavior segment, macro presets, model registrations and
-traversals, area placements). A placement whose script the port does not run
+collision, processor, render-pass writes, animations, coin, Bob-omb, explosion
+and respawner behaviors) and `import::objects` (behavior segment, macro presets,
+model registrations and traversals, object animation tables, area placements). A placement whose script the port does not run
 is never spawned; it is listed in `AreaObjects::skipped` with the reason.
 
 ## Next increment
 
-Physical-GPU Windows/Linux playtesting continues. Coin/sparkle drawing and the
-coin counter now work. Port the first mission's actors (King Bob-omb, Bob-ombs,
-the star) with
-the camera cutscenes that mission needs. Original-execution traces remain the
-eventual authority. Skybox and placement models remain M1 work.
+Linux Intel GPU startup, offscreen drawing and recorded-run replay were checked
+locally in session 24; human controller and Windows playtesting remains.
+Coins, Bob-ombs and carrying and throwing them work. King Bob-omb's standard
+movement and grab/release helpers are now ported and component-compared,
+including Mario's heavy actions with original animations. Next is his behavior
+and animations, authoritative held-Mario render callback, dialogs, time-stop,
+the star and the camera cutscenes the first mission needs. Original-execution
+traces remain the eventual authority. Skybox and placement models remain M1 work.
+
+Movement and grabbing checks without a ROM:
+`cargo test --locked --release -p rustario64-oracle --test standard_motion --test grab`.
+With your supported ROM, set `RUSTARIO64_ROM` and append
+`-- --include-ignored --nocapture`. This tests movement/grab prerequisites, not
+the boss fight or mission completion.
 
 Camera checks without a ROM: `cargo test --locked -p rustario64-oracle --test camera --test lakitu --test radial --test camera_tick`;
 repeat with `--release` for optimized comparisons. The owner-ROM camera tests

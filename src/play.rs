@@ -92,6 +92,24 @@ impl Pad {
         .fold(0, |buttons, (_, bit)| buttons | bit)
     }
 
+    /// The controls for one recorded tick: its button bits (the ones a Pad
+    /// carries) and raw stick bytes.
+    pub fn from_tick(buttons: u16, stick: [i8; 2]) -> Pad {
+        let held = |bit: u16| buttons & bit != 0;
+        Pad {
+            analog_stick: Some(stick),
+            a: held(A_BUTTON),
+            b: held(B_BUTTON),
+            z: held(Z_TRIG),
+            r: held(R_TRIG),
+            c_up: held(U_CBUTTONS),
+            c_down: held(D_CBUTTONS),
+            c_left: held(L_CBUTTONS),
+            c_right: held(R_CBUTTONS),
+            ..Pad::default()
+        }
+    }
+
     /// Held buttons, plus the ones in `taps` (pressed since the last frame,
     /// perhaps released already): a tap shorter than a frame still reaches
     /// the next frame, as a press longer than a frame would.
@@ -467,6 +485,7 @@ impl<'a> Session<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::animation::NO_OBJECT_ANIMATIONS;
     use crate::simulation::object::{render::authored_models, script::authored_scripts};
     use crate::{
         content::{CollisionMesh, Triangle, animation::Animation},
@@ -662,7 +681,7 @@ mod tests {
         let trig = tables();
         let anims = still_animations();
         let (scripts, models) = (authored_scripts(), authored_models());
-        let objects = LevelObjects::mario_only(&scripts, &models);
+        let objects = LevelObjects::mario_only(&scripts, &models, &NO_OBJECT_ANIMATIONS);
         let mut session = Session::new(&world, &trig, &anims, objects, entry(90));
         assert_eq!(session.mario().action, ACT_IDLE);
         // create_camera's yaw is 0 until the first update initializes the camera.
@@ -729,7 +748,7 @@ mod tests {
         let trig = tables();
         let anims = still_animations();
         let (scripts, models) = (authored_scripts(), authored_models());
-        let objects = LevelObjects::mario_only(&scripts, &models);
+        let objects = LevelObjects::mario_only(&scripts, &models, &NO_OBJECT_ANIMATIONS);
         let mut session = Session::new(&world, &trig, &anims, objects, entry(0));
         let mut ticks = 0;
         while session.step(&Pad::default()) {

@@ -4,12 +4,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-/* Preserve Mario's recorded boundaries: inside the excerpts the original
- * set_camera_mode and set_camera_shake_from_hit are renamed, and the
- * recorders in runtime_glue.c forward to them while the camera is linked. */
+/* Preserve the recorded boundaries: inside the excerpts the original
+ * set_camera_mode, set_camera_shake_from_hit and
+ * set_environmental_camera_shake are renamed, and the recorders in
+ * runtime_glue.c forward to them while the camera is linked. */
 #define set_camera_shake_from_hit oracle_camera_native_hit
 #define set_camera_mode oracle_camera_native_set_mode
+#define set_environmental_camera_shake oracle_camera_native_env_shake
 #include "excerpts/camera.c"
+#undef set_environmental_camera_shake
 #undef set_camera_mode
 #undef set_camera_shake_from_hit
 #include "engine/surface_load.h"
